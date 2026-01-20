@@ -19,6 +19,7 @@ dependencies = [
     "pytest-cov",
     "iterm2>=2.13",
     "aiohttp>=3.9",
+    "mcp[cli]>=1.25.0",
 ]
 requires-python = ">= 3.13"
 

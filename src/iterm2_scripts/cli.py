@@ -5,14 +5,13 @@ from types import FunctionType
 
 import typer
 from rich.console import Console
-
 from iterm2_scripts.main import main as item2_run
 from iterm2_scripts.message import (
     alert_handler,
     poly_modal_alert_handler,
     text_input_alert_handler,
 )
-from iterm2_scripts.webview_server import run_webview_browser
+from iterm2_scripts.utils import reveal_hotkey_window
 
 
 app = typer.Typer(name="iterm2_scripts")
@@ -61,7 +60,7 @@ async def test_alerts():
     simple_alert = await alert_handler(
         title="iTerm2 Scripts",
         subtitle=f"iTerm2 script is running in profile {global_state.profile.name}!",
-        windowId=global_state.window.window_id,
+        window_id=global_state.window.window_id,
         connection=global_state.connection,
     )
 
@@ -76,7 +75,7 @@ async def async_main():
     simple_alert = await alert_handler(
         title="iTerm2 Scripts",
         subtitle=f"iTerm2 script is running in profile {global_state.profile.name}!",
-        windowId=global_state.window.window_id,
+        window_id=global_state.window.window_id,
         connection=global_state.connection,
     )
     text_input_alert = await text_input_alert_handler(
@@ -110,7 +109,7 @@ async def async_main():
 
 
 @app.command()
-def rerieve_capabilties():
+def retrieve_capabilities():
     """Retrieve and print iTerm2 capabilities."""
     import iterm2.capabilities
 
@@ -127,28 +126,6 @@ def rerieve_capabilties():
             console.log(f"{capability}: {is_supported}")
 
     asyncio.run(_inner())
-
-
-@app.command()
-def webview():
-    """Run the webview browser as a daemon.
-
-    This starts a local web server and registers a webview tool in iTerm2's
-    toolbelt. The browser uses native WKWebView for full site compatibility.
-
-    - Use the address bar on the landing page to navigate
-    - Click the 🏠 status bar component to return home from any page
-    """
-    console.print("[bold blue]Starting iTerm2 Web Browser...[/bold blue]")
-    console.print("• Landing page with address bar and bookmarks")
-    console.print("• Native WKWebView - all sites work (Google, GitHub, etc.)")
-    console.print("• 🏠 status bar component to return home")
-    console.print("\n[dim]Press Ctrl+C to stop[/dim]\n")
-
-    try:
-        asyncio.run(run_webview_browser())
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Webview browser stopped.[/yellow]")
 
 
 @app.command()
@@ -170,9 +147,10 @@ def main(
         case "all":
             selected_fn = async_main()
         case _:
-            console.print(f"[red]Unknown function: {func}[/red]")
+            console.print(f":warning: [red]Unknown function: {func}[/red]", emoji=True)
             raise typer.Exit(code=1)
 
+    reveal_hotkey_window()
     asyncio.run(selected_fn)
 
 
