@@ -236,6 +236,7 @@ __marimo__/
 
 
 # TEMPORARY FILES FOR RELEASE PACKAGE ONLY - TO BE REMOVED LATER
+_docs/
 iterm2_api_wrapper-0.1.0.tar.gz
 iterm2_api_wrapper-0.1.0-py3-none-any.whl
 assets/iterm2-pyobjc-automation-cookbook.md
