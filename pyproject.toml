@@ -1,5 +1,5 @@
 [project]
-name = "iterm2-scripts"
+name = "iterm2-api-wrapper"
 version = "0.1.0"
 description = "..."
 readme = "README.md"
@@ -19,7 +19,8 @@ dependencies = [
     "pytest-cov",
     "iterm2>=2.13",
     "aiohttp>=3.9",
-    "mcp[cli]>=1.25.0",
+    "pyobjc>=12.1",
+    "py-applescript>=1.0.3",
 ]
 requires-python = ">= 3.13"
 
@@ -50,13 +51,13 @@ build-backend = "uv_build"
 
 
 [project.urls]
-bugs = "https://github.com/iLiftALot/iterm2_scripts/issues"
-changelog = "https://github.com/iLiftALot/iterm2_scripts/blob/master/changelog.md"
-homepage = "https://github.com/iLiftALot/iterm2_scripts"
+bugs = "https://github.com/iLiftALot/iterm2-api-wrapper/issues"
+changelog = "https://github.com/iLiftALot/iterm2-api-wrapper/blob/master/changelog.md"
+homepage = "https://github.com/iLiftALot/iterm2-api-wrapper"
 
 [project.scripts]
-iterm2_scripts = "iterm2_scripts.cli:app"
-it2s = "iterm2_scripts.cli:app"
+iterm2_api_wrapper = "iterm2_api_wrapper.cli:app"
+it2w = "iterm2_api_wrapper.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

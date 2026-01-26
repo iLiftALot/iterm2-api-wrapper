@@ -13,8 +13,8 @@ Clone the repository and install with pip:
 
 .. code-block:: bash
 
-   git clone https://github.com/iLiftALot/iterm2_scripts.git
-   cd iterm2_scripts
+   git clone https://github.com/iLiftALot/iterm2_api_wrapper.git
+   cd iterm2_api_wrapper
    pip install -e .
 
 Dependencies

@@ -8,7 +8,7 @@ You can contribute in many ways:
 
 ### Report Bugs
 
-Report bugs at https://github.com/iLiftALot/iterm2_scripts/issues.
+Report bugs at https://github.com/iLiftALot/iterm2_api_wrapper/issues.
 
 If you are reporting a bug, please include:
 
@@ -30,7 +30,7 @@ Iterm2 Scripts could always use more documentation, whether as part of the offic
 
 ### Submit Feedback
 
-The best way to send feedback is to file an issue at https://github.com/iLiftALot/iterm2_scripts/issues.
+The best way to send feedback is to file an issue at https://github.com/iLiftALot/iterm2_api_wrapper/issues.
 
 If you are proposing a feature:
 
@@ -40,20 +40,20 @@ If you are proposing a feature:
 
 ## Get Started!
 
-Ready to contribute? Here's how to set up `iterm2_scripts` for local development.
+Ready to contribute? Here's how to set up `iterm2_api_wrapper` for local development.
 
-1. Fork the `iterm2_scripts` repo on GitHub.
+1. Fork the `iterm2_api_wrapper` repo on GitHub.
 2. Clone your fork locally:
 
    ```sh
-   git clone git@github.com:your_name_here/iterm2_scripts.git
+   git clone git@github.com:your_name_here/iterm2_api_wrapper.git
    ```
 
 3. Install your local copy into a virtualenv. Assuming you have virtualenvwrapper installed, this is how you set up your fork for local development:
 
    ```sh
-   mkvirtualenv iterm2_scripts
-   cd iterm2_scripts/
+   mkvirtualenv iterm2_api_wrapper
+   cd iterm2_api_wrapper/
    python setup.py develop
    ```
 
@@ -99,7 +99,7 @@ Before you submit a pull request, check that it meets these guidelines:
 To run a subset of tests:
 
 ```sh
-pytest tests.test_iterm2_scripts
+pytest tests.test_iterm2_api_wrapper
 ```
 
 ## Deploying

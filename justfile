@@ -1,4 +1,4 @@
-# Justfile for iterm2-scripts
+# Justfile for iterm2-api-wrapper
 
 # Show available commands
 list:
@@ -54,7 +54,7 @@ tag:
     git push origin v{{VERSION}}
 
 # remove all build, test, coverage and Python artifacts
-clean: 
+clean:
 	clean-build
 	clean-pyc
 	clean-test
