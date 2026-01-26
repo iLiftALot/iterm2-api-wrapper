@@ -15,10 +15,7 @@ classifiers = [
 license = {text = "MIT"}
 dependencies = [
     "typer",
-    "pytest",
-    "pytest-cov",
     "iterm2>=2.13",
-    "aiohttp>=3.9",
     "pyobjc>=12.1",
     "py-applescript>=1.0.3",
 ]
@@ -42,6 +39,7 @@ dev = [
     "icecream",
     "rich",
     "myst-parser>=4.0.1",
+    "python-dotenv",
 ]
 
 

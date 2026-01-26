@@ -15,8 +15,9 @@ from iterm2_api_wrapper.alert import (
     text_input_alert_handler,
 )
 from iterm2_api_wrapper.client import iTermClient
-from iterm2_api_wrapper.utils import console, maybe_reveal_hotkey_window
-from iterm2_api_wrapper.main import iTermState
+from iterm2_api_wrapper.utils import console
+from iterm2_api_wrapper.state import iTermState
+from iterm2_api_wrapper.mac.platform_macos import maybe_reveal_hotkey_window
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
@@ -48,7 +49,7 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[str]:
     func_params = [
         f"{arg} ({arg.kind.description})"
         for name, arg in sig.items()
-        if name not in ("return", "client")
+        if name not in ("return", "state")
     ]
     return [arg for arg in func_params if arg.startswith(incomplete) and arg != "client"]
 

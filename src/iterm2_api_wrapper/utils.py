@@ -1,9 +1,7 @@
 from collections.abc import Callable, Coroutine
 from functools import partial
-from pathlib import Path
 from typing import Any, Concatenate, ParamSpec, overload
 
-import applescript
 from iterm2 import connection
 from rich.console import Console
 from rich.pretty import pprint
@@ -11,14 +9,6 @@ from rich.pretty import pprint
 
 console = Console()
 pp = partial(pprint, console=console, expand_all=True)
-
-
-def maybe_reveal_hotkey_window(is_hotkey: bool):
-    apple_script = applescript.AppleScript(
-        path=str(Path(__file__).parent / "applescripts" / "iterm_osa.scpt")
-    )
-    result = apple_script.run(is_hotkey)
-    return result
 
 
 P = ParamSpec("P")
