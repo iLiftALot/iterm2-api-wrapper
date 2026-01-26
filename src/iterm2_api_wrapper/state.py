@@ -1,18 +1,18 @@
 from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Coroutine, Concatenate
-from typing_extensions import ParamSpec
+from typing import Any, Callable, Concatenate, Coroutine  # , ParamSpec, TypeVar
+
 from iterm2 import app, connection, prompt, profile, session, tab, window
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 from iterm2_api_wrapper.utils import pp
 
+# P = ParamSpec("P")
 
-P = ParamSpec("P")
 
-
-def _validate_state[T](
+def _validate_state[**P, T](
     method: Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]],
 ) -> Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]]:
     """Decorator that validates and refreshes state before method execution."""
@@ -51,11 +51,30 @@ class iTermState:
     refresh_callback: Callable[[], Coroutine[Any, Any, iTermState]] | None = None
     is_hotkey_window: bool = False
 
+    def refresh_from(self, new_state: iTermState) -> None:
+        """
+        Refresh this state in-place from another state instance.
+
+        `iTermClient` uses this to preserve the identity of `client.state` while
+        still updating all underlying iTerm2 objects after a reconnect.
+        """
+        if not isinstance(new_state, iTermState):
+            raise TypeError(
+                f"refresh_from expects an iTermState; got {type(new_state).__name__!r}"
+            )
+
+        self.connection = new_state.connection
+        self.app = new_state.app
+        self.window = new_state.window
+        self.tab = new_state.tab
+        self.session = new_state.session
+        self.profile = new_state.profile
+        self.is_hotkey_window = new_state.is_hotkey_window
+        self.refresh_callback = new_state.refresh_callback
+
     async def ensure_state(
         self,
-        refresh_callback: Callable[[], Coroutine[Any, Any, iTermState]]
-        | Coroutine[Any, Any, iTermState]
-        | None = None,
+        refresh_callback: Callable[[], Coroutine[Any, Any, iTermState]] | None = None,
     ) -> None:
         """Ensure the state is valid, refreshing if needed."""
         if await self.validated_state():
@@ -65,15 +84,8 @@ class iTermState:
         if callback is None:
             raise RuntimeError("No refresh callback provided to ensure_state")
 
-        new_state: iTermState = await (callback() if callable(callback) else callback)
-
-        self.connection = new_state.connection
-        self.app = new_state.app
-        self.window = new_state.window
-        self.tab = new_state.tab
-        self.session = new_state.session
-        self.profile = new_state.profile
-        self.is_hotkey_window = new_state.is_hotkey_window
+        new_state: Any = await (callback() if callable(callback) else callback)
+        self.refresh_from(new_state)
 
     async def validated_state(self) -> bool:
         """Validate state by checking if iTerm2 objects are still active."""
@@ -153,6 +165,8 @@ class iTermState:
         """Convert iTermState to dictionary."""
         return {
             key: {k: v for k, v in value.__dict__.items()}
+            if hasattr(value, "__dict__")
+            else value
             for key, value in self.__dict__.items()
             if key != "refresh_callback"
         }

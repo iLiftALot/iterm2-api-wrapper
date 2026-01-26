@@ -4,11 +4,7 @@ from typing import Unpack
 
 from iterm2 import app, connection, profile, session, tab, window
 
-from iterm2_api_wrapper.param_types import (
-    iTermSessionKwargs,
-    iTermSetupKwargs,
-    iTermTabKwargs,
-)
+from iterm2_api_wrapper.param_types import iTermSetupKwargs
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.utils import pp
 from iterm2_api_wrapper.mac.platform_macos import _activate_iterm_app
@@ -80,9 +76,11 @@ async def get_window(
 
 
 async def get_tab(
-    window: window.Window, profile: profile.Profile, **kwargs: Unpack[iTermTabKwargs]
+    window: window.Window,
+    profile: profile.Profile,
+    new_tab: bool = False,
+    order_window_front: bool = False,
 ) -> tab.Tab:
-    new_tab: bool = kwargs.get("new_tab", False)
     iterm2_tabs: list[tab.Tab] = window.tabs
     selected_tab: tab.Tab | None = window.current_tab
 
@@ -101,9 +99,7 @@ async def get_tab(
         selected_tab = await window.async_create_tab(profile=profile.name)
 
     assert selected_tab is not None, "Could not get or create iTerm2 tab"
-    await selected_tab.async_activate(
-        order_window_front=kwargs.get("order_window_front", False)
-    )
+    await selected_tab.async_activate(order_window_front=order_window_front)
 
     return selected_tab
 
@@ -111,7 +107,8 @@ async def get_tab(
 async def get_session(
     tab: tab.Tab,
     profile: profile.Profile | None = None,
-    **kwargs: Unpack[iTermSessionKwargs],
+    select_tab: bool = True,
+    order_window_front: bool = False,
 ) -> session.Session:
     iterm2_sessions: list[session.Session] = tab.all_sessions
     selected_session: session.Session | None = tab.current_session
@@ -129,8 +126,7 @@ async def get_session(
         raise RuntimeError("Could not find matching session in tab")
 
     await selected_session.async_activate(
-        select_tab=kwargs.get("select_tab", True),
-        order_window_front=kwargs.get("order_window_front", False),
+        select_tab=select_tab, order_window_front=order_window_front
     )
     return selected_session
 
@@ -148,10 +144,16 @@ async def setup_iterm(
         app_instance, connection_instance, profile_instance
     )
     tab_instance: tab.Tab = await get_tab(
-        window=window_instance, profile=profile_instance, **kwargs
+        window=window_instance,
+        profile=profile_instance,
+        new_tab=kwargs.get("new_tab", False),
+        order_window_front=kwargs.get("order_window_front", False),
     )
     session_instance: session.Session = await get_session(
-        tab=tab_instance, profile=profile_instance, **kwargs
+        tab=tab_instance,
+        profile=profile_instance,
+        select_tab=kwargs.get("select_tab", True),
+        order_window_front=kwargs.get("order_window_front", False),
     )
 
     # Check hotkey window status here (we're already async on the correct loop)

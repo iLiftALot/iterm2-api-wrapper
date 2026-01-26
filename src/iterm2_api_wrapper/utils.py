@@ -1,6 +1,6 @@
 from collections.abc import Callable, Coroutine
 from functools import partial
-from typing import Any, Concatenate, ParamSpec, overload
+from typing import Any, Concatenate, ParamSpec, TypeVar, overload
 
 from iterm2 import connection
 from rich.console import Console
@@ -12,6 +12,8 @@ pp = partial(pprint, console=console, expand_all=True)
 
 
 P = ParamSpec("P")
+T = TypeVar("T")
+
 
 
 @overload
@@ -21,25 +23,29 @@ def run[T](
     retry: bool = True,
     debug: bool = False,
 ) -> T: ...
+
 @overload
-def run[T](
+def run(
     forever: bool,
     coro: Callable[Concatenate[connection.Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
     debug: bool = False,
+    *args: P.args,
     **kwargs: P.kwargs,
 ) -> T: ...
-def run[T](
+
+def run(
     forever: bool,
-    coro: Callable[..., Coroutine[Any, Any, T]],
+    coro: Callable[Concatenate[connection.Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
     debug: bool = False,
-    **kwargs: Any,
+    *args: P.args,
+    **kwargs: P.kwargs,
 ) -> T:
     """Run the given coroutine with iTerm2 connection."""
 
     def coro_wrapper(connection: connection.Connection) -> Coroutine[Any, Any, T]:
-        return coro(connection, **kwargs)
+        return coro(connection, *args, **kwargs)
 
     result: T = connection.Connection().run(
         forever=forever, coro=coro_wrapper, retry=retry, debug=debug
@@ -47,10 +53,11 @@ def run[T](
     return result
 
 
-def run_until_complete[T](
+def run_until_complete(
     coro: Callable[Concatenate[connection.Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
     debug: bool = False,
+    *args: P.args,
     **kwargs: P.kwargs,
 ) -> T:
     """Run the given coroutine until complete, with optional retry and debug.
@@ -77,7 +84,7 @@ def run_until_complete[T](
     :returns: The result of the coroutine.
     :rtype: ``T``
     """
-    return run(forever=False, coro=coro, retry=retry, debug=debug, **kwargs)
+    return run(False, coro, retry, debug, *args, **kwargs)
 
 
 def run_forever(

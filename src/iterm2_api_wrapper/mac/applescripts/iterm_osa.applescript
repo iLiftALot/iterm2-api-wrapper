@@ -46,7 +46,7 @@ on getiTermDefaultProfileName(logging)
     set {targetProfileGuid, targetProfile} to my itermDefaultProfileInfo()
     if targetProfile is missing value then set targetProfile to "Default"
     if targetProfileGuid is missing value then
-        logging's log2file("Default profile GUID: (missing)", "DEBUG")
+        logging's log2file("Default profile GUID: (missing)", "WARN")
     else
         logging's log2file("Default profile GUID: " & targetProfileGuid, "DEBUG")
     end if

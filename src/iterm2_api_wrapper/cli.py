@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from collections.abc import Callable
 from types import FunctionType
 from typing import Annotated, Any, Coroutine
 
@@ -14,24 +15,26 @@ from iterm2_api_wrapper.alert import (
     poly_modal_alert_handler,
     text_input_alert_handler,
 )
-from iterm2_api_wrapper.client import iTermClient
+from iterm2_api_wrapper.client import create_iterm_client
 from iterm2_api_wrapper.utils import console
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.mac.platform_macos import maybe_reveal_hotkey_window
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
+type ActionFn[P, R] = Callable[[P], Coroutine[Any, Any, R]]
+type CoroutineFn[P, R] = Callable[[P], Coroutine[Any, Any, R]]
 
 
-def run_coro(
-    coro: Coroutine[Any, Any, None], event_loop: asyncio.AbstractEventLoop
-) -> None:
+def run_coro[T](
+    coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop
+) -> T:
     """Run a coroutine in the given event loop and return a Future."""
-    asyncio.run_coroutine_threadsafe(coro, event_loop).result()
+    return asyncio.run_coroutine_threadsafe(coro, event_loop).result()
 
 
 def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[str]:
-    functions: dict[str, FunctionType] = {
+    functions: dict[str, ActionFn[Any, Any]] = {
         "send_command": send_command,
         "show_capabilities": show_capabilities,
         "alert": test_alerts,
@@ -42,7 +45,7 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[str]:
     func_name: str | None = ctx.params.get("func_name")
     if not isinstance(func_name, str):
         return []
-    func: FunctionType | None = functions.get(func_name)
+    func = functions.get(func_name)
     if func is None:
         return []
     sig = inspect.signature(func).parameters
@@ -54,7 +57,7 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[str]:
     return [arg for arg in func_params if arg.startswith(incomplete) and arg != "client"]
 
 
-async def test_poly_modal_alert(state: iTermState) -> None:
+async def test_poly_modal_alert(state: iTermState) -> dict[str, Any]:
     poly_modal_alert = await poly_modal_alert_handler(
         title="Poly Modal Alert",
         subtitle="This is a poly modal alert with multiple options.",
@@ -71,9 +74,10 @@ async def test_poly_modal_alert(state: iTermState) -> None:
 
     console.log("Poly Modal Alert Response: \n")
     console.log(poly_modal_alert)
+    return poly_modal_alert
 
 
-async def test_text_input_alert(state: iTermState) -> None:
+async def test_text_input_alert(state: iTermState) -> str | None:
     text_input_alert = await text_input_alert_handler(
         title="Text Input Alert",
         subtitle="Please enter some text:",
@@ -85,9 +89,10 @@ async def test_text_input_alert(state: iTermState) -> None:
 
     console.log("Text Input Alert Response: \n")
     console.log(text_input_alert)
+    return text_input_alert
 
 
-async def test_alerts(state: iTermState) -> None:
+async def test_alerts(state: iTermState) -> int:
     """Test simple alerts."""
 
     simple_alert: int = await alert_handler(
@@ -99,6 +104,7 @@ async def test_alerts(state: iTermState) -> None:
 
     console.log("Simple Alert Response: \n")
     console.log(simple_alert)
+    return simple_alert
 
 
 async def test_all_alerts(state: iTermState) -> None:
@@ -166,7 +172,7 @@ def main(
     console.print(
         f":rocket: [green]Running function:[/green] [bold]{func_name}[/bold]", emoji=True
     )
-
+    selected_fn: CoroutineFn[iTermState, Any]
     match func_name:
         case "show_capabilities":
             selected_fn = show_capabilities
@@ -186,8 +192,7 @@ def main(
             )
             raise typer.Exit(code=1)
 
-    with iTermClient(
-        coro=None,
+    with create_iterm_client(
         timeout=None,
         debug=False,
         new_tab=False,
