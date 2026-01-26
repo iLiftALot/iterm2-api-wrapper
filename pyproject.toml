@@ -21,11 +21,6 @@ dependencies = [
 ]
 requires-python = ">= 3.13"
 
-[project.optional-dependencies]
-custom_packages = [
-  "pkg-registry"
-]
-
 
 [dependency-groups]
 dev = [
@@ -87,6 +82,3 @@ addopts = "-vv -l -x"
 
 [tool.uv]
 package = true
-
-[tool.uv.sources]
-pkg-registry = { path = "../custom/pkg_registry", editable = true }
