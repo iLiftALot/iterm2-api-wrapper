@@ -1,13 +1,13 @@
 # Iterm2 Scripts
 
-![PyPI version](https://img.shields.io/pypi/v/iterm2-scripts.svg)
-[![Documentation Status](https://readthedocs.org/projects/iterm2-scripts/badge/?version=latest)](https://iterm2-scripts.readthedocs.io/en/latest/?version=latest)
+![PyPI version](https://img.shields.io/pypi/v/iterm2-api-wrapper.svg)
+[![Documentation Status](https://readthedocs.org/projects/iterm2-api-wrapper/badge/?version=latest)](https://iterm2-api-wrapper.readthedocs.io/en/latest/?version=latest)
 
 ...
 
-* PyPI package: https://pypi.org/project/iterm2-scripts/
+* PyPI package: https://pypi.org/project/iterm2-api-wrapper/
 * Free software: MIT License
-* Documentation: https://iterm2-scripts.readthedocs.io.
+* Documentation: https://iterm2-api-wrapper.readthedocs.io.
 
 ## Features
 
