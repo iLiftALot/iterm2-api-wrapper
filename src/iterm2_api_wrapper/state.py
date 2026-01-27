@@ -161,6 +161,38 @@ class iTermState:
         broadcast = not broadcast
         await self.session.async_send_text(command + "\n", suppress_broadcast=broadcast)
 
+    @_validate_state
+    async def get_prompt(self) -> list[dict[str, Any]]:
+        """Get prompt history from the session."""
+        prompts: list[dict[str, Any]] = []
+        try:
+            last_prompt: None | prompt.Prompt = await prompt.async_get_last_prompt(
+                connection=self.connection, session_id=self.session.session_id
+            )
+            if last_prompt:
+                prompts.append({
+                    "prompt": getattr(last_prompt, "command", ""),
+                    "output_text": getattr(last_prompt, "output", ""),
+                    "working_directory": getattr(last_prompt, "working_directory", ""),
+                })
+        except Exception:
+            pass
+        return prompts
+
+    @_validate_state
+    async def get_terminal_contents(self, first_line: int, num_lines: int) -> str:
+        """Get the terminal screen contents."""
+        try:
+            contents = await self.session.async_get_contents(
+                first_line=first_line, number_of_lines=num_lines
+            )
+            lines = []
+            for line in contents:
+                lines.append(line.string)
+            return "\n".join(lines)
+        except Exception:
+            return ""
+
     def asdict(self) -> dict[str, Any]:
         """Convert iTermState to dictionary."""
         return {
