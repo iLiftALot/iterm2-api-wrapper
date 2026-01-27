@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from contextlib import (
     AbstractAsyncContextManager,
     AbstractContextManager,
@@ -119,13 +120,23 @@ class iTermClient(Generic[StateT]):
                 self._state = new_state
 
     def close(self) -> None:
+        # Don't try to join if we're on the client's own thread
+        current_thread = threading.current_thread()
+        is_own_thread = current_thread is self._thread
+
         if self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
 
-        self._thread.join()
+        # Only join if we're not on the client's thread
+        if not is_own_thread and self._thread.is_alive():
+            self._thread.join(timeout=5.0)  # Add timeout to prevent hangs
 
         if not self._loop.is_closed():
-            self._loop.close()
+            try:
+                self._loop.close()
+            except RuntimeError:
+                # Loop might still have pending callbacks if we couldn't join
+                pass
 
     @overload
     def state_manager(
@@ -255,8 +266,12 @@ class iTermClient(Generic[StateT]):
             self.close()
 
     def __del__(self) -> None:
-        if not self._loop.is_closed():
-            self.close()
+        if hasattr(self, "_loop") and not self._loop.is_closed():
+            try:
+                if self._loop.is_running():
+                    self._loop.call_soon_threadsafe(self._loop.stop)
+            except Exception:
+                pass
 
 
 if TYPE_CHECKING:
