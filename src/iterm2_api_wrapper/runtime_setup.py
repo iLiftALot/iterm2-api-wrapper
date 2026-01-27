@@ -42,11 +42,9 @@ async def get_window(
 
     window_candidates: list[window.Window] = []
     for iterm2_window in iterm2_windows:
-        # window_tab: tab.Tab = iterm2_window.current_tab or iterm2_window.tabs[0]
         window_tab: tab.Tab = await get_tab(
             window=iterm2_window, profile=profile, new_tab=False, order_window_front=False
         )
-        # window_session: session.Session = window_tab.current_session or window_tab.all_sessions[0]
         window_session: session.Session = await get_session(
             tab=window_tab, select_tab=True, order_window_front=False
         )

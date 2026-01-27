@@ -146,5 +146,20 @@ class SetupCoroGateway(ITermGateway["iTermState"]):
     async def create_state(self, **kwargs: Any) -> iTermState:
         from iterm2.connection import Connection
 
-        conn = await Connection.async_create()
+        from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
+
+        activate_iterm_app()
+
+        connect_timeout_s = _get_connect_timeout_s()
+        try:
+            conn = await _async_create_connection_with_retry(
+                Connection, timeout_s=connect_timeout_s
+            )
+        except TimeoutError as exc:
+            raise ConnectionError(
+                "Could not connect to iTerm2's Python API. "
+                "Ensure iTerm2 is running and its Python API is enabled. "
+                f"(waited {connect_timeout_s:.1f}s; set {_ENV_CONNECT_TIMEOUT} to increase)"
+            ) from exc
+
         return await self._setup_coro(conn, **kwargs)
