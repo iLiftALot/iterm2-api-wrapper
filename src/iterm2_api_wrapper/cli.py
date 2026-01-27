@@ -15,10 +15,10 @@ from iterm2_api_wrapper.alert import (
     poly_modal_alert_handler,
     text_input_alert_handler,
 )
-from iterm2_api_wrapper.client import iTermClient
-from iterm2_api_wrapper.utils import console
-from iterm2_api_wrapper.state import iTermState
+from iterm2_api_wrapper.client import create_iterm_client
 from iterm2_api_wrapper.mac.platform_macos import maybe_reveal_hotkey_window
+from iterm2_api_wrapper.state import iTermState
+from iterm2_api_wrapper.utils import console
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
@@ -26,9 +26,7 @@ type ActionFn[P, R] = Callable[[P], Coroutine[Any, Any, R]]
 type CoroutineFn[P, R] = Callable[[P], Coroutine[Any, Any, R]]
 
 
-def run_coro[T](
-    coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop
-) -> T:
+def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop) -> T:
     """Run a coroutine in the given event loop and return a Future."""
     return asyncio.run_coroutine_threadsafe(coro, event_loop).result()
 
@@ -192,12 +190,12 @@ def main(
             )
             raise typer.Exit(code=1)
 
-    with iTermClient[iTermState](
+    with create_iterm_client(
         timeout=None,
         debug=False,
         new_tab=False,
         select_tab=True,
-        order_window_front=False,
+        order_window_front=False
     ) as client:
         with client.state_manager() as state:
             maybe_reveal_hotkey_window(is_hotkey=state.is_hotkey_window)

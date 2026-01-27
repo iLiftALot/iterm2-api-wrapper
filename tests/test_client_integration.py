@@ -5,7 +5,7 @@ import os
 from collections.abc import Generator
 from functools import partial
 from pathlib import Path
-from typing import Coroutine, Any
+from typing import Any, Coroutine
 
 import pytest
 from dotenv import load_dotenv

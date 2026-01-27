@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Concatenate, Coroutine  # , ParamSpec, TypeVar
-from collections.abc import Awaitable
+from typing import Any, Callable, Concatenate, Coroutine
 
-from iterm2 import app, connection, prompt, profile, session, tab, window
+from iterm2 import app, connection, profile, prompt, session, tab, window
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
-from iterm2_api_wrapper.utils import pp
 
-# P = ParamSpec("P")
+from iterm2_api_wrapper.utils import pp
 
 
 def _validate_state[**P, T](

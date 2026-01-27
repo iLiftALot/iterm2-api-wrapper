@@ -15,7 +15,6 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 
-
 @overload
 def run[T](
     forever: bool,
@@ -23,6 +22,7 @@ def run[T](
     retry: bool = True,
     debug: bool = False,
 ) -> T: ...
+
 
 @overload
 def run(
@@ -33,6 +33,7 @@ def run(
     *args: P.args,
     **kwargs: P.kwargs,
 ) -> T: ...
+
 
 def run(
     forever: bool,

@@ -4,10 +4,10 @@ from typing import Unpack
 
 from iterm2 import app, connection, profile, session, tab, window
 
+from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
 from iterm2_api_wrapper.param_types import iTermSetupKwargs
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.utils import pp
-from iterm2_api_wrapper.mac.platform_macos import _activate_iterm_app
 
 
 async def get_connection() -> connection.Connection:
@@ -135,7 +135,7 @@ async def setup_iterm(
     connection_instance: connection.Connection, **kwargs: Unpack[iTermSetupKwargs]
 ) -> iTermState:
     """Setup window."""
-    _activate_iterm_app()
+    activate_iterm_app()
     app_instance: app.App = await get_app(connection_instance=connection_instance)
     profile_instance: profile.Profile = await get_default_profile(
         connection_instance=connection_instance

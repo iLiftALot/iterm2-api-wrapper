@@ -15,7 +15,7 @@ def maybe_reveal_hotkey_window(is_hotkey: bool):
     return result
 
 
-def _activate_iterm_app() -> None:
+def activate_iterm_app() -> None:
     """Activate iTerm2 application using pyobjc (AppKit)."""
     bundle = "com.googlecode.iterm2"
     ws = NSWorkspace.sharedWorkspace()
@@ -33,4 +33,3 @@ def _activate_iterm_app() -> None:
         )
         if not ok:
             raise RuntimeError("Could not launch iTerm2 application")
-
