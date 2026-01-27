@@ -15,7 +15,7 @@ from iterm2_api_wrapper.alert import (
     poly_modal_alert_handler,
     text_input_alert_handler,
 )
-from iterm2_api_wrapper.client import create_iterm_client
+from iterm2_api_wrapper.client import iTermClient
 from iterm2_api_wrapper.utils import console
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.mac.platform_macos import maybe_reveal_hotkey_window
@@ -192,7 +192,7 @@ def main(
             )
             raise typer.Exit(code=1)
 
-    with create_iterm_client(
+    with iTermClient[iTermState](
         timeout=None,
         debug=False,
         new_tab=False,

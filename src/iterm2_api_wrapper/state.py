@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable, Concatenate, Coroutine  # , ParamSpec, TypeVar
+from collections.abc import Awaitable
 
 from iterm2 import app, connection, prompt, profile, session, tab, window
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
@@ -48,10 +49,10 @@ class iTermState:
     profile: profile.Profile
 
     # refresh_callback is set in client.py after initialization
-    refresh_callback: Callable[[], Coroutine[Any, Any, iTermState]] | None = None
+    refresh_callback: Callable[[], Awaitable[Any]] | None = None
     is_hotkey_window: bool = False
 
-    def refresh_from(self, new_state: iTermState) -> None:
+    def refresh_from(self, new_state: Any) -> None:
         """
         Refresh this state in-place from another state instance.
 
@@ -74,7 +75,7 @@ class iTermState:
 
     async def ensure_state(
         self,
-        refresh_callback: Callable[[], Coroutine[Any, Any, iTermState]] | None = None,
+        refresh_callback: Callable[[], Awaitable[Any]] | Awaitable[Any] | None = None,
     ) -> None:
         """Ensure the state is valid, refreshing if needed."""
         if await self.validated_state():
@@ -84,7 +85,7 @@ class iTermState:
         if callback is None:
             raise RuntimeError("No refresh callback provided to ensure_state")
 
-        new_state: Any = await (callback() if callable(callback) else callback)
+        new_state = await (callback() if callable(callback) else callback)
         self.refresh_from(new_state)
 
     async def validated_state(self) -> bool:

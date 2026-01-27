@@ -2,20 +2,15 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import (
+    AbstractAsyncContextManager,
+    AbstractContextManager,
+    asynccontextmanager,
+    contextmanager,
+)
 from threading import Thread
 from types import TracebackType
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    AsyncIterator,
-    Generic,
-    Iterator,
-    Self,
-    Unpack,
-    cast,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Generic, Self, Unpack, cast, overload
 
 from iterm2_api_wrapper.gateway import (
     DefaultITermGateway,
@@ -40,7 +35,6 @@ class iTermClient(Generic[StateT]):
         timeout: float | None = None,
         **kwargs: Unpack["iTermSetupKwargs"],
     ) -> None: ...
-
     @overload
     def __init__(
         self,
@@ -50,7 +44,6 @@ class iTermClient(Generic[StateT]):
         timeout: float | None = None,
         **kwargs: Unpack["iTermSetupKwargs"],
     ) -> None: ...
-
     @overload
     def __init__(
         self,
@@ -60,7 +53,6 @@ class iTermClient(Generic[StateT]):
         timeout: float | None = None,
         **kwargs: Unpack["iTermSetupKwargs"],
     ) -> None: ...
-
     def __init__(
         self,
         coro: Any = None,
@@ -135,10 +127,18 @@ class iTermClient(Generic[StateT]):
         if not self._loop.is_closed():
             self._loop.close()
 
+    @overload
+    def state_manager(
+        self: iTermClient["iTermState"], close: bool = True
+    ) -> AbstractContextManager["iTermState"]: ...
+    @overload
+    def state_manager(
+        self: iTermClient[StateT], close: bool = True
+    ) -> AbstractContextManager[StateT]: ...
     @contextmanager
-    def state_manager(self, close: bool = True) -> Iterator["iTermState"]:
+    def state_manager(self, close: bool = True):
         """
-        Context manager to ensure that the iTermState is valid,
+        Context manager to ensure that the client's state is valid,
         refreshing it if necessary.
 
         Useful when accessing multiple raw state attributes.
@@ -148,20 +148,28 @@ class iTermClient(Generic[StateT]):
         :param close: Whether to close the client after exiting the context.
         :type close: ``bool``
         :default close: ``True``
-        :yield: The current iTermState, refreshed if necessary.
-        :rtype: ``iTermState``
+        :yield: The current state (``StateT``), refreshed if necessary.
+        :rtype: ``StateT``
         """
         state = self.get_state()
         try:
-            yield cast("iTermState", state)
+            yield state
         finally:
             if close:
                 self.close()
 
+    @overload
+    def state_manager_async(
+        self: iTermClient["iTermState"], close: bool = True
+    ) -> AbstractAsyncContextManager["iTermState"]: ...
+    @overload
+    def state_manager_async(
+        self: iTermClient[StateT], close: bool = True
+    ) -> AbstractAsyncContextManager[StateT]: ...
     @asynccontextmanager
-    async def state_manager_async(self, close: bool = True) -> AsyncIterator["iTermState"]:
+    async def state_manager_async(self, close: bool = True):
         """
-        Async context manager to ensure that the iTermState is valid,
+        Async context manager to ensure that the client's state is valid,
         refreshing it if necessary.
 
         Useful when accessing multiple raw state attributes.
@@ -171,12 +179,12 @@ class iTermClient(Generic[StateT]):
         :param close: Whether to close the client after exiting the context.
         :type close: ``bool``
         :default close: ``True``
-        :yield: The current iTermState, refreshed if necessary.
-        :rtype: ``iTermState``
+        :yield: The current state (``StateT``), refreshed if necessary.
+        :rtype: ``StateT``
         """
         state = await self.get_state_async()
         try:
-            yield cast("iTermState", state)
+            yield state
         finally:
             if close:
                 self.close()
@@ -196,8 +204,7 @@ class iTermClient(Generic[StateT]):
 
     async def get_state_async(self) -> StateT:
         """
-        Ensure that the iTermState is valid, refreshing it if necessary.
-        return await self._ensure_state_async()
+        Ensure that the client's state is valid, refreshing it if necessary.
 
         Only call this method from within the event loop.
 
@@ -261,9 +268,7 @@ else:
 
 
 def create_iterm_client(
-    *,
-    timeout: float | None = None,
-    **kwargs: Unpack["iTermSetupKwargs"],
+    *, timeout: float | None = None, **kwargs: Unpack["iTermSetupKwargs"]
 ) -> ITermClient:
     """
     Convenience factory that provides strong type inference for the default state type.

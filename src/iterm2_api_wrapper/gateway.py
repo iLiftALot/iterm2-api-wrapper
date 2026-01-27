@@ -26,7 +26,7 @@ class RefreshableState(Protocol):
     def refresh_from(self, new_state: Any) -> None: ...
 
 
-StateT = TypeVar("StateT", "iTermState", RefreshableState, covariant=True)
+StateT = TypeVar("StateT", bound=RefreshableState, covariant=True)
 
 
 class ITermGateway(Protocol[StateT]):
