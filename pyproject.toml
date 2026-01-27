@@ -10,7 +10,16 @@ maintainers = [
   {name = "Nicholas Corbin", email = "nickcorbin17@yahoo.com"}
 ]
 classifiers = [
-    # TODO
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Shells",
+    "Topic :: Terminals",
 ]
 license = {text = "MIT"}
 dependencies = [
