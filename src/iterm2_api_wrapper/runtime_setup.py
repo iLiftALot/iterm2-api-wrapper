@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Unpack
-
+import subprocess
 from iterm2 import app, connection, profile, session, tab, window
 
 from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
@@ -168,10 +168,49 @@ async def setup_iterm(
     )
 
 
+def check_api_enabled():
+    """Check if the Python API is enabled in iTerm2 preferences."""
+    try:
+        result = subprocess.run(
+            ["defaults", "read", "com.googlecode.iterm2", "EnableAPIServer"],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "1"
+    except Exception:
+        return False
+
+
+def enable_api():
+    """Enable the Python API in iTerm2 preferences."""
+    try:
+        subprocess.run(
+            [
+                "defaults",
+                "write",
+                "com.googlecode.iterm2.plist",
+                "EnableAPIServer",
+                "-bool",
+                "true",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
 async def run_iterm_setup(
     connection_instance: connection.Connection, **kwargs: Unpack[iTermSetupKwargs]
 ) -> iTermState:
     """Run iTerm2 setup. This can also be called directly."""
+
+    if not check_api_enabled():
+        raise RuntimeError(
+            "iTerm2 Python API is not enabled. Please enable it in iTerm2 Preferences > General > Magic."
+        )
+
     global_iterm_state: iTermState = await setup_iterm(
         connection_instance=connection_instance, **kwargs
     )
