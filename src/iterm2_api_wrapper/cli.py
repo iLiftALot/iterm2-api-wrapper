@@ -16,14 +16,13 @@ from iterm2_api_wrapper.alert import (
     text_input_alert_handler,
 )
 from iterm2_api_wrapper.client import create_iterm_client
-from iterm2_api_wrapper.mac.platform_macos import maybe_reveal_hotkey_window
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.utils import console
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
 type ActionFn[P, R] = Callable[[P], Coroutine[Any, Any, R]]
-type CoroutineFn[P, R] = Callable[[P], Coroutine[Any, Any, R]]
+type CoroutineFn[P1, *P2, R] = Callable[[P1, *P2], Coroutine[Any, Any, R]]
 
 
 def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop) -> T:
@@ -32,7 +31,7 @@ def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventL
 
 
 def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[str]:
-    functions: dict[str, ActionFn[Any, Any]] = {
+    functions = {
         "send_command": send_command,
         "show_capabilities": show_capabilities,
         "alert": test_alerts,
@@ -132,10 +131,13 @@ async def show_capabilities(state: iTermState) -> None:
         console.log(f"{capability}: {is_supported}")
 
 
-async def send_command(state: iTermState, *commands: str) -> None:
+async def send_command(state: iTermState, command: str, timeout: float = 10.0) -> str:
     """Send a command to the iTerm2 session."""
-    for command in commands:
-        await state.send_command(command)
+    # outputs = []
+    # for command in commands:
+    output = await state.run_command(command, timeout=timeout)
+    # outputs.append(output)
+    return output
 
 
 @app.command()
@@ -195,12 +197,12 @@ def main(
         debug=False,
         new_tab=False,
         select_tab=True,
-        order_window_front=False
+        order_window_front=False,
     ) as client:
         with client.state_manager() as state:
-            maybe_reveal_hotkey_window(is_hotkey=state.is_hotkey_window)
             event_loop = client.loop
-            run_coro(selected_fn(state, *args), event_loop)
+            output = run_coro(selected_fn(state, *args), event_loop)  # ty:ignore[invalid-argument-type]
+            console.print(output)
 
 
 if __name__ == "__main__":
