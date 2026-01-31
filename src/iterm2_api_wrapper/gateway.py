@@ -14,6 +14,12 @@ if TYPE_CHECKING:
     from iterm2_api_wrapper.state import iTermState
 
 
+# Connection protocol for iTerm2's Python API.
+class _Connection(Protocol):
+    @classmethod
+    async def async_create(cls) -> Connection: ...
+
+
 class RefreshableState(Protocol):
     """
     Minimal protocol that `iTermClient` needs from a "state" object.
@@ -62,7 +68,7 @@ def _get_connect_timeout_s() -> float:
 
 
 async def _async_create_connection_with_retry(
-    connection_cls: type[Connection],
+    connection_cls: type[_Connection],
     *,
     timeout_s: float,
     initial_delay_s: float = 0.05,
@@ -140,12 +146,13 @@ class SetupCoroGateway(ITermGateway["iTermState"]):
     still allowing unit tests to supply a fully-fake gateway (no iTerm2 import).
     """
 
-    def __init__(self, setup_coro: Callable[[Connection], Awaitable[iTermState]]) -> None:
+    def __init__(
+        self, setup_coro: Callable[[_Connection], Awaitable[iTermState]]
+    ) -> None:
         self._setup_coro: Callable[..., Awaitable[iTermState]] = setup_coro
 
     async def create_state(self, **kwargs: Any) -> iTermState:
         from iterm2.connection import Connection
-
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
 
         activate_iterm_app()
