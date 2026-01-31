@@ -3,15 +3,20 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from contextlib import (
-    AbstractAsyncContextManager,
-    AbstractContextManager,
-    asynccontextmanager,
-    contextmanager,
-)
+from contextlib import asynccontextmanager, contextmanager
 from threading import Thread
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Generic, Self, Unpack, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Generic,
+    Iterator,
+    Self,
+    Unpack,
+    cast,
+    overload,
+)
 
 from iterm2_api_wrapper.gateway import (
     DefaultITermGateway,
@@ -138,16 +143,8 @@ class iTermClient(Generic[StateT]):
                 # Loop might still have pending callbacks if we couldn't join
                 pass
 
-    @overload
-    def state_manager(
-        self: iTermClient["iTermState"], close: bool = True
-    ) -> AbstractContextManager["iTermState"]: ...
-    @overload
-    def state_manager(
-        self: iTermClient[StateT], close: bool = True
-    ) -> AbstractContextManager[StateT]: ...
     @contextmanager
-    def state_manager(self, close: bool = True):
+    def state_manager(self, close: bool = True) -> Iterator[StateT]:
         """
         Context manager to ensure that the client's state is valid,
         refreshing it if necessary.
@@ -169,16 +166,8 @@ class iTermClient(Generic[StateT]):
             if close:
                 self.close()
 
-    @overload
-    def state_manager_async(
-        self: iTermClient["iTermState"], close: bool = True
-    ) -> AbstractAsyncContextManager["iTermState"]: ...
-    @overload
-    def state_manager_async(
-        self: iTermClient[StateT], close: bool = True
-    ) -> AbstractAsyncContextManager[StateT]: ...
     @asynccontextmanager
-    async def state_manager_async(self, close: bool = True):
+    async def state_manager_async(self, close: bool = True) -> AsyncIterator[StateT]:
         """
         Async context manager to ensure that the client's state is valid,
         refreshing it if necessary.

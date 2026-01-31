@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.pretty import pprint
 
 from iterm2_api_wrapper.client import iTermClient
+from iterm2_api_wrapper.state import iTermState
 
 
 load_dotenv()
@@ -38,18 +39,20 @@ console = Console(record=True, log_path=True, file=log_path.open("a"))
 pp = partial(pprint, console=console, indent_guides=False, expand_all=True)
 
 
-def run_coroutine_threadsafe[T](coro: Coroutine[Any, Any, T], loop: asyncio.AbstractEventLoop) -> T:
+def run_coroutine_threadsafe[T](
+    coro: Coroutine[Any, Any, T], loop: asyncio.AbstractEventLoop
+) -> T:
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     return future.result(timeout=RUN_TIMEOUT)
 
 
 @pytest.fixture(scope="module")
-def integration_client() -> Generator[iTermClient]:
-    with iTermClient(timeout=RUN_TIMEOUT, new_tab=False) as client:
+def integration_client() -> Generator[iTermClient[iTermState]]:
+    with iTermClient[iTermState](timeout=RUN_TIMEOUT, new_tab=False) as client:
         yield client
 
 
-def test_client_run_returns_state(integration_client: iTermClient) -> None:
+def test_client_run_returns_state(integration_client: iTermClient[iTermState]) -> None:
     with integration_client.state_manager(close=False) as state:
         assert state.connection is not None
         assert state.app is not None
@@ -59,13 +62,14 @@ def test_client_run_returns_state(integration_client: iTermClient) -> None:
         assert state.profile is not None
 
 
-def test_client_state_methods(integration_client: iTermClient) -> None:
+def test_client_state_methods(integration_client: iTermClient[iTermState]) -> None:
     with integration_client.state_manager(close=False) as state:
+
         async def get_title() -> str:
-            return await state.get_tab_title()
+            return await state.get_variable("tab", "title")
 
         async def get_cwd() -> str | None:
-            return await state.get_cwd()
+            return await state.get_variable("session", "path")
 
         title = run_coroutine_threadsafe(get_title(), integration_client.loop)
         cwd = run_coroutine_threadsafe(get_cwd(), integration_client.loop)
@@ -75,7 +79,7 @@ def test_client_state_methods(integration_client: iTermClient) -> None:
         pp(f"{cwd=}")
 
 
-def test_client_reuses_connection(integration_client: iTermClient) -> None:
+def test_client_reuses_connection(integration_client: iTermClient[iTermState]) -> None:
     with integration_client.state_manager(close=False) as first_state:
         assert first_state.connection is first_state.connection
 
