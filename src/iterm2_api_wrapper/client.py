@@ -27,7 +27,7 @@ from iterm2_api_wrapper.gateway import (
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.param_types import iTermSetupKwargs
+    from iterm2_api_wrapper.typings import iTermSetupKwargs
     from iterm2_api_wrapper.state import iTermState
 
 

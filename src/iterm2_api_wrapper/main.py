@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from typing import Unpack
 
-from iterm2_api_wrapper.param_types import iTermSetupKwargs
+from iterm2_api_wrapper.typings import iTermSetupKwargs
 from iterm2_api_wrapper.runtime_setup import run_iterm_setup
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.utils import run_until_complete  # , pp

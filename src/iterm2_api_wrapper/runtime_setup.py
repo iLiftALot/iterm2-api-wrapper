@@ -5,7 +5,7 @@ import subprocess
 from iterm2 import app, connection, profile, session, tab, window
 
 from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
-from iterm2_api_wrapper.param_types import iTermSetupKwargs
+from iterm2_api_wrapper.typings import iTermSetupKwargs
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.utils import pp
 
