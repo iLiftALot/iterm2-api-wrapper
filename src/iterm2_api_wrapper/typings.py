@@ -1,4 +1,4 @@
-from typing import Any, Callable, Coroutine, Literal, TypedDict
+from typing import Any, Callable, Coroutine, Literal, TypeAlias, TypedDict
 
 from iterm2 import app, connection, profile, session, tab, window
 
@@ -28,7 +28,9 @@ class iTermStateKwargs(TypedDict, total=True):
     """Whether the current window is a hotkey window."""
 
 
-type SessionVars = Literal[
+VarContext: TypeAlias = Literal["iterm2", "window", "tab", "session", "user"]
+
+SessionVars: TypeAlias = Literal[
     # Session Name
     "autoNameFormat",  # - This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created.
     "autoName",  # - The result of evaluating the autoNameFormat interpolated string. This attempts to match the user's intuition of the what the session's name is.
@@ -76,10 +78,6 @@ type SessionVars = Literal[
     "tmuxWindowPane",  # - In tmux integration, this gives the window pane number.
     "tmuxWindowTitle",  # - If tmux integration is in use, this gives the name of the window title from tmux.
     "tmuxWindowPaneIndex",  # - In tmux integration, this gives the index of the window pane. It corresponds to the pane_index property in tmux.
-    # References to Other Contexts
-    "iterm2",  # - A reference to the variables belonging to the application (i.e., the global context)
-    "tab",  # - A reference to the variables belonging to the tab containing this session.
-    "user",  # - A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information.
     # Other
     "badge",  # - The value of the badge. Note that the user can enter an interpolated string in the UI, but this value contains the string result of evaluating it.
     "id",  # - A unique identifier for the session
@@ -88,7 +86,7 @@ type SessionVars = Literal[
 ]
 """Defined in the context of a session"""
 
-type UserVars = Literal[
+TabVars: TypeAlias = Literal[
     # Tab Context
     "id",  # - The unique identifier for this tab.
     "titleOverrideFormat",  # - An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not).
@@ -97,10 +95,6 @@ type UserVars = Literal[
     "tmuxWindowTitle",  # - In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option.
     "tmuxWindowName",  # - In tmux integration, this is the tmux window name.
     "title",  # - The fully formatted title as it appears in the tab bar.
-    # References to Other Contexts
-    "currentSession",  # - A reference to the context of the active session in this tab.
-    "iterm2",  # - A reference to the variables belonging to the application (i.e., the global context)
-    "window",  # - A reference to the context of the enclosing window
 ]
 """
 The only variables that users may directly control are those in the "user" scope of a session.
@@ -111,14 +105,10 @@ and would be available to Python API scripts. You'd reference it as user.gitBran
 See "Setting User-Defined Variables" in Scripting Fundamentals for details on setting them.
 """
 
-type WindowVars = Literal[
-    # References to Other Contexts
-    "currentTab",  # - A reference to the context of the active tab.
-    "iterm2",  # - A reference to the variables belonging to the application (i.e., the global context)
+WindowVars: TypeAlias = Literal[
     # Window Title
     "titleOverride",  # - The value from evaluating the interpeted string in titleOverrideFormat, if set.
     "titleOverrideFormat",  # - The window's interpolated string title. If not set, the current tab's title is used.
-    "currentTab",  # - The context of the current tab.
     # Other
     "id",  # - The window ID.
     "frame",  # - An array of integers giving the x origin, y origin, width, and height.
@@ -127,7 +117,7 @@ type WindowVars = Literal[
     "isHotkeyWindow",  # - A boolean indicating if this is a hotkey window.
 ]
 
-type GlobalVars = Literal[
+GlobalVars: TypeAlias = Literal[
     "effectiveTheme",  # - A space-delimited list of words describing the OS theme (e.g., "dark", "light highContrast", "dark minimal")
     "localhostName",  # - The best guess of what localhost's hostname is
     "pid",  # - The process ID of the iTerm2 app

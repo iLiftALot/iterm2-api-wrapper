@@ -6,7 +6,7 @@ import asyncio
 import inspect
 from collections.abc import Callable
 from types import FunctionType
-from typing import Annotated, Any, Coroutine
+from typing import Annotated, Any, Concatenate, Coroutine, ParamSpec, TypeVar
 
 import typer
 
@@ -21,8 +21,11 @@ from iterm2_api_wrapper.utils import console
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
-type ActionFn[P, R] = Callable[[P], Coroutine[Any, Any, R]]
-type CoroutineFn[P1, *P2, R] = Callable[[P1, *P2], Coroutine[Any, Any, R]]
+
+T = TypeVar("T")
+P = ParamSpec("P")
+R = TypeVar("R", bound=Any)
+CoroutineFn = Callable[Concatenate[T, ...], Coroutine[Any, Any, R]]
 
 
 def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop) -> T:
@@ -31,7 +34,7 @@ def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventL
 
 
 def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[str]:
-    functions = {
+    functions: dict[str, CoroutineFn[iTermState, Any]] = {
         "send_command": send_command,
         "show_capabilities": show_capabilities,
         "alert": test_alerts,
@@ -42,7 +45,7 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[str]:
     func_name: str | None = ctx.params.get("func_name")
     if not isinstance(func_name, str):
         return []
-    func = functions.get(func_name)
+    func: Callable[..., Any] | None = functions.get(func_name)
     if func is None:
         return []
     sig = inspect.signature(func).parameters
@@ -131,7 +134,7 @@ async def show_capabilities(state: iTermState) -> None:
         console.log(f"{capability}: {is_supported}")
 
 
-async def send_command(state: iTermState, command: str, timeout: float = 10.0) -> str:
+async def send_command(state: iTermState, command: str, timeout: float = 120.0) -> str:
     """Send a command to the iTerm2 session."""
     # outputs = []
     # for command in commands:
@@ -157,13 +160,12 @@ def main(
             ],
         ),
     ],
-    args: Annotated[
-        list[str],
+    *args: Annotated[
+        Any,
         typer.Argument(
-            ...,
             help="Arguments for the function",
             autocompletion=func_to_args_completion,
-            default_factory=list,
+            default_factory=tuple,
         ),
     ],
 ):
@@ -172,12 +174,33 @@ def main(
     console.print(
         f":rocket: [green]Running function:[/green] [bold]{func_name}[/bold]", emoji=True
     )
+
     selected_fn: CoroutineFn[iTermState, Any]
+    fn_args: tuple[Any, ...] = args
     match func_name:
         case "show_capabilities":
             selected_fn = show_capabilities
         case "send_command":
             selected_fn = send_command
+            # send_command expects: state, command (str), timeout (float = 120.0)
+            if not args:
+                console.print(
+                    ":warning: [red]send_command requires at least a command argument[/red]",
+                    emoji=True,
+                )
+                raise typer.Exit(code=1)
+            command = str(args[0])
+            if len(args) > 1:
+                try:
+                    timeout = float(args[1])
+                except (ValueError, TypeError) as e:
+                    console.print(
+                        ":warning: [red]Timeout must be a float[/red]", emoji=True
+                    )
+                    raise typer.Exit(code=1) from e
+                fn_args = (command, timeout)
+            else:
+                fn_args = (command,)
         case "alert":
             selected_fn = test_alerts
         case "text_input_alert":
@@ -201,7 +224,8 @@ def main(
     ) as client:
         with client.state_manager() as state:
             event_loop = client.loop
-            output = run_coro(selected_fn(state, *args), event_loop)  # ty:ignore[invalid-argument-type]
+            output = run_coro(selected_fn(state, *fn_args), event_loop)
+
             console.print(output)
 
 

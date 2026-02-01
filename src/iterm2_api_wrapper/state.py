@@ -6,7 +6,7 @@ import time
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, Callable, Concatenate, Coroutine, Literal
+from typing import Any, Callable, Concatenate, Coroutine, Literal, overload
 import re
 import iterm2
 import uuid
@@ -14,6 +14,13 @@ from iterm2 import app, connection, profile, prompt, screen, session, tab, windo
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
 from iterm2_api_wrapper.utils import pp
+from iterm2_api_wrapper.typings import (
+    VarContext,
+    SessionVars,
+    WindowVars,
+    TabVars,
+    GlobalVars,
+)
 
 
 def _validate_state[**P, T](
@@ -142,20 +149,55 @@ class iTermState:
             return False
         return loop.get_debug()
 
+    async def session_var(self, name: SessionVars) -> str:
+        """Get a session variable."""
+        return await self.get_variable(ctx="session", variable_name=name)
+
+    async def window_var(self, name: WindowVars) -> str:
+        """Get a window variable."""
+        return await self.get_variable(ctx="window", variable_name=name)
+
+    async def tab_var(self, name: TabVars) -> str:
+        """Get a tab variable."""
+        return await self.get_variable(ctx="tab", variable_name=name)
+
+    async def global_var(self, name: GlobalVars) -> str:
+        """Get a global variable."""
+        return await self.get_variable(ctx="iterm2", variable_name=name)
+
+    @overload
     @_validate_state
     async def get_variable(
-        self, ctx: Literal["session", "tab", "window", "global"], variable_name: str
-    ) -> str:
-        """Get a variable from the tab."""
+        self, ctx: Literal["session"], variable_name: SessionVars
+    ) -> str: ...
+    @overload
+    @_validate_state
+    async def get_variable(self, ctx: Literal["tab"], variable_name: TabVars) -> str: ...
+    @overload
+    @_validate_state
+    async def get_variable(
+        self, ctx: Literal["window"], variable_name: WindowVars
+    ) -> str: ...
+    @overload
+    @_validate_state
+    async def get_variable(
+        self, ctx: Literal["iterm2"], variable_name: GlobalVars
+    ) -> str: ...
+    @overload
+    @_validate_state
+    async def get_variable(self, ctx: Literal["user"], variable_name: str) -> str: ...
+    async def get_variable(self, ctx: VarContext, variable_name: str) -> str:
+        """Get a variable from the specified context."""
+
         target: tab.Tab | window.Window | session.Session | app.App
         match ctx:
-            case "session":
+            case "session" | "user":
                 target = self.session
             case "tab":
                 target = self.tab
             case "window":
                 target = self.window
-            case "global":
+            case "iterm2":
                 target = self.app
             case _:
                 raise ValueError(f"Invalid context: {ctx!r}")
