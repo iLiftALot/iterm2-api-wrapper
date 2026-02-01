@@ -13,6 +13,7 @@ from typing import Generator, Literal
 import pytest
 from dotenv import load_dotenv
 from pluggy._result import Result
+from rich.color_triplet import ColorTriplet
 from rich.console import Console, ConsoleRenderable, RichCast
 from rich.panel import Panel
 from rich.table import Table
@@ -154,7 +155,7 @@ def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
 
-def _triplet_to_rgb(color: object) -> tuple[int, int, int]:
+def _triplet_to_rgb(color: ColorTriplet) -> tuple[int, int, int]:
     return (int(color.red), int(color.green), int(color.blue))
 
 
