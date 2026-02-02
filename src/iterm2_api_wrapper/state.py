@@ -2,25 +2,31 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
+import re
 import time
+import uuid
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from functools import wraps
 from typing import Any, Callable, Concatenate, Coroutine, Literal, overload
-import re
+
 import iterm2
-import uuid
-from iterm2 import app, connection, profile, prompt, screen, session, tab, window, util
+from dotenv import load_dotenv
+from iterm2 import app, connection, profile, prompt, screen, session, tab, util, window
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
-from iterm2_api_wrapper.utils import pp
 from iterm2_api_wrapper.typings import (
-    VarContext,
-    SessionVars,
-    WindowVars,
-    TabVars,
     GlobalVars,
+    SessionVars,
+    TabVars,
+    VarContext,
+    WindowVars,
 )
+from iterm2_api_wrapper.utils import pp
+
+
+load_dotenv()
 
 
 def _validate_state[**P, T](
@@ -382,8 +388,7 @@ class iTermState:
         current_path = await self.session_var("path")
         if path and current_path != path:
             await self.session.async_send_text(
-                f"cd '{path}'\r",
-                suppress_broadcast=suppress_broadcast,
+                f"cd '{path}'\r", suppress_broadcast=suppress_broadcast
             )
         await self.session.async_send_text(
             "\x01\x0b" + wrapped + "\r", suppress_broadcast=suppress_broadcast
@@ -445,7 +450,11 @@ class iTermState:
 
     @_validate_state
     async def run_command(
-        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 30.0
+        self,
+        command: str,
+        path: str | None = None,
+        broadcast: bool = False,
+        timeout: float = 10.0,
     ) -> str:
         """Run a command and return its output"""
         suppress = not broadcast
@@ -454,29 +463,49 @@ class iTermState:
             shell_integration_enabled = await self._shell_integration_enabled()
             if not shell_integration_enabled:
                 return await self._run_command_without_shell_integration(
-                    command=command, path=path, suppress_broadcast=suppress, timeout=timeout
+                    command=command,
+                    path=path,
+                    suppress_broadcast=suppress,
+                    timeout=timeout,
                 )
 
-            await self.session.async_send_text(
-                command + "\r", suppress_broadcast=suppress
-            )
-            last_prompt: prompt.Prompt | None = await self._get_prompt()
-            if not last_prompt:
+            async with iterm2.Transaction(self.connection):
+                current_path = await self.session_var("path")
+                if path and current_path != path:
+                    await self.session.async_send_text(
+                        f"cd '{path}'\r", suppress_broadcast=suppress
+                    )
+                await self.session.async_send_text(
+                    command + "\r", suppress_broadcast=suppress
+                )
+                last_prompt: prompt.Prompt | None = await self._get_prompt()
+                if last_prompt is None:
+                    print(
+                        "Could not get last prompt; falling back to non-shell-integration method."
+                    )
+                    return await self._run_command_without_shell_integration(
+                        command=command,
+                        path=path,
+                        suppress_broadcast=suppress,
+                        timeout=timeout,
+                    )
+                task = asyncio.create_task(self._wait_for_prompt(timeout=timeout))
+
+            # Wait for the command to end.
+            result = await task
+            if not result:
+                print("Command timeout; falling back to non-shell-integration method.")
                 return await self._run_command_without_shell_integration(
-                    command=command, path=path, suppress_broadcast=suppress, timeout=timeout
+                    command=command,
+                    path=path,
+                    suppress_broadcast=suppress,
+                    timeout=timeout,
                 )
-
-            if not await self._wait_for_prompt(timeout=timeout):
-                raise TimeoutError("Timeout waiting for command to complete.")
 
             # Re-fetch the prompt for the command we sent to get the output range
-            updated_prompt = await self._get_prompt(getattr(last_prompt, "unique_id", ""))
-            if not updated_prompt:
-                return ""
-            output_range: util.CoordRange = updated_prompt.output_range
-            start_y = output_range.start.y
-            end_y = output_range.end.y
-            return await self._string_in_lines(start_y, end_y)
+            async with iterm2.Transaction(self.connection):
+                content = await self._string_in_lines(last_prompt)
+            return content
 
     async def _get_prompt(self, unique_id: str | None = None) -> None | prompt.Prompt:
         """Get prompt history from the session."""
@@ -487,7 +516,7 @@ class iTermState:
         }
         if unique_id:
             prompt_obj = iterm2.async_get_prompt_by_id
-            call_args["unique_id"] = unique_id
+            call_args["prompt_unique_id"] = unique_id
         else:
             prompt_obj = iterm2.async_get_last_prompt
         last_prompt: None | prompt.Prompt = await prompt_obj(**call_args)
@@ -509,11 +538,24 @@ class iTermState:
         except TimeoutError:
             return False
 
-    async def _string_in_lines(self, start_y: int, end_y: int) -> str:
+    async def _string_in_lines(self, prompt: prompt.Prompt) -> str:
         """Returns a string with the content in a range of lines."""
-        contents = await self.session.async_get_contents(start_y, end_y - start_y)
+        updated_prompt = await self._get_prompt(getattr(prompt, "unique_id", ""))
+        if updated_prompt is None:
+            return ""
+        output_range: util.CoordRange = updated_prompt.output_range
+        cmd_range: util.CoordRange = updated_prompt.command_range
+        start_y = output_range.start.y
+        end_y = output_range.end.y
+        if start_y == 0 and end_y == 0:
+            # output_range not populated; fall back to command_range
+            start_y = max(0, cmd_range.start.y - 3)
+            end_y = cmd_range.end.y
+        contents = await self.session.async_get_contents(start_y, max(1, end_y - start_y))
         result = ""
         for line in contents:
+            if not line.string.strip():
+                continue
             result += line.string
             if line.hard_eol:
                 result += "\n"
@@ -521,10 +563,10 @@ class iTermState:
 
     async def _shell_integration_enabled(self) -> bool:
         """Use shell-integration-only features to check if shell integration is enabled."""
-        username = await self.session.async_get_variable("username")
-        hostname = await self.session.async_get_variable("hostname")
-        last_cmd = await self.session.async_get_variable("lastCommand")
-        return bool(username) and bool(hostname) and bool(last_cmd)
+        shell_integration_enabled = (
+            os.getenv("ITERM_SHELL_INTEGRATION_INSTALLED", "").lower() == "yes"
+        )
+        return shell_integration_enabled
 
     async def _get_terminal_contents(self) -> list[str]:
         """Get the terminal screen contents."""

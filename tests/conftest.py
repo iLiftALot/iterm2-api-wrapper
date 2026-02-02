@@ -131,7 +131,7 @@ def _linkify_text(
     else:
         return obj  # leave rich renderables unchanged
 
-    url_pattern = r'(https?://[^\s\n]+)'
+    url_pattern = r"(https?://[^\s\n]+)"
     s = re.sub(url_pattern, lambda m: f"[link={m.group(1)}]{m.group(1)}[/link]", s)
 
     path_pattern = rf'({re.escape(str(Path.home()))}/[^"\'\n]*)'

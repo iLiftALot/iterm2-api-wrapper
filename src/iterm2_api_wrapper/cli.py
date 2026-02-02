@@ -163,8 +163,7 @@ def main(
     args: Annotated[
         list[str],
         typer.Argument(
-            help="Arguments for the function",
-            autocompletion=func_to_args_completion,
+            help="Arguments for the function", autocompletion=func_to_args_completion
         ),
     ],
 ):
