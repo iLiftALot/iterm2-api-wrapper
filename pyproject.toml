@@ -59,7 +59,7 @@ homepage = "https://github.com/iLiftALot/iterm2-api-wrapper"
 
 [project.scripts]
 iterm2_api_wrapper = "iterm2_api_wrapper.cli:app"
-it2w = "iterm2_api_wrapper.cli:app"
+iterm = "iterm2_api_wrapper.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

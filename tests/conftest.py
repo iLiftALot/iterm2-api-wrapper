@@ -421,7 +421,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Browser to use for opening HTML log file after test session completes.",
         choices=["default", "safari", "chrome", "firefox", "edge", "mozilla"],
         nargs="?",
-        default="default",
+        default="safari" if sys.platform == "darwin" else "default",
         dest="BROWSER",
         action="store",
     )

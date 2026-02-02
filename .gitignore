@@ -21,7 +21,6 @@ venv.bak/
 # Logs
 *.log*
 logs/
-*.lock
 
 # OS files
 .DS_Store
