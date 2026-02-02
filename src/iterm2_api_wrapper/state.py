@@ -568,6 +568,7 @@ class iTermState:
         shell_integration_enabled = (
             os.getenv("ITERM_SHELL_INTEGRATION_INSTALLED", "").lower() == "yes"
         )
+        console.print(f"Shell integration env var: {shell_integration_enabled}")
         return shell_integration_enabled
 
     async def _get_terminal_contents(self) -> list[str]:
