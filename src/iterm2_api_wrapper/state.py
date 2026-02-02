@@ -359,6 +359,7 @@ class iTermState:
         self,
         *,
         command: str,
+        path: str | None = None,
         suppress_broadcast: bool,
         timeout: float,
         tail_probe_lines: int = 300,
@@ -378,6 +379,12 @@ class iTermState:
         end_re = re.compile(rf"{re.escape(end_prefix)}:(?P<status>-?\d+)")
         deadline = time.monotonic() + max(0.0, timeout)
 
+        current_path = await self.session_var("path")
+        if path and current_path != path:
+            await self.session.async_send_text(
+                f"cd '{path}'\r",
+                suppress_broadcast=suppress_broadcast,
+            )
         await self.session.async_send_text(
             "\x01\x0b" + wrapped + "\r", suppress_broadcast=suppress_broadcast
         )
@@ -438,7 +445,7 @@ class iTermState:
 
     @_validate_state
     async def run_command(
-        self, command: str, broadcast: bool = False, timeout: float = 120.0
+        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 120.0
     ) -> str:
         """Run a command and return its output"""
         suppress = not broadcast
@@ -447,7 +454,7 @@ class iTermState:
             shell_integration_enabled = await self._shell_integration_enabled()
             if not shell_integration_enabled:
                 return await self._run_command_without_shell_integration(
-                    command=command, suppress_broadcast=suppress, timeout=timeout
+                    command=command, path=path, suppress_broadcast=suppress, timeout=timeout
                 )
 
             await self.session.async_send_text(
@@ -455,7 +462,10 @@ class iTermState:
             )
             last_prompt: prompt.Prompt | None = await self._get_prompt()
             if not last_prompt:
-                raise RuntimeError("Could not get last prompt.")
+                print("No prompt found after sending command; using fallback execution.")
+                return await self._run_command_without_shell_integration(
+                    command=command, path=path, suppress_broadcast=suppress, timeout=timeout
+                )
 
             if not await self._wait_for_prompt(timeout=timeout):
                 raise TimeoutError("Timeout waiting for command to complete.")

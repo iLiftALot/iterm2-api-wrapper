@@ -138,7 +138,7 @@ async def send_command(state: iTermState, command: str, timeout: float = 120.0) 
     """Send a command to the iTerm2 session."""
     # outputs = []
     # for command in commands:
-    output = await state.run_command(command, timeout=timeout)
+    output = await state.run_command(command, path=None, broadcast=False, timeout=timeout)
     # outputs.append(output)
     return output
 
@@ -160,12 +160,11 @@ def main(
             ],
         ),
     ],
-    *args: Annotated[
-        Any,
+    args: Annotated[
+        list[str],
         typer.Argument(
             help="Arguments for the function",
             autocompletion=func_to_args_completion,
-            default_factory=tuple,
         ),
     ],
 ):
@@ -176,7 +175,7 @@ def main(
     )
 
     selected_fn: CoroutineFn[iTermState, Any]
-    fn_args: tuple[Any, ...] = args
+    fn_args: tuple[Any, ...] = tuple(args)
     match func_name:
         case "show_capabilities":
             selected_fn = show_capabilities
