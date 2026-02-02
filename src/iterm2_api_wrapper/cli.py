@@ -43,7 +43,7 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[s
         "poly_modal_alert": test_poly_modal_alert,
         "all_alerts": test_all_alerts,
     }
-    func_name: str | None = ctx.params.get("func_name")
+    func_name: str = ctx.params.get("func_name", "")
     func: Callable[..., Any] | None = functions.get(func_name)
     if func is None:
         return []
@@ -60,7 +60,7 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[s
     ]
 
 
-def kwarg_conversion(maybe_kwargs: tuple[str, ...]) -> tuple[str, dict[str, str]]:
+def kwarg_conversion(maybe_kwargs: tuple[str, ...]) -> tuple[tuple[Any, ...], dict[str, str]]:
     """Convert a tuple of strings in the form key=value to a dict."""
     kwargs: dict[str, str] = {}
     args = tuple(item for item in maybe_kwargs if "=" not in item)
