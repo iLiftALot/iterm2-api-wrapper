@@ -462,7 +462,6 @@ class iTermState:
             )
             last_prompt: prompt.Prompt | None = await self._get_prompt()
             if not last_prompt:
-                print("No prompt found after sending command; using fallback execution.")
                 return await self._run_command_without_shell_integration(
                     command=command, path=path, suppress_broadcast=suppress, timeout=timeout
                 )
