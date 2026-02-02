@@ -46,9 +46,9 @@ async def _get_window(
     return selected_window
 
 
-async def _get_tab(window: window.Window, profile: profile.Profile) -> tab.Tab:
+async def _get_tab(window: window.Window, profile: profile.Profile, new_tab: bool = False) -> tab.Tab:
     selected_tab: tab.Tab | None = window.current_tab
-    if selected_tab is None:
+    if selected_tab is None or new_tab:
         selected_tab = await window.async_create_tab(profile=profile.name)
 
     assert selected_tab is not None, "Could not get or create iTerm2 tab"
@@ -113,7 +113,7 @@ async def _setup_iterm(
         app_instance, connection_instance, profile_instance
     )
     tab_instance: tab.Tab = await _get_tab(
-        window=window_instance, profile=profile_instance
+        window=window_instance, profile=profile_instance, new_tab=kwargs.get("new_tab", False)
     )
     session_instance: session.Session = await _get_session(tab=tab_instance)
 
