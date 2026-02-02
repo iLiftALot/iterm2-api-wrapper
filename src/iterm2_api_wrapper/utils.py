@@ -1,7 +1,7 @@
 from collections.abc import Callable, Coroutine
 from functools import partial
 from pathlib import Path
-from typing import Any, Concatenate, ParamSpec, TypeVar, overload
+from typing import Any, Concatenate, Literal, ParamSpec, TypeVar, overload
 
 from iterm2 import connection
 from rich.console import Console
@@ -11,8 +11,19 @@ from rich.pretty import pprint
 log_path = Path(__file__).resolve().parents[2] / "logs" / "iterm2_api_wrapper.log"
 log_path.parent.mkdir(parents=True, exist_ok=True)
 log_path.write_text("")  # Clear log file on each run
-console = Console(file=open(log_path, "a"))
-pp = partial(pprint, console=Console(), expand_all=True)
+file_console = Console(
+    file=open(log_path, "a"), log_time=True, log_time_format="%Y-%m-%d %H:%M:%S"
+)
+terminal_console = Console(emoji=True)
+pp = partial(pprint, console=terminal_console, expand_all=True)
+
+
+def log(message: str, *args, mode: Literal["terminal", "file", "all"] = "all", **kwargs) -> None:
+    """Log a message to both the log file and the terminal."""
+    if mode in ("file", "all"):
+        file_console.print(message, *args, **kwargs)
+    if mode in ("terminal", "all"):
+        terminal_console.log(message, *args, **kwargs)
 
 
 P = ParamSpec("P")

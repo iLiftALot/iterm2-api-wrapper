@@ -18,7 +18,7 @@ from iterm2_api_wrapper.alert import (
 )
 from iterm2_api_wrapper.client import create_iterm_client
 from iterm2_api_wrapper.state import iTermState
-from iterm2_api_wrapper.utils import console, pp
+from iterm2_api_wrapper.utils import log
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
@@ -88,8 +88,8 @@ async def test_poly_modal_alert(state: iTermState) -> dict[str, Any]:
         ),
     )
 
-    console.log("Poly Modal Alert Response: \n")
-    console.log(poly_modal_alert)
+    log("Poly Modal Alert Response: \n", mode="terminal")
+    log(poly_modal_alert, mode="terminal")
     return poly_modal_alert
 
 
@@ -103,8 +103,8 @@ async def test_text_input_alert(state: iTermState) -> str | None:
         window_id=state.window.window_id,
     )
 
-    console.log("Text Input Alert Response: \n")
-    console.log(text_input_alert)
+    log("Text Input Alert Response: \n", mode="terminal")
+    log(text_input_alert, mode="terminal")
     return text_input_alert
 
 
@@ -118,8 +118,8 @@ async def test_alerts(state: iTermState) -> int:
         connection=state.connection,
     )
 
-    console.log("Simple Alert Response: \n")
-    console.log(simple_alert)
+    log("Simple Alert Response: \n", mode="terminal")
+    log(simple_alert, mode="terminal")
     return simple_alert
 
 
@@ -130,10 +130,10 @@ async def test_all_alerts(state: iTermState) -> tuple[int, str | None, dict[str,
     text_input_alert = await test_text_input_alert(state)
     poly_modal_alert = await test_poly_modal_alert(state)
 
-    console.log(f"Simple Alert Response: {simple_alert}\n")
-    console.log(f"Text Input Alert Response: {text_input_alert}\n")
-    console.log("Poly Modal Alert Response: \n")
-    console.log(poly_modal_alert)
+    log(f"Simple Alert Response: {simple_alert}\n", mode="terminal")
+    log(f"Text Input Alert Response: {text_input_alert}\n", mode="terminal")
+    log("Poly Modal Alert Response: \n", mode="terminal")
+    log(poly_modal_alert, mode="terminal")
     return (simple_alert, text_input_alert, poly_modal_alert)
 
 
@@ -149,7 +149,7 @@ async def show_capabilities(state: iTermState) -> dict[str, Any]:
         if not isinstance(func, FunctionType):
             continue
         is_supported = func(state.connection)
-        console.log(f"{capability}: {is_supported}")
+        log(f"{capability}: {is_supported}", mode="terminal")
         capabilities[capability] = is_supported
 
     return capabilities
@@ -196,14 +196,16 @@ def main(
 ):
     """Main function - runs the async code."""
 
-    console.print(
-        f":rocket: [green]Running function:[/green] [bold]{func_name}[/bold]", emoji=True
+    log(
+        f":rocket: [green]Running function:[/green] [bold]{func_name}[/bold]",
+        mode="terminal",
+        emoji=True,
     )
 
     selected_fn: CoroutineFn[iTermState, Any]
     # fn_args: tuple[Any, ...] = tuple(args)
     fn_args, fn_kwargs = kwarg_conversion(tuple(args or []))
-    console.print(f"{fn_args=}\n{fn_kwargs=}")
+    log(f"{fn_args=}\n{fn_kwargs=}", mode="terminal")
     match func_name:
         case "show_capabilities":
             selected_fn = show_capabilities
@@ -218,8 +220,10 @@ def main(
         case "all_alerts":
             selected_fn = test_all_alerts
         case _:
-            console.print(
-                f":warning: [red]Unknown function: {func_name}[/red]", emoji=True
+            log(
+                f":warning: [red]Unknown function: {func_name}[/red]",
+                mode="terminal",
+                emoji=True,
             )
             raise typer.Exit(code=1)
 
@@ -233,7 +237,7 @@ def main(
         with client.state_manager() as state:
             event_loop = client.loop
             output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)
-            pp(output)
+            log(output, mode="terminal")
 
 
 if __name__ == "__main__":

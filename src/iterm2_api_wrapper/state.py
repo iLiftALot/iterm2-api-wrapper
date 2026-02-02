@@ -23,7 +23,7 @@ from iterm2_api_wrapper.typings import (
     VarContext,
     WindowVars,
 )
-from iterm2_api_wrapper.utils import console
+from iterm2_api_wrapper.utils import log
 
 
 load_dotenv()
@@ -40,7 +40,7 @@ def _validate_state[**P, T](
             await self.ensure_state()
             return await method(self, *args, **kwargs)
         except (ConnectionClosed, ConnectionClosedError):
-            console.print("Connection closed, refreshing state and retrying...")
+            log("Connection closed, refreshing state and retrying...")
             await self.ensure_state()
             return await method(self, *args, **kwargs)
 
@@ -464,7 +464,7 @@ class iTermState:
         async with self._run_command_lock:
             shell_integration_enabled = await self._shell_integration_enabled()
             if not shell_integration_enabled:
-                console.print(
+                log(
                     "Shell integration not enabled; falling back to non-shell-integration method."
                 )
                 return await self._run_command_without_shell_integration(
@@ -480,29 +480,20 @@ class iTermState:
                 )
                 last_prompt: prompt.Prompt | None = await self._get_prompt()
                 if last_prompt is None:
-                    console.print(
-                        "Could not get last prompt; falling back to non-shell-integration method."
+                    log(
+                        ":warning: Shell integration appears broken; Unable to get last prompt. Exiting..."
                     )
-                    return await self._run_command_without_shell_integration(
-                        command=command,
-                        path=path,
-                        suppress_broadcast=suppress,
-                        timeout=timeout,
-                    )
+                    return "Shell integration appears broken; Unable to get last prompt. Exiting..."
+
                 task = asyncio.create_task(self._wait_for_prompt(timeout=timeout))
 
             # Wait for the command to end.
             result = await task
             if not result:
-                console.print(
-                    "Command timeout; falling back to non-shell-integration method."
+                log(
+                    ":warning: Command timeout; Exiting shell-integration method...",
                 )
-                return await self._run_command_without_shell_integration(
-                    command=command,
-                    path=path,
-                    suppress_broadcast=suppress,
-                    timeout=timeout,
-                )
+                return "Command timeout; Exiting shell-integration method..."
 
             # Re-fetch the prompt for the command we sent to get the output range
             async with iterm2.Transaction(self.connection):
@@ -544,7 +535,8 @@ class iTermState:
         """Returns a string with the content in a range of lines."""
         updated_prompt = await self._get_prompt(getattr(prompt, "unique_id", ""))
         if updated_prompt is None:
-            return ""
+            log(":warning: Unable to get updated prompt; returning empty string.")
+            return "Unable to get updated prompt; returning empty string."
         output_range: util.CoordRange = updated_prompt.output_range
         cmd_range: util.CoordRange = updated_prompt.command_range
         start_y = output_range.start.y
@@ -568,8 +560,8 @@ class iTermState:
         shell_integration_enabled = (
             os.getenv("ITERM_SHELL_INTEGRATION_INSTALLED", "").lower() == "yes"
         )
-        console.print(f"Shell integration env var: {shell_integration_enabled}")
-        return shell_integration_enabled
+        prompt_check = await self._get_prompt()
+        return shell_integration_enabled and prompt_check is not None
 
     async def _get_terminal_contents(self) -> list[str]:
         """Get the terminal screen contents."""
