@@ -445,7 +445,7 @@ class iTermState:
 
     @_validate_state
     async def run_command(
-        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 120.0
+        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 30.0
     ) -> str:
         """Run a command and return its output"""
         suppress = not broadcast
@@ -494,7 +494,7 @@ class iTermState:
         last_prompt: None | prompt.Prompt = await prompt_obj(**call_args)
         return last_prompt
 
-    async def _wait_for_prompt(self, *, timeout: float = 120.0) -> bool:
+    async def _wait_for_prompt(self, *, timeout: float = 30.0) -> bool:
         """Block until the running command terminates. Returns True if command ended, False on timeout."""
         modes = [iterm2.PromptMonitor.Mode.COMMAND_END]
         try:
