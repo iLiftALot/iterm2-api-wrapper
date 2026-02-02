@@ -1,5 +1,6 @@
 from collections.abc import Callable, Coroutine
 from functools import partial
+from pathlib import Path
 from typing import Any, Concatenate, ParamSpec, TypeVar, overload
 
 from iterm2 import connection
@@ -7,8 +8,11 @@ from rich.console import Console
 from rich.pretty import pprint
 
 
-console = Console()
-pp = partial(pprint, console=console, expand_all=True)
+log_path = Path(__file__).resolve().parents[2] / "logs" / "iterm2_api_wrapper.log"
+log_path.parent.mkdir(parents=True, exist_ok=True)
+log_path.write_text("")  # Clear log file on each run
+console = Console(file=open(log_path, "a"))
+pp = partial(pprint, console=Console(), expand_all=True)
 
 
 P = ParamSpec("P")

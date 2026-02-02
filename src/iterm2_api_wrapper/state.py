@@ -23,7 +23,7 @@ from iterm2_api_wrapper.typings import (
     VarContext,
     WindowVars,
 )
-from iterm2_api_wrapper.utils import pp
+from iterm2_api_wrapper.utils import console
 
 
 load_dotenv()
@@ -40,7 +40,7 @@ def _validate_state[**P, T](
             await self.ensure_state()
             return await method(self, *args, **kwargs)
         except (ConnectionClosed, ConnectionClosedError):
-            pp("Connection closed, refreshing state and retrying...")
+            console.print("Connection closed, refreshing state and retrying...")
             await self.ensure_state()
             return await method(self, *args, **kwargs)
 
@@ -385,11 +385,6 @@ class iTermState:
         end_re = re.compile(rf"{re.escape(end_prefix)}:(?P<status>-?\d+)")
         deadline = time.monotonic() + max(0.0, timeout)
 
-        current_path = await self.session_var("path")
-        if path and current_path != path:
-            await self.session.async_send_text(
-                f"cd '{path}'\r", suppress_broadcast=suppress_broadcast
-            )
         await self.session.async_send_text(
             "\x01\x0b" + wrapped + "\r", suppress_broadcast=suppress_broadcast
         )
@@ -416,7 +411,9 @@ class iTermState:
             await asyncio.sleep(min(sleep_s, remaining))
             sleep_s = min(sleep_s * 1.5, 0.5)
 
-        assert end_line is not None
+        assert end_line is not None, (
+            "ERROR: end_line should be set here <_run_command_without_shell_integration>"
+        )
 
         # At this point we have observed the end marker -> command finished.
         # Now find the begin marker by scanning backward from end_line.
@@ -458,10 +455,18 @@ class iTermState:
     ) -> str:
         """Run a command and return its output"""
         suppress = not broadcast
+        current_path = await self.session_var("path")
+        if path and current_path != path:
+            await self.session.async_send_text(
+                f"cd '{path}'\r", suppress_broadcast=suppress
+            )
 
         async with self._run_command_lock:
             shell_integration_enabled = await self._shell_integration_enabled()
             if not shell_integration_enabled:
+                console.print(
+                    "Shell integration not enabled; falling back to non-shell-integration method."
+                )
                 return await self._run_command_without_shell_integration(
                     command=command,
                     path=path,
@@ -470,17 +475,12 @@ class iTermState:
                 )
 
             async with iterm2.Transaction(self.connection):
-                current_path = await self.session_var("path")
-                if path and current_path != path:
-                    await self.session.async_send_text(
-                        f"cd '{path}'\r", suppress_broadcast=suppress
-                    )
                 await self.session.async_send_text(
                     command + "\r", suppress_broadcast=suppress
                 )
                 last_prompt: prompt.Prompt | None = await self._get_prompt()
                 if last_prompt is None:
-                    print(
+                    console.print(
                         "Could not get last prompt; falling back to non-shell-integration method."
                     )
                     return await self._run_command_without_shell_integration(
@@ -494,7 +494,9 @@ class iTermState:
             # Wait for the command to end.
             result = await task
             if not result:
-                print("Command timeout; falling back to non-shell-integration method.")
+                console.print(
+                    "Command timeout; falling back to non-shell-integration method."
+                )
                 return await self._run_command_without_shell_integration(
                     command=command,
                     path=path,
