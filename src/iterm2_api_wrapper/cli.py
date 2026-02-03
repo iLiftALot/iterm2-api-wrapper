@@ -60,7 +60,9 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[s
     ]
 
 
-def kwarg_conversion(maybe_kwargs: tuple[str, ...]) -> tuple[tuple[Any, ...], dict[str, str]]:
+def kwarg_conversion(
+    maybe_kwargs: tuple[str, ...],
+) -> tuple[tuple[Any, ...], dict[str, str]]:
     """Convert a tuple of strings in the form key=value to a dict."""
     kwargs: dict[str, str] = {}
     args = tuple(item for item in maybe_kwargs if "=" not in item)

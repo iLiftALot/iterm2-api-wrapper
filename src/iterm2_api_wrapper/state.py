@@ -490,9 +490,7 @@ class iTermState:
             # Wait for the command to end.
             result = await task
             if not result:
-                log(
-                    ":warning: Command timeout; Exiting shell-integration method...",
-                )
+                log(":warning: Command timeout; Exiting shell-integration method...")
                 return "Command timeout; Exiting shell-integration method..."
 
             # Re-fetch the prompt for the command we sent to get the output range

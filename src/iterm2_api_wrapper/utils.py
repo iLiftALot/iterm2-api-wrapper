@@ -18,7 +18,9 @@ terminal_console = Console(emoji=True)
 pp = partial(pprint, console=terminal_console, expand_all=True)
 
 
-def log(message: object, *args, mode: Literal["terminal", "file", "all"] = "all", **kwargs) -> None:
+def log(
+    message: object, *args, mode: Literal["terminal", "file", "all"] = "all", **kwargs
+) -> None:
     """Log a message to both the log file and the terminal."""
     if mode in ("file", "all"):
         file_console.print(message, *args, **kwargs)
