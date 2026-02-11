@@ -7,7 +7,7 @@ from iterm2_api_wrapper.state import iTermState
 
 
 def test_wrap_with_markers_generates_consistent_tokens() -> None:
-    wrapped, begin, end_prefix = iTermState.wrap_with_markers("echo hello")
+    wrapped, begin, end_prefix = iTermState._wrap_with_markers("echo hello")
 
     assert begin.startswith("__PYTERM_MCP_BEGIN__")
     assert begin.endswith("__")
@@ -27,7 +27,7 @@ def test_wrap_with_markers_is_autopair_safe_and_round_trips_command() -> None:
     # widgets when typed interactively.
     command = "echo $(date) # comment (paren) 'quote'"
 
-    wrapped, begin, end_prefix = iTermState.wrap_with_markers(command)
+    wrapped, begin, end_prefix = iTermState._wrap_with_markers(command)
 
     # Autopair can corrupt injected keystrokes containing `(`; ensure the
     # wrapper itself contains no parentheses at all.

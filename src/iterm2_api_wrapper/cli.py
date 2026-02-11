@@ -7,7 +7,7 @@ import inspect
 from collections.abc import Callable
 from pathlib import Path
 from types import FunctionType
-from typing import Annotated, Any, Concatenate, Coroutine, ParamSpec, TypeVar
+from typing import Annotated, Any, Concatenate, Coroutine # , ParamSpec, TypeVar
 
 import typer
 
@@ -23,10 +23,10 @@ from iterm2_api_wrapper.utils import log
 
 app = typer.Typer(name="iterm2_api_wrapper")
 
-T = TypeVar("T")
-P = ParamSpec("P")
-R = TypeVar("R", bound=Any)
-CoroutineFn = Callable[Concatenate[T, ...], Coroutine[Any, Any, R]]
+# T = TypeVar("T")
+# P = ParamSpec("P")
+# R = TypeVar("R", bound=Any)
+type CoroutineFn[T, R: Any] = Callable[Concatenate[T, ...], Coroutine[Any, Any, R]]
 
 
 def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop) -> T:
@@ -236,10 +236,10 @@ def main(
         select_tab=True,
         order_window_front=False,
     ) as client:
-        with client.state_manager() as state:
-            event_loop = client.loop
-            output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)
-            log(output, mode="terminal")
+        state = client.get_state()
+        event_loop = client.loop
+        output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)
+        log(output, mode="terminal")
 
 
 if __name__ == "__main__":

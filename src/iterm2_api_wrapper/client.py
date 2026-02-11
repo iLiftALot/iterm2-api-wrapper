@@ -3,20 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from contextlib import asynccontextmanager, contextmanager
 from threading import Thread
 from types import TracebackType
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    AsyncIterator,
-    Generic,
-    Iterator,
-    Self,
-    Unpack,
-    cast,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Generic, Self, Unpack, cast, overload
 
 from iterm2_api_wrapper.gateway import (
     DefaultITermGateway,
@@ -27,8 +16,8 @@ from iterm2_api_wrapper.gateway import (
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.typings import iTermSetupKwargs
     from iterm2_api_wrapper.state import iTermState
+    from iterm2_api_wrapper.typings import iTermSetupKwargs
 
 
 class iTermClient(Generic[StateT]):
@@ -108,9 +97,18 @@ class iTermClient(Generic[StateT]):
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
 
+    def _on_client_loop(self) -> bool:
+        """Check if currently running on the client's internal event loop."""
+        try:
+            running = asyncio.get_running_loop()
+            return running is self._loop
+        except RuntimeError:
+            return False
+
     async def _init_async(self) -> StateT:
         state: StateT = await self._gateway.create_state(**self._kwargs)
         state.refresh_callback = self._init_async
+        state._event_loop = self._loop
         return state
 
     async def _refresh_async(self) -> None:
@@ -143,52 +141,6 @@ class iTermClient(Generic[StateT]):
                 # Loop might still have pending callbacks if we couldn't join
                 pass
 
-    @contextmanager
-    def state_manager(self, close: bool = True) -> Iterator[StateT]:
-        """
-        Context manager to ensure that the client's state is valid,
-        refreshing it if necessary.
-
-        Useful when accessing multiple raw state attributes.
-
-        ---
-
-        :param close: Whether to close the client after exiting the context.
-        :type close: ``bool``
-        :default close: ``True``
-        :yield: The current state (``StateT``), refreshed if necessary.
-        :rtype: ``StateT``
-        """
-        state = self.get_state()
-        try:
-            yield state
-        finally:
-            if close:
-                self.close()
-
-    @asynccontextmanager
-    async def state_manager_async(self, close: bool = True) -> AsyncIterator[StateT]:
-        """
-        Async context manager to ensure that the client's state is valid,
-        refreshing it if necessary.
-
-        Useful when accessing multiple raw state attributes.
-
-        ---
-
-        :param close: Whether to close the client after exiting the context.
-        :type close: ``bool``
-        :default close: ``True``
-        :yield: The current state (``StateT``), refreshed if necessary.
-        :rtype: ``StateT``
-        """
-        state = await self.get_state_async()
-        try:
-            yield state
-        finally:
-            if close:
-                self.close()
-
     def get_state(self) -> StateT:
         """
         Ensure that the iTermState is valid, refreshing it if necessary.
@@ -206,14 +158,19 @@ class iTermClient(Generic[StateT]):
         """
         Ensure that the client's state is valid, refreshing it if necessary.
 
-        Only call this method from within the event loop.
+        This method auto-detects the current event loop and routes to the
+        client's internal loop if necessary.
 
         ---
 
         :return: The current iTermState, refreshed if necessary.
         :rtype: ``iTermState``
         """
-        return await self._ensure_state_async()
+        if self._on_client_loop():
+            return await self._ensure_state_async()
+        # We're on a different loop; schedule on the client's loop
+        future = asyncio.run_coroutine_threadsafe(self._ensure_state_async(), self._loop)
+        return await asyncio.get_running_loop().run_in_executor(None, future.result)
 
     def _ensure_state(self) -> StateT:
         """Internal method. Use get_state instead."""
@@ -246,6 +203,18 @@ class iTermClient(Generic[StateT]):
         return self
 
     def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        if not self._loop.is_closed():
+            self.close()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,

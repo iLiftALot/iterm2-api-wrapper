@@ -32,10 +32,22 @@ load_dotenv()
 def _validate_state[**P, T](
     method: Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]],
 ) -> Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]]:
-    """Decorator that validates and refreshes state before method execution."""
+    """Decorator that validates state and auto-routes to the correct event loop."""
 
     @wraps(method)
     async def async_wrapper(self: iTermState, *args: P.args, **kwargs: P.kwargs) -> T:
+        # Auto-route: if we're on the wrong loop, hop to the correct one
+        if not self._on_correct_loop():
+            loop = self.loop
+            if loop is None:
+                raise RuntimeError("No event loop available on connection")
+            future = asyncio.run_coroutine_threadsafe(
+                async_wrapper(self, *args, **kwargs),  # recurse into self on the right loop
+                loop,
+            )
+            return await asyncio.get_running_loop().run_in_executor(None, future.result)
+
+        # We're on the correct loop — validate + execute
         try:
             await self.ensure_state()
             return await method(self, *args, **kwargs)
@@ -67,6 +79,9 @@ class iTermState:
     # refresh_callback is set in client.py after initialization
     refresh_callback: Callable[[], Awaitable[Any]] | None = None
     is_hotkey_window: bool = False
+    _event_loop: asyncio.AbstractEventLoop | None = field(
+        default=None, init=False, repr=False
+    )
     _run_command_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, init=False, repr=False
     )
@@ -91,6 +106,9 @@ class iTermState:
         self.profile = new_state.profile
         self.is_hotkey_window = new_state.is_hotkey_window
         self.refresh_callback = new_state.refresh_callback
+        # Preserve _event_loop from existing state if new_state doesn't have one
+        if new_state._event_loop is not None:
+            self._event_loop = new_state._event_loop
 
     async def ensure_state(
         self,
@@ -108,17 +126,24 @@ class iTermState:
         self.refresh_from(new_state)
 
     async def validated_state(self) -> bool:
-        """Validate state by checking if iTerm2 objects are still active."""
+        """Validate state by checking if iTerm2 objects are still active.
+
+        Checks (in order):
+        1. Websocket connection is open/event loop is available and not closed
+        2. App instance responds
+        3. Session, window, and tab still exist
+        """
         try:
-            # Check connection is alive
+            # Check connection is alive and event loop is usable
             if not self.online:
                 return False
 
             # Check app still responds
-            current_app: None | app.App = await app.async_get_app(
-                self.connection, create_if_needed=False
-            )
-            if current_app is None:
+            if (
+                current_app := await app.async_get_app(
+                    self.connection, create_if_needed=False
+                )
+            ) is None:
                 return False
             self.app = current_app
 
@@ -144,8 +169,20 @@ class iTermState:
 
     @property
     def online(self) -> bool:
-        """Check if connection is online."""
-        return getattr(self.connection.websocket, "open", False)
+        """Check if connection is online and event loop is running.
+
+        Returns False if:
+        - The websocket is not open
+        - The event loop is closed or not set
+        """
+        websocket_open = getattr(self.connection.websocket, "open", False)
+        if not websocket_open:
+            return False
+        # Also check if event loop is still usable
+        loop = self.loop
+        if loop is None or loop.is_closed():
+            return False
+        return True
 
     @property
     def debug(self) -> bool:
@@ -155,19 +192,45 @@ class iTermState:
             return False
         return loop.get_debug()
 
-    async def session_var(self, name: SessionVars) -> str:
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop | None:
+        """Get the event loop associated with this state.
+
+        This is the loop that all iTerm2 API calls must run on.
+        Prefers the explicitly set _event_loop, falling back to connection.loop.
+        """
+        return self._event_loop or self.connection.loop
+
+    def _on_correct_loop(self) -> bool:
+        """Check if the current context is running on the connection's event loop.
+
+        Returns:
+            True if currently on the connection's loop, False otherwise.
+            Also returns False if there's no running loop or no connection loop.
+        """
+        conn_loop = self.loop
+        if conn_loop is None:
+            return False
+        try:
+            current_loop = asyncio.get_running_loop()
+            return current_loop is conn_loop
+        except RuntimeError:
+            # No running loop
+            return False
+
+    async def get_session_var(self, name: SessionVars) -> str:
         """Get a session variable."""
         return await self.get_variable(ctx="session", variable_name=name)
 
-    async def window_var(self, name: WindowVars) -> str:
+    async def get_window_var(self, name: WindowVars) -> str:
         """Get a window variable."""
         return await self.get_variable(ctx="window", variable_name=name)
 
-    async def tab_var(self, name: TabVars) -> str:
+    async def get_tab_var(self, name: TabVars) -> str:
         """Get a tab variable."""
         return await self.get_variable(ctx="tab", variable_name=name)
 
-    async def global_var(self, name: GlobalVars) -> str:
+    async def get_global_var(self, name: GlobalVars) -> str:
         """Get a global variable."""
         return await self.get_variable(ctx="iterm2", variable_name=name)
 
@@ -192,6 +255,7 @@ class iTermState:
     @overload
     @_validate_state
     async def get_variable(self, ctx: Literal["user"], variable_name: str) -> str: ...
+    @_validate_state
     async def get_variable(self, ctx: VarContext, variable_name: str) -> str:
         """Get a variable from the specified context."""
 
@@ -222,7 +286,7 @@ class iTermState:
         return "'" + value.replace("'", "'\"'\"'") + "'"
 
     @staticmethod
-    def wrap_with_markers(command: str) -> tuple[str, str, str]:
+    def _wrap_with_markers(command: str) -> tuple[str, str, str]:
         """Wrap a command with unique begin/end sentinels.
 
         Designed for the "shell integration off" fallback.
@@ -381,7 +445,7 @@ class iTermState:
         not rely on ScreenStreamer notifications (which may not fire reliably
         in all environments).
         """
-        wrapped, begin, end_prefix = self.wrap_with_markers(command)
+        wrapped, begin, end_prefix = self._wrap_with_markers(command)
         end_re = re.compile(rf"{re.escape(end_prefix)}:(?P<status>-?\d+)")
         deadline = time.monotonic() + max(0.0, timeout)
 
@@ -455,7 +519,7 @@ class iTermState:
     ) -> str:
         """Run a command and return its output"""
         suppress = not broadcast
-        current_path = await self.session_var("path")
+        current_path = await self.get_session_var("path")
         if path and current_path != path:
             await self.session.async_send_text(
                 f"cd '{path}'\r", suppress_broadcast=suppress
@@ -581,5 +645,5 @@ class iTermState:
             if hasattr(value, "__dict__")
             else value
             for key, value in self.__dict__.items()
-            if key not in {"refresh_callback", "_run_command_lock"}
+            if key not in {"refresh_callback", "_run_command_lock", "_event_loop"}
         }
