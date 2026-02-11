@@ -1,17 +1,17 @@
-# ruff: noqa: UP046, UP037
 from __future__ import annotations
 
 import asyncio
 import threading
 from threading import Thread
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Generic, Self, Unpack, cast, overload
+from typing import TYPE_CHECKING, Any, Self, Unpack, cast, overload
 
 from iterm2_api_wrapper.gateway import (
     DefaultITermGateway,
     ITermGateway,
     SetupCoroGateway,
-    StateT,
+    RefreshableState,
+    # StateT,
 )
 
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from iterm2_api_wrapper.typings import iTermSetupKwargs
 
 
-class iTermClient(Generic[StateT]):
+class iTermClient[StateT: RefreshableState]:
     @overload
     def __init__(
         self,
@@ -28,7 +28,7 @@ class iTermClient(Generic[StateT]):
         *,
         gateway: None = None,
         timeout: float | None = None,
-        **kwargs: Unpack["iTermSetupKwargs"],
+        **kwargs: Unpack[iTermSetupKwargs],
     ) -> None: ...
     @overload
     def __init__(
@@ -37,7 +37,7 @@ class iTermClient(Generic[StateT]):
         *,
         gateway: None = None,
         timeout: float | None = None,
-        **kwargs: Unpack["iTermSetupKwargs"],
+        **kwargs: Unpack[iTermSetupKwargs],
     ) -> None: ...
     @overload
     def __init__(
@@ -46,7 +46,7 @@ class iTermClient(Generic[StateT]):
         *,
         gateway: ITermGateway[StateT],
         timeout: float | None = None,
-        **kwargs: Unpack["iTermSetupKwargs"],
+        **kwargs: Unpack[iTermSetupKwargs],
     ) -> None: ...
     def __init__(
         self,
@@ -54,7 +54,7 @@ class iTermClient(Generic[StateT]):
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
-        **kwargs: Unpack["iTermSetupKwargs"],
+        **kwargs: Unpack[iTermSetupKwargs],
     ) -> None:
         self._gateway: ITermGateway[StateT]
         if gateway is not None:
@@ -241,7 +241,7 @@ else:
 
 
 def create_iterm_client(
-    *, timeout: float | None = None, **kwargs: Unpack["iTermSetupKwargs"]
+    *, timeout: float | None = None, **kwargs: Unpack[iTermSetupKwargs]
 ) -> ITermClient:
     """
     Convenience factory that provides strong type inference for the default state type.

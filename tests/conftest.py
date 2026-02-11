@@ -8,7 +8,7 @@ import sys
 import time
 import webbrowser
 from pathlib import Path
-from typing import Generator, Literal
+from typing import Any, Generator, Literal
 
 import pytest
 from dotenv import load_dotenv
@@ -159,7 +159,7 @@ def _triplet_to_rgb(color: ColorTriplet) -> tuple[int, int, int]:
     return (int(color.red), int(color.green), int(color.blue))
 
 
-def _iterm_color_to_rgb(color: dict[str, object]) -> tuple[int, int, int] | None:
+def _iterm_color_to_rgb(color: dict[str, Any]) -> tuple[int, int, int] | None:
     try:
         red = float(color.get("Red Component", 0.0))
         green = float(color.get("Green Component", 0.0))
@@ -173,14 +173,14 @@ def _iterm_color_to_rgb(color: dict[str, object]) -> tuple[int, int, int] | None
     return _clamp(red), _clamp(green), _clamp(blue)
 
 
-def _iterm_color_to_hex(color: dict[str, object]) -> str | None:
+def _iterm_color_to_hex(color: dict[str, Any]) -> str | None:
     rgb = _iterm_color_to_rgb(color)
     if rgb is None:
         return None
     return _rgb_to_hex(rgb)
 
 
-def _terminal_theme_from_iterm_dict(data: dict[str, object]) -> TerminalTheme | None:
+def _terminal_theme_from_iterm_dict(data: dict[str, Any]) -> TerminalTheme | None:
     def _get_color(name: str) -> tuple[int, int, int] | None:
         value = data.get(name)
         if not isinstance(value, dict):

@@ -1,6 +1,10 @@
-from typing import Any, Callable, Coroutine, Literal, TypeAlias, TypedDict
+from __future__ import annotations
 
-from iterm2 import app, connection, profile, session, tab, window
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Literal, TypeAlias, TypedDict
+
+
+if TYPE_CHECKING:
+    from iterm2 import app, connection, profile, session, tab, window
 
 
 class iTermSetupKwargs(TypedDict, total=False):
@@ -22,7 +26,7 @@ class iTermStateKwargs(TypedDict, total=True):
     session: session.Session
     profile: profile.Profile
 
-    refresh_callback: Callable[[], Coroutine[Any, Any, "iTermStateKwargs"]] | None
+    refresh_callback: Callable[[], Coroutine[Any, Any, iTermStateKwargs]] | None
     """A callback to refresh the iTermState."""
     is_hotkey_window: bool
     """Whether the current window is a hotkey window."""

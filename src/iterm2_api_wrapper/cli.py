@@ -62,9 +62,9 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[s
 
 def kwarg_conversion(
     maybe_kwargs: tuple[str, ...],
-) -> tuple[tuple[Any, ...], dict[str, str]]:
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
     """Convert a tuple of strings in the form key=value to a dict."""
-    kwargs: dict[str, str] = {}
+    kwargs: dict[str, Any] = {}
     args = tuple(item for item in maybe_kwargs if "=" not in item)
     for item in maybe_kwargs:
         if "=" not in item:
@@ -163,7 +163,7 @@ async def send_command(
     """Send a command to the iTerm2 session."""
     output = await state.run_command(
         command,
-        path=Path(path).expanduser().resolve() if path else None,
+        path=str(Path(path).expanduser().resolve()) if path else None,
         broadcast=False,
         timeout=float(timeout),
     )

@@ -5,7 +5,7 @@ import errno
 import os
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol # , TypeVar
 
 
 if TYPE_CHECKING:
@@ -29,6 +29,7 @@ class RefreshableState(Protocol):
     """
 
     refresh_callback: Callable[[], Awaitable[Any]] | None
+    _event_loop: asyncio.AbstractEventLoop | None
 
     async def ensure_state(
         self,
@@ -37,7 +38,7 @@ class RefreshableState(Protocol):
     def refresh_from(self, new_state: Any) -> None: ...
 
 
-StateT = TypeVar("StateT", bound=RefreshableState, covariant=True)
+# StateT = TypeVar("StateT", bound=RefreshableState, covariant=True)
 
 
 _ENV_CONNECT_TIMEOUT = "ITERM2_CONNECT_TIMEOUT"
@@ -96,7 +97,7 @@ async def _async_create_connection_with_retry(
             delay_s = min(max_delay_s, delay_s * backoff)
 
 
-class ITermGateway(Protocol[StateT]):
+class ITermGateway[StateT: RefreshableState](Protocol):
     """
     Creates a fully-initialized state object.
 
@@ -107,7 +108,7 @@ class ITermGateway(Protocol[StateT]):
     async def create_state(self, **kwargs: Any) -> StateT: ...
 
 
-class DefaultITermGateway(ITermGateway["iTermState"]):
+class DefaultITermGateway(ITermGateway[iTermState]):
     """
     Default gateway that uses the real iTerm2 Python API.
 
@@ -138,7 +139,7 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
         return await run_iterm_setup(conn, **kwargs)
 
 
-class SetupCoroGateway(ITermGateway["iTermState"]):
+class SetupCoroGateway(ITermGateway[iTermState]):
     """
     Gateway that builds state using a provided setup coroutine.
 
