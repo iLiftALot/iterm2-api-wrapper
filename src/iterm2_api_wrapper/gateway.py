@@ -108,7 +108,7 @@ class ITermGateway[StateT: RefreshableState](Protocol):
     async def create_state(self, **kwargs: Any) -> StateT: ...
 
 
-class DefaultITermGateway(ITermGateway[iTermState]):
+class DefaultITermGateway(ITermGateway["iTermState"]):
     """
     Default gateway that uses the real iTerm2 Python API.
 
@@ -139,7 +139,7 @@ class DefaultITermGateway(ITermGateway[iTermState]):
         return await run_iterm_setup(conn, **kwargs)
 
 
-class SetupCoroGateway(ITermGateway[iTermState]):
+class SetupCoroGateway(ITermGateway["iTermState"]):
     """
     Gateway that builds state using a provided setup coroutine.
 

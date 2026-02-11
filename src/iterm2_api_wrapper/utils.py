@@ -1,7 +1,7 @@
 from collections.abc import Callable, Coroutine
 from functools import partial
 from pathlib import Path
-from typing import Any, Concatenate, Literal, ParamSpec, TypeVar, overload
+from typing import Any, Concatenate, Literal, overload  # , ParamSpec, TypeVar,
 
 from iterm2 import connection
 from rich.console import Console
@@ -28,8 +28,8 @@ def log(
         terminal_console.log(message, *args, **kwargs)
 
 
-P = ParamSpec("P")
-T = TypeVar("T")
+# P = ParamSpec("P")
+# T = TypeVar("T")
 
 
 @overload
@@ -42,7 +42,7 @@ def run[T](
 
 
 @overload
-def run(
+def run[T, **P](
     forever: bool,
     coro: Callable[Concatenate[connection.Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
@@ -52,7 +52,7 @@ def run(
 ) -> T: ...
 
 
-def run(
+def run[T, **P](
     forever: bool,
     coro: Callable[Concatenate[connection.Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
@@ -71,7 +71,7 @@ def run(
     return result
 
 
-def run_until_complete(
+def run_until_complete[T, **P](
     coro: Callable[Concatenate[connection.Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
     debug: bool = False,
