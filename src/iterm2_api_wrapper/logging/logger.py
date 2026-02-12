@@ -38,7 +38,7 @@ from .styles import StyleType, LEVEL_PROFILES, GradientHighlighter, LOG_THEME # 
 install_rich_traceback(show_locals=True, width=120)
 
 
-LOG_PATH = Path(__file__).resolve().parents[2] / "logs" / "iterm2_api_wrapper.log"
+LOG_PATH = Path(__file__).resolve().parents[3] / "logs" / "iterm2_api_wrapper.log"
 
 
 class _FileConsoleManager:
