@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import os
 import re
 import time
 import uuid
@@ -23,11 +22,11 @@ from iterm2_api_wrapper.typings import (
     VarContext,
     WindowVars,
 )
-from iterm2_api_wrapper.utils import log
+from iterm2_api_wrapper.logging import PrettyLog
 
 
 load_dotenv()
-
+log = PrettyLog.get_logger(__name__)
 
 def _validate_state[**P, T](
     method: Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]],
@@ -52,7 +51,7 @@ def _validate_state[**P, T](
             await self.ensure_state()
             return await method(self, *args, **kwargs)
         except (ConnectionClosed, ConnectionClosedError):
-            log("Connection closed, refreshing state and retrying...")
+            log.warning("Connection closed, refreshing state and retrying...")
             await self.ensure_state()
             return await method(self, *args, **kwargs)
 
@@ -519,16 +518,16 @@ class iTermState:
     ) -> str:
         """Run a command and return its output"""
         suppress = not broadcast
-        current_path = await self.get_session_var("path")
-        if path and current_path != path:
-            await self.session.async_send_text(
-                f"cd '{path}'\r", suppress_broadcast=suppress
-            )
 
         async with self._run_command_lock:
-            shell_integration_enabled = await self._shell_integration_enabled()
+            current_path = await self.get_session_var("path")
+            if path and current_path != path:
+                await self.session.async_send_text(
+                    f"cd '{path}'\r", suppress_broadcast=suppress
+                )
+            shell_integration_enabled: bool = await self._shell_integration_enabled()
             if not shell_integration_enabled:
-                log(
+                log.warning(
                     "Shell integration not enabled; falling back to non-shell-integration method."
                 )
                 return await self._run_command_without_shell_integration(
@@ -544,17 +543,23 @@ class iTermState:
                 )
                 last_prompt: prompt.Prompt | None = await self._get_prompt()
                 if last_prompt is None:
-                    log(
-                        ":warning: Shell integration appears broken; Unable to get last prompt. Exiting..."
+                    log.warning(
+                        ":warning: Shell integration appears broken (fresh tab?); Unable to get last prompt. "
+                        "Running command without shell integration."
                     )
-                    return "Shell integration appears broken; Unable to get last prompt. Exiting..."
+                    return await self._run_command_without_shell_integration(
+                        command=command,
+                        path=path,
+                        suppress_broadcast=suppress,
+                        timeout=timeout,
+                    )
 
                 task = asyncio.create_task(self._wait_for_prompt(timeout=timeout))
 
             # Wait for the command to end.
             result = await task
             if not result:
-                log(":warning: Command timeout; Exiting shell-integration method...")
+                log.warning(":warning: Command timeout; Exiting shell-integration method...")
                 return "Command timeout; Exiting shell-integration method..."
 
             # Re-fetch the prompt for the command we sent to get the output range
@@ -597,7 +602,7 @@ class iTermState:
         """Returns a string with the content in a range of lines."""
         updated_prompt = await self._get_prompt(getattr(prompt, "unique_id", ""))
         if updated_prompt is None:
-            log(":warning: Unable to get updated prompt; returning empty string.")
+            log.warning(":warning: Unable to get updated prompt; returning empty string.")
             return "Unable to get updated prompt; returning empty string."
         output_range: util.CoordRange = updated_prompt.output_range
         cmd_range: util.CoordRange = updated_prompt.command_range
@@ -617,13 +622,38 @@ class iTermState:
                 result += "\n"
         return result
 
-    async def _shell_integration_enabled(self) -> bool:
+    async def _shell_integration_enabled(self, new_tab_timeout: float = 15.0) -> bool:
         """Use shell-integration-only features to check if shell integration is enabled."""
-        shell_integration_enabled = (
-            os.getenv("ITERM_SHELL_INTEGRATION_INSTALLED", "").lower() == "yes"
+        async def _check_terminal_content():
+            current_terminal_content = [
+                line.strip() for line in await self._get_terminal_contents() if line.strip()
+            ]
+            log.debug(f"Current terminal content for shell integration check: {current_terminal_content}")
+            return current_terminal_content
+
+        terminal_len = len(await _check_terminal_content())
+        if terminal_len < 1:
+            while new_tab_timeout > 0:
+                log.debug(f"Retrying shell integration check due to missing lastCommand ({new_tab_timeout} seconds remaining)...")
+                await asyncio.sleep(5)
+                terminal_len = len(await _check_terminal_content())
+                if terminal_len >= 1:
+                    break
+                return await self._shell_integration_enabled(new_tab_timeout=new_tab_timeout - 3)
+            else:
+                return False
+
+        user_found = (user_var := await self.get_session_var("username")) is not None
+        host_found = (host_var := await self.get_session_var("hostname")) is not None
+        prompt_check = await self._get_prompt() is not None
+
+        log.debug(
+            f"prompt_check={prompt_check}\n"
+            f"user_found={user_found} - user_var={user_var}\n"
+            f"host_found={host_found} - host_var={host_var}\n"
         )
-        prompt_check = await self._get_prompt()
-        return shell_integration_enabled and prompt_check is not None
+
+        return prompt_check and user_found and host_found
 
     async def _get_terminal_contents(self) -> list[str]:
         """Get the terminal screen contents."""

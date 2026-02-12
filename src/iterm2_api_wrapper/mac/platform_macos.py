@@ -3,16 +3,23 @@ from AppKit import (
     NSWorkspace,  # ty:ignore[unresolved-import]
     NSWorkspaceLaunchAndHide,  # ty:ignore[unresolved-import]
 )
-import applescript
 from pathlib import Path
 
+try:
+    import applescript  # type: ignore[import]
 
-def maybe_reveal_hotkey_window(is_hotkey: bool):
-    apple_script = applescript.AppleScript(
-        path=str(Path(__file__).parent / "applescripts" / "iterm_osa.scpt")
-    )
-    result = apple_script.run(is_hotkey)
-    return result
+    def maybe_reveal_hotkey_window(is_hotkey: bool):
+        apple_script = applescript.AppleScript(
+            path=str(Path(__file__).parent / "applescripts" / "iterm_osa.scpt")
+        )
+        result = apple_script.run(is_hotkey)
+        return result
+except ImportError:
+    def maybe_reveal_hotkey_window(is_hotkey: bool):
+        raise ImportError(
+            "The 'applescript' package is required to reveal the hotkey window. "
+            "Install it using 'uv add --extra=applescript'."
+        )
 
 
 def activate_iterm_app() -> None:

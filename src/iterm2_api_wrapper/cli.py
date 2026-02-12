@@ -233,8 +233,6 @@ def main(
         timeout=None,
         debug=False,
         new_tab=False,
-        select_tab=True,
-        order_window_front=False,
     ) as client:
         state = client.get_state()
         event_loop = client.loop

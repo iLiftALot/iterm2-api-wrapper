@@ -10,10 +10,9 @@ if TYPE_CHECKING:
 class iTermSetupKwargs(TypedDict, total=False):
     new_tab: bool
     """Whether to open a new tab for the session."""
-    select_tab: bool
-    """Whether the tab this session is in should be selected."""
-    order_window_front: bool
-    """Whether the window this session is in should be brought to the front and given keyboard focus."""
+    dedicated_profile_name: str | None
+    """If provided, the name of the profile to use for the session.
+        If not provided, the current profile will be used."""
     debug: bool
     """Whether to enable debug logging."""
 
