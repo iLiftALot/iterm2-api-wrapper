@@ -24,8 +24,8 @@ log = PrettyLog(
 )
 
 
-from .client import create_iterm_client
+from .client import create_iterm_client, get_shared_client
 from .state import iTermState
 
 
-__all__ = ["create_iterm_client", "iTermState"]
+__all__ = ["create_iterm_client", "get_shared_client", "iTermState"]

@@ -4,63 +4,79 @@ import asyncio
 import threading
 from threading import Thread
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Self, Unpack, cast, overload
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Self, Unpack, cast # , overload
 
 from iterm2_api_wrapper.gateway import (
     DefaultITermGateway,
     ITermGateway,
-    SetupCoroGateway,
     RefreshableState,
     # StateT,
+    SetupCoroGateway,
 )
 
 
 if TYPE_CHECKING:
     from iterm2_api_wrapper.state import iTermState
     from iterm2_api_wrapper.typings import iTermSetupKwargs
+    from iterm2.connection import Connection
 
 
 class iTermClient[StateT: RefreshableState]:
-    @overload
+    # @overload
+    # def __init__(
+    #     self,
+    #     coro: None = None,
+    #     *,
+    #     gateway: None = None,
+    #     timeout: float | None = None,
+    #     **kwargs: Unpack[iTermSetupKwargs],
+    # ) -> None: ...
+    # @overload
+    # def __init__(
+    #     self,
+    #     coro: Any,
+    #     *,
+    #     gateway: None = None,
+    #     timeout: float | None = None,
+    #     **kwargs: Unpack[iTermSetupKwargs],
+    # ) -> None: ...
+    # @overload
+    # def __init__(
+    #     self,
+    #     coro: None = None,
+    #     *,
+    #     gateway: ITermGateway[StateT],
+    #     timeout: float | None = None,
+    #     **kwargs: Unpack[iTermSetupKwargs],
+    # ) -> None: ...
     def __init__(
         self,
-        coro: None = None,
-        *,
-        gateway: None = None,
-        timeout: float | None = None,
-        **kwargs: Unpack[iTermSetupKwargs],
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        coro: Any,
-        *,
-        gateway: None = None,
-        timeout: float | None = None,
-        **kwargs: Unpack[iTermSetupKwargs],
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        coro: None = None,
-        *,
-        gateway: ITermGateway[StateT],
-        timeout: float | None = None,
-        **kwargs: Unpack[iTermSetupKwargs],
-    ) -> None: ...
-    def __init__(
-        self,
-        coro: Any = None,
+        coro: Callable[[Connection], Awaitable[iTermState]] | None = None,
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
         **kwargs: Unpack[iTermSetupKwargs],
     ) -> None:
-        self._gateway: ITermGateway[StateT]
+        self._setup(coro=coro, gateway=gateway, timeout=timeout, **kwargs)
+        self._state: StateT = asyncio.run_coroutine_threadsafe(
+            self._init_async(), self._loop
+        ).result(timeout=self._timeout)
+
+    def _setup(
+        self,
+        # coro: Any = None,
+        coro: Callable[[Connection], Awaitable[iTermState]] | None = None,
+        *,
+        gateway: ITermGateway[StateT] | None = None,
+        timeout: float | None = None,
+        **kwargs: Unpack[iTermSetupKwargs],
+    ) -> None:
+        """Non-blocking initialization of loop, thread, and gateway."""
         if gateway is not None:
             self._gateway = gateway
         elif coro is not None:
-            self._gateway = cast(ITermGateway[StateT], SetupCoroGateway(coro))
+            self._gateway = SetupCoroGateway(coro)
+            # self._gateway = cast(ITermGateway[StateT], SetupCoroGateway(coro))
         else:
             self._gateway = cast(ITermGateway[StateT], DefaultITermGateway())
 
@@ -70,9 +86,19 @@ class iTermClient[StateT: RefreshableState]:
         self._thread = Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         self._lock = asyncio.Lock()
-        self._state: StateT = asyncio.run_coroutine_threadsafe(
-            self._init_async(), self._loop
-        ).result(timeout=self._timeout)
+
+    @classmethod
+    async def create(
+        cls, *, timeout: float | None = None, **kwargs: Unpack[iTermSetupKwargs]
+    ) -> Self:
+        """Async factory — never blocks the calling event loop."""
+        instance = object.__new__(cls)
+        instance._setup(timeout=timeout, **kwargs)
+        future = asyncio.run_coroutine_threadsafe(instance._init_async(), instance._loop)
+        instance._state = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: future.result(timeout=timeout)
+        )
+        return instance
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
@@ -251,3 +277,19 @@ def create_iterm_client(
     explicit annotation at the call site.
     """
     return iTermClient(timeout=timeout, **kwargs)
+
+
+_shared_client: ITermClient | None = None
+_shared_lock = asyncio.Lock()
+
+
+async def get_shared_client(**kwargs: Unpack[iTermSetupKwargs]) -> ITermClient:
+    """Async singleton — creates client on first call, returns cached instance thereafter."""
+    global _shared_client
+    if _shared_client is not None:
+        return _shared_client
+    async with _shared_lock:
+        if _shared_client is not None:
+            return _shared_client
+        _shared_client = await iTermClient.create(**kwargs)
+        return _shared_client
