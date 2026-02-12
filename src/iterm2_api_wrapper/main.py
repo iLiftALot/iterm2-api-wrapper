@@ -1,9 +1,9 @@
 import sys
 from typing import Unpack
 
-from iterm2_api_wrapper.typings import iTermSetupKwargs
 from iterm2_api_wrapper.runtime_setup import run_iterm_setup
 from iterm2_api_wrapper.state import iTermState
+from iterm2_api_wrapper.typings import iTermSetupKwargs
 from iterm2_api_wrapper.utils import run_until_complete  # , pp
 
 
@@ -16,6 +16,4 @@ def init(retry: bool, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
 
 if __name__ == "__main__":
     debug = "--debug" in sys.argv[1:]
-    global_state: iTermState = init(
-        retry=True, debug=debug, new_tab=False, select_tab=True, order_window_front=False
-    )
+    global_state: iTermState = init(retry=True, debug=debug, new_tab=False)

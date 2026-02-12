@@ -11,7 +11,7 @@ from rich.text import Text
 from rich.theme import Theme
 
 
-type StyleAttribute = Literal[
+StyleAttribute = Literal[
     "dim",
     "d",
     "bold",
@@ -427,14 +427,7 @@ type ColorName = Literal[
 ]
 
 
-class ColorType(NamedTuple):
-    """Structured color information for log styling."""
-
-    color: ColorName | None
-    bgcolor: ColorName | None
-
-
-type ColorLike = ColorType | Color | ColorName | str
+type ColorLike = Color | ColorName | str
 
 
 class StyleType(NamedTuple):
@@ -452,9 +445,6 @@ type StyleLike = ThemeStyle | StyleType | Style | str
 
 
 def _to_triplet(color: ColorLike) -> ColorTriplet:
-    if isinstance(color, ColorType):
-        # use foreground for gradients
-        return Color.parse(color.color or "white").get_truecolor()
     if isinstance(color, Color):
         return color.get_truecolor()
     # string like "red" or "#ff00aa"
@@ -539,27 +529,27 @@ class LevelStyleProfile:
 LEVEL_PROFILES: dict[str, LevelStyleProfile] = {
     "DEBUG": LevelStyleProfile(
         base="logging.level.debug",
-        gradient=("#334155", "#64748b", "#94a3b8"),
+        gradient=("#A809F2", "#0dccf6", "#10fabc"),
         highlighter=CompositeHighlighter(LogRegexHighlighter()),
     ),
     "INFO": LevelStyleProfile(
         base="logging.level.info",
-        gradient=("#14b8a6", "#3b82f6"),
+        gradient=("#0cf943", "#85f819"),
         highlighter=CompositeHighlighter(LogRegexHighlighter()),
     ),
     "WARNING": LevelStyleProfile(
         base="logging.level.warning",
-        gradient=("#f59e0b", "#f97316"),
+        gradient=("#ff9500", "#ebe707"),
         highlighter=CompositeHighlighter(LogRegexHighlighter()),
     ),
     "ERROR": LevelStyleProfile(
         base="logging.level.error",
-        gradient=("#ef4444", "#f43f5e"),
+        gradient=("#fb0b0b", "#f43f7e"),
         highlighter=CompositeHighlighter(LogRegexHighlighter()),
     ),
     "CRITICAL": LevelStyleProfile(
         base="logging.level.error",
-        gradient=("#ef4444", "#fde047"),
+        gradient=("#c70f0f", "#8ae907"),
         highlighter=CompositeHighlighter(LogRegexHighlighter()),
     ),
 }

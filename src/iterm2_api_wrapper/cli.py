@@ -7,7 +7,7 @@ import inspect
 from collections.abc import Callable
 from pathlib import Path
 from types import FunctionType
-from typing import Annotated, Any, Concatenate, Coroutine # , ParamSpec, TypeVar
+from typing import Annotated, Any, Concatenate, Coroutine
 
 import typer
 
@@ -18,14 +18,11 @@ from iterm2_api_wrapper.alert import (
 )
 from iterm2_api_wrapper.client import create_iterm_client
 from iterm2_api_wrapper.state import iTermState
-from iterm2_api_wrapper.utils import log
+from iterm2_api_wrapper.logging import PrettyLog
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
-
-# T = TypeVar("T")
-# P = ParamSpec("P")
-# R = TypeVar("R", bound=Any)
+log = PrettyLog(__name__)
 type CoroutineFn[T, R: Any] = Callable[Concatenate[T, ...], Coroutine[Any, Any, R]]
 
 
@@ -90,8 +87,8 @@ async def test_poly_modal_alert(state: iTermState) -> dict[str, Any]:
         ),
     )
 
-    log("Poly Modal Alert Response: \n", mode="terminal")
-    log(poly_modal_alert, mode="terminal")
+    log.info("Poly Modal Alert Response: \n", mode="terminal")
+    log.info(poly_modal_alert, mode="terminal")
     return poly_modal_alert
 
 
@@ -105,8 +102,8 @@ async def test_text_input_alert(state: iTermState) -> str | None:
         window_id=state.window.window_id,
     )
 
-    log("Text Input Alert Response: \n", mode="terminal")
-    log(text_input_alert, mode="terminal")
+    log.info("Text Input Alert Response: \n", mode="terminal")
+    log.info(text_input_alert, mode="terminal")
     return text_input_alert
 
 
@@ -120,8 +117,8 @@ async def test_alerts(state: iTermState) -> int:
         connection=state.connection,
     )
 
-    log("Simple Alert Response: \n", mode="terminal")
-    log(simple_alert, mode="terminal")
+    log.info("Simple Alert Response: \n", mode="terminal")
+    log.info(simple_alert, mode="terminal")
     return simple_alert
 
 
@@ -132,10 +129,10 @@ async def test_all_alerts(state: iTermState) -> tuple[int, str | None, dict[str,
     text_input_alert = await test_text_input_alert(state)
     poly_modal_alert = await test_poly_modal_alert(state)
 
-    log(f"Simple Alert Response: {simple_alert}\n", mode="terminal")
-    log(f"Text Input Alert Response: {text_input_alert}\n", mode="terminal")
-    log("Poly Modal Alert Response: \n", mode="terminal")
-    log(poly_modal_alert, mode="terminal")
+    log.info(f"Simple Alert Response: {simple_alert}\n", mode="terminal")
+    log.info(f"Text Input Alert Response: {text_input_alert}\n", mode="terminal")
+    log.info("Poly Modal Alert Response: \n", mode="terminal")
+    log.info(poly_modal_alert, mode="terminal")
     return (simple_alert, text_input_alert, poly_modal_alert)
 
 
@@ -151,7 +148,7 @@ async def show_capabilities(state: iTermState) -> dict[str, Any]:
         if not isinstance(func, FunctionType):
             continue
         is_supported = func(state.connection)
-        log(f"{capability}: {is_supported}", mode="terminal")
+        log.info(f"{capability}: {is_supported}", mode="terminal")
         capabilities[capability] = is_supported
 
     return capabilities
@@ -198,7 +195,7 @@ def main(
 ):
     """Main function - runs the async code."""
 
-    log(
+    log.info(
         f":rocket: [green]Running function:[/green] [bold]{func_name}[/bold]",
         mode="terminal",
         emoji=True,
@@ -207,7 +204,7 @@ def main(
     selected_fn: CoroutineFn[iTermState, Any]
     # fn_args: tuple[Any, ...] = tuple(args)
     fn_args, fn_kwargs = kwarg_conversion(tuple(args or []))
-    log(f"{fn_args=}\n{fn_kwargs=}", mode="terminal")
+    log.info(f"{fn_args=}\n{fn_kwargs=}", mode="terminal")
     match func_name:
         case "show_capabilities":
             selected_fn = show_capabilities
@@ -222,7 +219,7 @@ def main(
         case "all_alerts":
             selected_fn = test_all_alerts
         case _:
-            log(
+            log.info(
                 f":warning: [red]Unknown function: {func_name}[/red]",
                 mode="terminal",
                 emoji=True,
@@ -237,7 +234,7 @@ def main(
         state = client.get_state()
         event_loop = client.loop
         output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)
-        log(output, mode="terminal")
+        log.info(output, mode="terminal")
 
 
 if __name__ == "__main__":

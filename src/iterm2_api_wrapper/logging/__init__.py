@@ -6,7 +6,7 @@ from .config import (
     get_default_log_config,
 )
 from .logger import PrettyLog, pp
-from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleType
+from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleType, ThemeStyle
 
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "LogConfig",
     "PrettyLog",
     "StyleType",
+    "ThemeStyle",
     "get_default_log_config",
     "pp",
 ]

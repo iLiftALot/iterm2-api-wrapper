@@ -358,7 +358,6 @@ class PrettyLog:
         *,
         level: LogLevelLike | None = None,
         mode: Literal["terminal", "file", "all"] | None = None,
-        stack_offset: int | None = None,
         pretty_config: AllLogConfig | None = None,
     ) -> PrettyLog:
         """Retrieve a logger by name, or create one inheriting from the closest ancestor.

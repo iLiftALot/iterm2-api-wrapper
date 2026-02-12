@@ -160,7 +160,7 @@ def get_default_log_config() -> AllLogConfig:
             sep=" ",
             end="\n",
             style=None,
-            justify=None,
+            justify="left",
             overflow=None,
             no_wrap=None,
             emoji=None,
@@ -169,14 +169,14 @@ def get_default_log_config() -> AllLogConfig:
             log_locals=False,
             width=None,
             height=None,
-            crop=True,
+            crop=False,
             soft_wrap=None,
             new_line_start=True,
         ),
         file_manager_config=FileManagerConfig(clear_file_on_init=True),
         terminal_console_config=ConsoleConfig(
             color_system="auto",
-            force_terminal=False,
+            force_terminal=True,
             force_jupyter=False,
             force_interactive=False,
             soft_wrap=False,
@@ -192,7 +192,7 @@ def get_default_log_config() -> AllLogConfig:
             record=False,
             markup=True,
             emoji=True,
-            emoji_variant=None,
+            emoji_variant="text",
             highlight=True,
             log_time=True,
             log_path=True,
@@ -203,19 +203,19 @@ def get_default_log_config() -> AllLogConfig:
             force_jupyter=False,
             force_interactive=False,
             soft_wrap=False,
-            theme=LOG_THEME,
+            theme=None,
             stderr=False,
             file=None,  # Set to actual file in PrettyLog initialization
             quiet=False,
             width=None,
             height=None,
             style=None,
-            no_color=True,  # Disable color in file output by default
+            no_color=None,  # Disable color in file output by default
             tab_size=4,
             record=False,  # Disable rich's internal recording since we're managing it ourselves
             markup=False,  # Disable markup in file output by default
-            emoji=True,  # Keep emojis in file output
-            emoji_variant=None,
+            emoji=True,  # Keep emojis in file output by default
+            emoji_variant="text",
             highlight=False,  # Disable automatic highlighting in file output by default
         ),
     )

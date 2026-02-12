@@ -4,54 +4,26 @@ import asyncio
 import threading
 from threading import Thread
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Self, Unpack, cast # , overload
+from typing import TYPE_CHECKING, Awaitable, Callable, Self, Unpack, cast
 
 from iterm2_api_wrapper.gateway import (
     DefaultITermGateway,
     ITermGateway,
     RefreshableState,
-    # StateT,
     SetupCoroGateway,
+    _Connection,
 )
 
 
 if TYPE_CHECKING:
     from iterm2_api_wrapper.state import iTermState
     from iterm2_api_wrapper.typings import iTermSetupKwargs
-    from iterm2.connection import Connection
 
 
 class iTermClient[StateT: RefreshableState]:
-    # @overload
-    # def __init__(
-    #     self,
-    #     coro: None = None,
-    #     *,
-    #     gateway: None = None,
-    #     timeout: float | None = None,
-    #     **kwargs: Unpack[iTermSetupKwargs],
-    # ) -> None: ...
-    # @overload
-    # def __init__(
-    #     self,
-    #     coro: Any,
-    #     *,
-    #     gateway: None = None,
-    #     timeout: float | None = None,
-    #     **kwargs: Unpack[iTermSetupKwargs],
-    # ) -> None: ...
-    # @overload
-    # def __init__(
-    #     self,
-    #     coro: None = None,
-    #     *,
-    #     gateway: ITermGateway[StateT],
-    #     timeout: float | None = None,
-    #     **kwargs: Unpack[iTermSetupKwargs],
-    # ) -> None: ...
     def __init__(
         self,
-        coro: Callable[[Connection], Awaitable[iTermState]] | None = None,
+        coro: Callable[[_Connection], Awaitable[iTermState]] | None = None,
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
@@ -64,8 +36,7 @@ class iTermClient[StateT: RefreshableState]:
 
     def _setup(
         self,
-        # coro: Any = None,
-        coro: Callable[[Connection], Awaitable[iTermState]] | None = None,
+        coro: Callable[[_Connection], Awaitable[iTermState]] | None = None,
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
@@ -75,8 +46,7 @@ class iTermClient[StateT: RefreshableState]:
         if gateway is not None:
             self._gateway = gateway
         elif coro is not None:
-            self._gateway = SetupCoroGateway(coro)
-            # self._gateway = cast(ITermGateway[StateT], SetupCoroGateway(coro))
+            self._gateway = cast(ITermGateway[StateT], SetupCoroGateway(coro))
         else:
             self._gateway = cast(ITermGateway[StateT], DefaultITermGateway())
 
