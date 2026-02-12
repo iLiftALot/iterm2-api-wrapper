@@ -7,7 +7,7 @@ __email__ = "nickcorbin17@yahoo.com"
 
 from dotenv import load_dotenv
 
-from .logging import PrettyLog
+from .logging import PrettyLog, get_default_log_config
 
 
 load_dotenv(override=True)
@@ -15,12 +15,7 @@ log = PrettyLog(
     __package__,
     mode="all",
     level="DEBUG",
-    pretty_config={
-        "file_console_config": {"emoji": True, "tab_size": 4},
-        "logger_config": {"justify": "left"},
-        "terminal_console_config": {"emoji": True, "tab_size": 4},
-        "file_manager_config": {"clear_file_on_init": True},
-    },
+    pretty_config=get_default_log_config()
 )
 
 

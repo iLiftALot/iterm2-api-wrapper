@@ -86,10 +86,6 @@ async def _get_tab_with_session(
         profile_name = (await current_session.async_get_profile()).name
         backup_profile_name = await current_session.async_get_variable("profileName")
         session_name = current_session.name
-        log.debug(
-            f"Checking tab session '{session_name}' w/ profile '{profile_name}' against desired profile '{profile.name}' - "
-            f"backup_profile_name='{backup_profile_name}'"
-        )
         if profile.name in [profile_name, backup_profile_name]:
             log.debug(f"Found matching tab with session '{session_name}' and profile '{profile_name}'")
             return t, current_session

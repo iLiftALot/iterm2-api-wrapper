@@ -3,7 +3,7 @@ from typing import Any, Callable, Literal, TypedDict
 
 from rich.console import JustifyMethod, OverflowMethod
 
-from .styles import StyleLike
+from .styles import StyleLike, LOG_THEME
 
 
 class _LogLevel(IntEnum):
@@ -146,8 +146,76 @@ class AllLogConfig(TypedDict, total=False):
     logger_config: LogConfig
     """Per-call rendering settings (style, markup, highlighting, etc.)."""
     file_manager_config: FileManagerConfig
-    """ File lifecycle behavior (e.g., clear/truncate on init)."""
+    """File lifecycle behavior (e.g., clear/truncate on init)."""
     terminal_console_config: ConsoleConfig
     """Rich Console settings for terminal output."""
     file_console_config: ConsoleConfig
     """Rich Console settings for file output."""
+
+
+def get_default_log_config() -> AllLogConfig:
+    """Return the default log configuration."""
+    return AllLogConfig(
+        logger_config=LogConfig(
+            sep=" ",
+            end="\n",
+            style=None,
+            justify=None,
+            overflow=None,
+            no_wrap=None,
+            emoji=None,
+            markup=None,
+            highlight=None,
+            log_locals=False,
+            width=None,
+            height=None,
+            crop=True,
+            soft_wrap=None,
+            new_line_start=True,
+        ),
+        file_manager_config=FileManagerConfig(clear_file_on_init=True),
+        terminal_console_config=ConsoleConfig(
+            color_system="auto",
+            force_terminal=False,
+            force_jupyter=False,
+            force_interactive=False,
+            soft_wrap=False,
+            theme=LOG_THEME,
+            stderr=False,
+            file=None,
+            quiet=False,
+            width=None,
+            height=None,
+            style=None,
+            no_color=None,
+            tab_size=4,
+            record=False,
+            markup=True,
+            emoji=True,
+            emoji_variant=None,
+            highlight=True,
+            log_time=True,
+            log_path=True,
+        ),
+        file_console_config=ConsoleConfig(
+            color_system="auto",
+            force_terminal=False,
+            force_jupyter=False,
+            force_interactive=False,
+            soft_wrap=False,
+            theme=LOG_THEME,
+            stderr=False,
+            file=None,  # Set to actual file in PrettyLog initialization
+            quiet=False,
+            width=None,
+            height=None,
+            style=None,
+            no_color=True,  # Disable color in file output by default
+            tab_size=4,
+            record=False,  # Disable rich's internal recording since we're managing it ourselves
+            markup=False,  # Disable markup in file output by default
+            emoji=True,  # Keep emojis in file output
+            emoji_variant=None,
+            highlight=False,  # Disable automatic highlighting in file output by default
+        ),
+    )
