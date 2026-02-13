@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from iterm2 import app, connection, profile, prompt, screen, session, tab, util, window
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
+from iterm2_api_wrapper.logging import PrettyLog
 from iterm2_api_wrapper.typings import (
     GlobalVars,
     SessionVars,
@@ -22,11 +23,11 @@ from iterm2_api_wrapper.typings import (
     VarContext,
     WindowVars,
 )
-from iterm2_api_wrapper.logging import PrettyLog
 
 
 load_dotenv()
 log = PrettyLog.get_logger(__name__)
+
 
 def _validate_state[**P, T](
     method: Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]],
@@ -41,7 +42,9 @@ def _validate_state[**P, T](
             if loop is None:
                 raise RuntimeError("No event loop available on connection")
             future = asyncio.run_coroutine_threadsafe(
-                async_wrapper(self, *args, **kwargs),  # recurse into self on the right loop
+                async_wrapper(
+                    self, *args, **kwargs
+                ),  # recurse into self on the right loop
                 loop,
             )
             return await asyncio.get_running_loop().run_in_executor(None, future.result)
@@ -294,22 +297,22 @@ class iTermState:
         - The *contiguous* marker strings we search for do NOT appear in the
           echoed command line because the token is passed as a separate printf
           argument. This prevents false positives when scanning scrollback.
-                - We preserve the interactive shell's `$?` by ensuring the *final*
-                    command in the wrapper exits with the user's command status. We do
-                    this by running the user's command via `eval` inside an `if`, and
-                    then using a tiny `sh -c ...; exit "$1"` trampoline to both print
-                    the END marker and exit with that status.
-                - We deliberately avoid wrapping the whole thing in a subshell like
-                    `( ... )` because some interactive zsh configurations auto-insert a
-                    matching `)` when `(` is typed (autopair widgets), producing invalid
-                    syntax.
-                - To avoid autopair widgets corrupting *the user's command text* (e.g.
-                    commands containing `(`), we base64-encode the command and decode it
-                    at runtime. This keeps the injected keystream free of `(` characters.
+            - We preserve the interactive shell's `$?` by ensuring the *final*
+                command in the wrapper exits with the user's command status. We do
+                this by running the user's command via `eval` inside an `if`, and
+                then using a tiny `sh -c ...; exit "$1"` trampoline to both print
+                the END marker and exit with that status.
+            - We deliberately avoid wrapping the whole thing in a subshell like
+                `( ... )` because some interactive zsh configurations auto-insert a
+                matching `)` when `(` is typed (autopair widgets), producing invalid
+                syntax.
+            - To avoid autopair widgets corrupting *the user's command text* (e.g.
+                commands containing `(`), we base64-encode the command and decode it
+                at runtime. This keeps the injected keystream free of `(` characters.
         """
 
         token = uuid.uuid4().hex[:12]
-        begin = f"__PYTERM_MCP_BEGIN__{token}__"
+        begin_prefix = f"__PYTERM_MCP_BEGIN__{token}__"
         end_prefix = f"__PYTERM_MCP_END__{token}__"
 
         # NOTE: We base64-encode the user command before injecting it.
@@ -334,16 +337,15 @@ class iTermState:
             f'command sh -c \'printf "%s%s:%d\\n" "__PYTERM_MCP_END__" '
             f'"{token}__" "$1"; exit "$1"\' sh'
         )
-
         wrapped = (
-            f'printf "%s%s\\n" "__PYTERM_MCP_BEGIN__" "{token}__"; '
+            f'printf "%s%s\\n%s\\n" "__PYTERM_MCP_BEGIN__" "{token}__" ">>> {command}"; '
             f"if eval \"`printf '%s' {cmd_b64_literal} | base64 -d`\"; then "
             f"{end_trampoline} 0; "
             f'else {end_trampoline} "$?"; '
             "fi"
         )
 
-        return wrapped, begin, end_prefix
+        return wrapped, begin_prefix, end_prefix
 
     async def _snapshot_tail_lines(
         self, *, max_lines: int
@@ -559,8 +561,15 @@ class iTermState:
             # Wait for the command to end.
             result = await task
             if not result:
-                log.warning(":warning: Command timeout; Exiting shell-integration method...")
-                return "Command timeout; Exiting shell-integration method..."
+                log.warning(
+                    ":warning: Command timeout; Running command without shell integration."
+                )
+                return await self._run_command_without_shell_integration(
+                    command=command,
+                    path=path,
+                    suppress_broadcast=suppress,
+                    timeout=timeout,
+                )
 
             # Re-fetch the prompt for the command we sent to get the output range
             async with iterm2.Transaction(self.connection):
@@ -624,33 +633,44 @@ class iTermState:
 
     async def _shell_integration_enabled(self, new_tab_timeout: float = 15.0) -> bool:
         """Use shell-integration-only features to check if shell integration is enabled."""
+
         async def _check_terminal_content():
             current_terminal_content = [
-                line.strip() for line in await self._get_terminal_contents() if line.strip()
+                line.strip()
+                for line in await self._get_terminal_contents()
+                if line.strip()
             ]
-            log.debug(f"Current terminal content for shell integration check: {current_terminal_content}")
             return current_terminal_content
 
         terminal_len = len(await _check_terminal_content())
         if terminal_len < 1:
             while new_tab_timeout > 0:
-                log.debug(f"Retrying shell integration check due to missing lastCommand ({new_tab_timeout} seconds remaining)...")
+                log.debug(
+                    f"Retrying shell integration check due to missing lastCommand ({new_tab_timeout} seconds remaining)..."
+                )
                 await asyncio.sleep(5)
                 terminal_len = len(await _check_terminal_content())
                 if terminal_len >= 1:
                     break
-                return await self._shell_integration_enabled(new_tab_timeout=new_tab_timeout - 3)
+                return await self._shell_integration_enabled(
+                    new_tab_timeout=new_tab_timeout - 3
+                )
             else:
                 return False
 
-        user_found = (user_var := await self.get_session_var("username")) is not None
-        host_found = (host_var := await self.get_session_var("hostname")) is not None
+        user_found = (
+            user_var := await self.get_session_var("username")
+        ) is not None and user_var.strip() != ""
+        host_found = (
+            host_var := await self.get_session_var("hostname")
+        ) is not None and host_var.strip() != ""
         prompt_check = await self._get_prompt() is not None
 
         log.debug(
-            f"prompt_check={prompt_check}\n"
-            f"user_found={user_found} - user_var={user_var}\n"
-            f"host_found={host_found} - host_var={host_var}\n"
+            f"prompt_check={prompt_check}",
+            f"user_found={user_found} - user_var={user_var}",
+            f"host_found={host_found} - host_var={host_var}",
+            sep="\n"
         )
 
         return prompt_check and user_found and host_found
