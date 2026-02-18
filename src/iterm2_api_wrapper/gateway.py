@@ -5,7 +5,7 @@ import errno
 import os
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Protocol # , TypeVar
+from typing import TYPE_CHECKING, Any, Protocol  # , TypeVar
 
 
 if TYPE_CHECKING:

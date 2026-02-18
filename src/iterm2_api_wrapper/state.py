@@ -371,6 +371,9 @@ class iTermState:
             lines = await self.session.async_get_contents(
                 first_line=start, number_of_lines=bottom_exclusive - start
             )
+            # log.debug(
+            #     f"Snapshotting tail lines: overflow={overflow}, total={total}, start={start}, lines={len(lines)}"
+            # )
             return start, lines
 
     async def _snapshot_range(
@@ -430,7 +433,6 @@ class iTermState:
         self,
         *,
         command: str,
-        path: str | None = None,
         suppress_broadcast: bool,
         timeout: float,
         tail_probe_lines: int = 300,
@@ -446,6 +448,8 @@ class iTermState:
         not rely on ScreenStreamer notifications (which may not fire reliably
         in all environments).
         """
+        # __start_lines = await self._get_terminal_contents()
+        # log.debug(f"Starting line count: {len(__start_lines)}")
         wrapped, begin, end_prefix = self._wrap_with_markers(command)
         end_re = re.compile(rf"{re.escape(end_prefix)}:(?P<status>-?\d+)")
         deadline = time.monotonic() + max(0.0, timeout)
@@ -508,6 +512,20 @@ class iTermState:
         _, output_block = await self._snapshot_range(
             first_line=content_start, last_line_inclusive=end_line
         )
+        # log.debug(
+        #     f"start={_}, total={len(output_block)}, content_start={content_start}, end_line={end_line}, overflow={overflow}"
+        # )
+        # __end_lines = await self._get_terminal_contents()
+        # log.debug(f"Ending line count: {len(__end_lines)}")
+        # log.debug(
+        #     "\n"
+        #     + "\n".join(
+        #         [
+        #             line
+        #             for line in __end_lines[len(__start_lines) - 1 : len(__end_lines) - 1]
+        #         ]
+        #     )
+        # )
         return self._render_lines_until_end_marker(output_block, end_prefix=end_prefix)
 
     @_validate_state
@@ -533,10 +551,7 @@ class iTermState:
                     "Shell integration not enabled; falling back to non-shell-integration method."
                 )
                 return await self._run_command_without_shell_integration(
-                    command=command,
-                    path=path,
-                    suppress_broadcast=suppress,
-                    timeout=timeout,
+                    command=command, suppress_broadcast=suppress, timeout=timeout
                 )
 
             async with iterm2.Transaction(self.connection):
@@ -550,10 +565,7 @@ class iTermState:
                         "Running command without shell integration."
                     )
                     return await self._run_command_without_shell_integration(
-                        command=command,
-                        path=path,
-                        suppress_broadcast=suppress,
-                        timeout=timeout,
+                        command=command, suppress_broadcast=suppress, timeout=timeout
                     )
 
                 task = asyncio.create_task(self._wait_for_prompt(timeout=timeout))
@@ -565,10 +577,7 @@ class iTermState:
                     ":warning: Command timeout; Running command without shell integration."
                 )
                 return await self._run_command_without_shell_integration(
-                    command=command,
-                    path=path,
-                    suppress_broadcast=suppress,
-                    timeout=timeout,
+                    command=command, suppress_broadcast=suppress, timeout=timeout
                 )
 
             # Re-fetch the prompt for the command we sent to get the output range
@@ -611,16 +620,20 @@ class iTermState:
         """Returns a string with the content in a range of lines."""
         updated_prompt = await self._get_prompt(getattr(prompt, "unique_id", ""))
         if updated_prompt is None:
-            log.warning(":warning: Unable to get updated prompt; returning empty string.")
-            return "Unable to get updated prompt; returning empty string."
+            log.error(":error: Unable to get updated prompt; raising RuntimeError.")
+            raise RuntimeError("Failed to retrieve prompt after command execution.")
+
         output_range: util.CoordRange = updated_prompt.output_range
         cmd_range: util.CoordRange = updated_prompt.command_range
         start_y = output_range.start.y
         end_y = output_range.end.y
         if start_y == 0 and end_y == 0:
             # output_range not populated; fall back to command_range
-            start_y = max(0, cmd_range.start.y - 3)
-            end_y = cmd_range.end.y
+            log.debug("Prompt output range is empty; falling back to command range.")
+            # Add 1 to avoid including the prompt line itself, which is not part of the command output
+            start_y = cmd_range.start.y + 1
+            end_y = cmd_range.end.y + 1
+
         contents = await self.session.async_get_contents(start_y, max(1, end_y - start_y))
         result = ""
         for line in contents:
@@ -631,7 +644,7 @@ class iTermState:
                 result += "\n"
         return result
 
-    async def _shell_integration_enabled(self, new_tab_timeout: float = 15.0) -> bool:
+    async def _shell_integration_enabled(self, new_tab_timeout: float = 30.0) -> bool:
         """Use shell-integration-only features to check if shell integration is enabled."""
 
         async def _check_terminal_content():
@@ -643,18 +656,17 @@ class iTermState:
             return current_terminal_content
 
         terminal_len = len(await _check_terminal_content())
-        if terminal_len < 1:
+        # log.debug(f"Checking shell integration: terminal content line count={terminal_len}")
+        if terminal_len <= 1:
             while new_tab_timeout > 0:
                 log.debug(
-                    f"Retrying shell integration check due to missing lastCommand ({new_tab_timeout} seconds remaining)..."
+                    f"Terminal content appears empty; waiting for shell integration to initialize... ({new_tab_timeout:.0f}s remaining)"
                 )
                 await asyncio.sleep(5)
                 terminal_len = len(await _check_terminal_content())
-                if terminal_len >= 1:
+                if terminal_len > 1:
                     break
-                return await self._shell_integration_enabled(
-                    new_tab_timeout=new_tab_timeout - 3
-                )
+                new_tab_timeout -= 5
             else:
                 return False
 
@@ -670,7 +682,7 @@ class iTermState:
             f"prompt_check={prompt_check}",
             f"user_found={user_found} - user_var={user_var}",
             f"host_found={host_found} - host_var={host_var}",
-            sep="\n"
+            sep="\n",
         )
 
         return prompt_check and user_found and host_found

@@ -87,8 +87,8 @@ async def test_poly_modal_alert(state: iTermState) -> dict[str, Any]:
         ),
     )
 
-    log.info("Poly Modal Alert Response: \n", mode="terminal")
-    log.info(poly_modal_alert, mode="terminal")
+    log.info("Poly Modal Alert Response: \n")
+    log.info(poly_modal_alert)
     return poly_modal_alert
 
 
@@ -102,8 +102,8 @@ async def test_text_input_alert(state: iTermState) -> str | None:
         window_id=state.window.window_id,
     )
 
-    log.info("Text Input Alert Response: \n", mode="terminal")
-    log.info(text_input_alert, mode="terminal")
+    log.info("Text Input Alert Response: \n")
+    log.info(text_input_alert)
     return text_input_alert
 
 
@@ -117,8 +117,8 @@ async def test_alerts(state: iTermState) -> int:
         connection=state.connection,
     )
 
-    log.info("Simple Alert Response: \n", mode="terminal")
-    log.info(simple_alert, mode="terminal")
+    log.info("Simple Alert Response: \n")
+    log.info(simple_alert)
     return simple_alert
 
 
@@ -129,10 +129,10 @@ async def test_all_alerts(state: iTermState) -> tuple[int, str | None, dict[str,
     text_input_alert = await test_text_input_alert(state)
     poly_modal_alert = await test_poly_modal_alert(state)
 
-    log.info(f"Simple Alert Response: {simple_alert}\n", mode="terminal")
-    log.info(f"Text Input Alert Response: {text_input_alert}\n", mode="terminal")
-    log.info("Poly Modal Alert Response: \n", mode="terminal")
-    log.info(poly_modal_alert, mode="terminal")
+    log.info(f"Simple Alert Response: {simple_alert}\n")
+    log.info(f"Text Input Alert Response: {text_input_alert}\n")
+    log.info("Poly Modal Alert Response: \n")
+    log.info(poly_modal_alert)
     return (simple_alert, text_input_alert, poly_modal_alert)
 
 
@@ -148,7 +148,7 @@ async def show_capabilities(state: iTermState) -> dict[str, Any]:
         if not isinstance(func, FunctionType):
             continue
         is_supported = func(state.connection)
-        log.info(f"{capability}: {is_supported}", mode="terminal")
+        log.info(f"{capability}: {is_supported}")
         capabilities[capability] = is_supported
 
     return capabilities
@@ -195,16 +195,12 @@ def main(
 ):
     """Main function - runs the async code."""
 
-    log.info(
-        f":rocket: [green]Running function:[/green] [bold]{func_name}[/bold]",
-        mode="terminal",
-        emoji=True,
-    )
+    log.info(f":rocket: [green]Running function:[/green] [bold]{func_name}[/bold]")
 
     selected_fn: CoroutineFn[iTermState, Any]
     # fn_args: tuple[Any, ...] = tuple(args)
     fn_args, fn_kwargs = kwarg_conversion(tuple(args or []))
-    log.info(f"{fn_args=}\n{fn_kwargs=}", mode="terminal")
+    log.info(f"{fn_args=}\n{fn_kwargs=}")
     match func_name:
         case "show_capabilities":
             selected_fn = show_capabilities
@@ -219,7 +215,7 @@ def main(
         case "all_alerts":
             selected_fn = test_all_alerts
         case _:
-            log.info(
+            log.error(
                 f":warning: [red]Unknown function: {func_name}[/red]",
                 mode="terminal",
                 emoji=True,
@@ -230,11 +226,12 @@ def main(
         timeout=None,
         debug=False,
         new_tab=False,
+        # dedicated_profile_name="Hotkey Window"
     ) as client:
         state = client.get_state()
         event_loop = client.loop
         output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)
-        log.info(output, mode="terminal")
+        log.info(output)
 
 
 if __name__ == "__main__":

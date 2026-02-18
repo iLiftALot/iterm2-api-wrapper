@@ -10,7 +10,8 @@ from io import TextIOWrapper
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Unpack, cast, overload
 
-from rich.console import Console, JustifyMethod
+from rich.console import Console, ConsoleOptions, JustifyMethod, RenderResult  # , NewLine
+from rich.measure import Measurement
 from rich.pretty import pprint
 from rich.scope import render_scope
 from rich.style import Style
@@ -31,14 +32,45 @@ from .config import (
     _resolve_level,
     _severity,
 )
-from .styles import StyleType, LEVEL_PROFILES, GradientHighlighter, LOG_THEME # , LogRegexHighlighter
+from .styles import (
+    LEVEL_PROFILES,
+    LOG_THEME,
+    GradientHighlighter,
+    StyleType,
+    StyleAttribute,
+)  # , LogRegexHighlighter
 
 
 # Install rich tracebacks globally for better error output
 install_rich_traceback(show_locals=True, width=120)
-
-
 LOG_PATH = Path(__file__).resolve().parents[3] / "logs" / "iterm2_api_wrapper.log"
+
+
+class _PrefixRule:
+    """Prefix text followed by a dim rule filling the remaining width.
+
+    Renders as a single line: ``[INFO] [name] ─────────── path:line``
+    so the rule sits between the prefix and the path column of the log table.
+    """
+
+    __slots__ = ("prefix", "rule_style")
+
+    def __init__(self, prefix: Text, rule_style: StyleAttribute | Style = "dim") -> None:
+        self.prefix = prefix
+        self.rule_style = rule_style
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        prefix = self.prefix.copy()
+        prefix_len = prefix.cell_len
+        remaining = options.max_width - prefix_len - 1  # 1 space before rule
+        if remaining > 0:
+            prefix.append(" ")
+            prefix.append("─" * remaining, style=self.rule_style)
+        yield prefix
+
+    def __rich_measure__(self, console: Console, options: ConsoleOptions) -> Measurement:
+        prefix_len = self.prefix.cell_len
+        return Measurement(prefix_len, options.max_width)
 
 
 class _FileConsoleManager:
@@ -112,13 +144,8 @@ class _FileConsoleManager:
             ):
                 self._path.write_text("")
             self._handle = open(self._path, "a")
-            base_console_config: ConsoleConfig = {
-                "log_time": True,
-                "log_time_format": "%Y-%m-%d %H:%M:%S",
-            }
-            console_config = {**base_console_config, **self._console_config}
-            console_config["file"] = self._handle
-            self._console = Console(**console_config)
+            self._console_config["file"] = self._handle
+            self._console = Console(**self._console_config)
             self._initialized = True
         return self._console
 
@@ -224,9 +251,25 @@ def get_terminal_console() -> Console:
 terminal_console = get_terminal_console()
 
 
-def pp(*objects: object, **kwargs: Any) -> None:
+def pp(
+    *objects: object,
+    console: Console | None = None,
+    indent_guides: bool = True,
+    max_length: int | None = None,
+    max_string: int | None = None,
+    max_depth: int | None = None,
+    expand_all: bool = False,
+) -> None:
     """Pretty print to the active terminal console."""
-    pprint(*objects, console=get_terminal_console(), expand_all=True, **kwargs)
+    pprint(
+        *objects,
+        console=console or get_terminal_console(),
+        indent_guides=indent_guides,
+        max_length=max_length,
+        max_string=max_string,
+        max_depth=max_depth,
+        expand_all=expand_all,
+    )
 
 
 class PrettyLog:
@@ -253,9 +296,7 @@ class PrettyLog:
         LogLevel.ERROR: "ERROR",
         LogLevel.CRITICAL: "CRITICAL",
     }
-
     _registry: ClassVar[dict[str, PrettyLog]] = {}
-
     _CALL_CONFIG_KEYS: ClassVar[frozenset[str]] = frozenset(
         {
             "logger_config",
@@ -264,7 +305,6 @@ class PrettyLog:
             "file_console_config",
         }
     )
-
     _RENDER_KWARGS_KEYS: ClassVar[frozenset[str]] = frozenset(
         {"sep", "end", "style", "justify", "emoji", "markup", "highlight"}
     )
@@ -556,13 +596,13 @@ class PrettyLog:
     def _build_prefix(self, level: LogLevel) -> Text:
         """Build a Rich ``Text`` prefix with level label, logger name, and context tags."""
         label = self._LEVEL_LABELS.get(level, "???")
-        style = _LEVEL_STYLES.get(level, "")
+        style = _LEVEL_STYLES.get(level, None)
         parts = Text.assemble((f"[{label}]", style or "bold"))
         parts.append(f" [{self.name}]", style="dim magenta")
         if self._context:
             ctx_str = " ".join(f"[{v}]" for v in self._context.values())
             parts.append(f" {ctx_str}", style="dim cyan")
-        parts.append(" ")
+        parts.append("")
         return parts
 
     def _merge_log_config(
@@ -570,7 +610,7 @@ class PrettyLog:
     ) -> dict[str, Any]:
         """Merge init-common → init-terminal → call-time kwargs for terminal."""
         merged = {**self._log_config, **call_kwargs}
-        level_style = _LEVEL_STYLES.get(level, "")
+        level_style = _LEVEL_STYLES.get(level, None)
         if level_style and "style" not in merged:
             merged["style"] = level_style
         return merged
@@ -622,6 +662,7 @@ class PrettyLog:
         include_path: bool,
     ) -> Any:
         """Build a Rich log-style renderable with time/path columns."""
+        renderables = [*renderables]  # ensure log_locals table is separated from message
         filename, line_no, locals_map = console._caller_frame_info(stack_offset + 1)
         link_path = None if filename.startswith("<") else os.path.abspath(filename)
         path = filename.rpartition(os.sep)[-1] if include_path else None
@@ -686,7 +727,6 @@ class PrettyLog:
         gradient = None
         if level_profile and level_profile.gradient:
             gradient = GradientHighlighter(level_profile.gradient)
-        text: Text = Text("")
         for msg in messages:
             if isinstance(msg, Text):
                 text = msg
@@ -694,15 +734,17 @@ class PrettyLog:
                 text = Text.from_markup(msg) if markup is not False else Text(msg)
             else:
                 render_messages.append(msg)
-            continue
-        if level_profile and level_profile.highlighter:
-            level_profile.highlighter.highlight(text)
-        if gradient:
-            gradient.highlight(text)
-        render_messages.append(text)
+                continue
+            if level_profile and level_profile.highlighter:
+                level_profile.highlighter.highlight(text)
+            if gradient:
+                gradient.highlight(text)
+            render_messages.append(text)
 
-        aligned = tuple(self._indent_continuation(m, prefix_width) for m in render_messages)
-        objects = (prefix, *aligned) if aligned else (prefix,)
+        aligned = tuple(
+            self._indent_continuation(m, prefix_width) for m in render_messages
+        )
+        objects = (_PrefixRule(prefix), *aligned) if aligned else (prefix,)
 
         def emit_to_console(console: Console) -> None:
             nonlocal style
@@ -801,6 +843,7 @@ class PrettyLog:
             return
         if not self._passes_filters(resolved_level, messages):
             return
+
         self._emit(
             *messages,
             mode=mode,
@@ -1039,7 +1082,9 @@ class PrettyLog:
                 kwargs["logger_config"]["style"] = LEVEL_PROFILES["ERROR"].base
         else:
             if "log_locals" not in kwargs:
-                kwargs["log_locals"] = True  # Ensure locals are logged for error-level messages
+                kwargs["log_locals"] = (
+                    True  # Ensure locals are logged for error-level messages
+                )
             if "style" not in kwargs:
                 kwargs["style"] = LEVEL_PROFILES["ERROR"].base
 

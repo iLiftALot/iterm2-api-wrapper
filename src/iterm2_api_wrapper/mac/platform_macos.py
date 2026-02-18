@@ -15,6 +15,7 @@ try:
         result = apple_script.run(is_hotkey)
         return result
 except ImportError:
+
     def maybe_reveal_hotkey_window(is_hotkey: bool):
         raise ImportError(
             "The 'applescript' package is required to reveal the hotkey window. "

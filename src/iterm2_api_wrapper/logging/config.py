@@ -163,7 +163,7 @@ def get_default_log_config() -> AllLogConfig:
             justify="left",
             overflow=None,
             no_wrap=None,
-            emoji=None,
+            emoji=True,
             markup=None,
             highlight=None,
             log_locals=False,
@@ -217,5 +217,7 @@ def get_default_log_config() -> AllLogConfig:
             emoji=True,  # Keep emojis in file output by default
             emoji_variant="text",
             highlight=False,  # Disable automatic highlighting in file output by default
+            log_time=True,
+            log_time_format="%Y-%m-%d %H:%M:%S",
         ),
     )

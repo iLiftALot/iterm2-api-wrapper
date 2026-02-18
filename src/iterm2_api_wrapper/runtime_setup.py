@@ -68,13 +68,26 @@ async def _get_tab_with_session(
     async def default_tab_with_session(
         override_new_tab: bool = False,
     ) -> tuple[tab.Tab, session.Session]:
-        selected_tab: tab.Tab | None = window.current_tab
-        if selected_tab is None or new_tab is True or override_new_tab is True:
+        selected_tab, selected_session = None, None
+
+        if not new_tab and not override_new_tab:
+            for t in window.tabs:
+                current_session = t.current_session
+                if current_session is None:
+                    continue
+                tab_title = await t.async_get_variable("title")
+                session_name = current_session.name
+                if "pyterm-session" in [tab_title, session_name]:
+                    selected_tab, selected_session = t, current_session
+                    break
+
+        if new_tab or override_new_tab or not (selected_tab and selected_session):
             selected_tab = await window.async_create_tab(profile=profile.name)
+
         assert selected_tab is not None, "Could not get or create iTerm2 tab"
-        current_session = selected_tab.current_session
-        assert current_session is not None, "Could not get current session in tab"
-        return selected_tab, current_session
+        selected_session = selected_tab.current_session
+        assert selected_session is not None, "Could not get current session in tab"
+        return selected_tab, selected_session
 
     if new_tab is True:
         return await default_tab_with_session()
@@ -84,13 +97,24 @@ async def _get_tab_with_session(
         if current_session is None:
             continue
         profile_name = (await current_session.async_get_profile()).name
-        backup_profile_name = await current_session.async_get_variable("profileName")
+        # profile_name = await current_session.async_get_variable("profileName")
         session_name = current_session.name
-        if profile.name in [profile_name, backup_profile_name]:
-            log.debug(f"Found matching tab with session '{session_name}' and profile '{profile_name}'")
-            return t, current_session
+        if profile.name == profile_name:
+            log.debug(f"Found match: {session_name=} - {profile.name=} - {profile_name=}")
+            selected_tab, selected_session = t, current_session
+            break
+    else:
+        selected_tab, selected_session = await default_tab_with_session(
+            override_new_tab=True
+        )
 
-    return await default_tab_with_session(override_new_tab=True)
+    tab_title = await selected_tab.async_get_variable("title")
+    session_name = selected_session.name
+    if "pyterm-session" not in [tab_title, session_name]:
+        await selected_tab.async_set_title("pyterm-session")
+        await selected_session.async_set_name("pyterm-session")
+
+    return selected_tab, selected_session
 
 
 def _check_api_enabled():

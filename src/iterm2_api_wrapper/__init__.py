@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from .logging import PrettyLog, get_default_log_config
 
 
-load_dotenv(override=True)
+load_dotenv()
 log = PrettyLog(
     __package__, mode="all", level="DEBUG", pretty_config=get_default_log_config()
 )
