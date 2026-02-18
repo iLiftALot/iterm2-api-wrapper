@@ -65,6 +65,9 @@ async def _get_window(
 async def _get_tab_with_session(
     window: window.Window, profile: profile.Profile, new_tab: bool = False
 ) -> tuple[tab.Tab, session.Session]:
+    log.debug(f"Looking for existing tab with profile: {profile.name}")
+    iterm_mcp_tag = f"pyterm-session:{profile.name}"
+
     async def default_tab_with_session(
         override_new_tab: bool = False,
     ) -> tuple[tab.Tab, session.Session]:
@@ -77,11 +80,11 @@ async def _get_tab_with_session(
                     continue
                 tab_title = await t.async_get_variable("title")
                 session_name = current_session.name
-                if "pyterm-session" in [tab_title, session_name]:
+                if iterm_mcp_tag in [tab_title, session_name]:
                     selected_tab, selected_session = t, current_session
                     break
 
-        if new_tab or override_new_tab or not (selected_tab and selected_session):
+        if new_tab is True or override_new_tab is True or (not selected_tab or not selected_session):
             selected_tab = await window.async_create_tab(profile=profile.name)
 
         assert selected_tab is not None, "Could not get or create iTerm2 tab"
@@ -90,29 +93,34 @@ async def _get_tab_with_session(
         return selected_tab, selected_session
 
     if new_tab is True:
+        log.debug("Creating new tab due to new_tab=True")
         return await default_tab_with_session()
 
     for t in window.tabs:
         current_session = t.current_session
         if current_session is None:
             continue
-        profile_name = (await current_session.async_get_profile()).name
-        # profile_name = await current_session.async_get_variable("profileName")
+        # profile_name = (await current_session.async_get_profile()).name
+        profile_name = await current_session.async_get_variable("profileName")
         session_name = current_session.name
-        if profile.name == profile_name:
+        # log.debug(f"Checking tab: {session_name=} - {profile_name=}")
+        tab_title = await t.async_get_variable("title")
+        if profile.name == profile_name and iterm_mcp_tag in [tab_title, session_name]:
             log.debug(f"Found match: {session_name=} - {profile.name=} - {profile_name=}")
             selected_tab, selected_session = t, current_session
             break
     else:
+        log.debug("No matching tab found; creating new tab")
         selected_tab, selected_session = await default_tab_with_session(
             override_new_tab=True
         )
 
     tab_title = await selected_tab.async_get_variable("title")
     session_name = selected_session.name
-    if "pyterm-session" not in [tab_title, session_name]:
-        await selected_tab.async_set_title("pyterm-session")
-        await selected_session.async_set_name("pyterm-session")
+    if iterm_mcp_tag not in [tab_title, session_name]:
+        log.debug(f"Renaming tab and session to '{iterm_mcp_tag}'")
+        await selected_tab.async_set_title(iterm_mcp_tag)
+        await selected_session.async_set_name(iterm_mcp_tag)
 
     return selected_tab, selected_session
 
@@ -163,7 +171,7 @@ async def _setup_iterm(
     activate_iterm_app()
     if not _check_api_enabled():
         raise RuntimeError(
-            "iTerm2 Python API is not enabled. Please enable it in iTerm2 Preferences > General > Magic."
+            "iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic."
         )
 
     app_instance: app.App = await _get_app(connection_instance=connection_instance)
