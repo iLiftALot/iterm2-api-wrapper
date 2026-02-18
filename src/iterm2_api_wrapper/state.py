@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import re
-import time
-import uuid
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from functools import wraps
@@ -12,7 +8,7 @@ from typing import Any, Callable, Concatenate, Coroutine, Literal, overload
 
 import iterm2
 from dotenv import load_dotenv
-from iterm2 import app, connection, profile, prompt, screen, session, tab, util, window
+from iterm2 import app, connection, profile, prompt, session, tab, util, window
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
 from iterm2_api_wrapper.logging import PrettyLog
@@ -276,257 +272,160 @@ class iTermState:
         return await target.async_get_variable(variable_name)
 
     @staticmethod
-    def _sh_single_quote(value: str) -> str:
-        """Return a POSIX-shell-safe single-quoted literal.
-
-        This is used to embed an arbitrary command string inside a wrapper
-        command without letting characters like `#` turn into comments.
-        """
-        if "\x00" in value:
-            raise ValueError("Command contains NUL byte, which is not supported.")
-        # Close quote, insert a literal single-quote, and reopen.
-        return "'" + value.replace("'", "'\"'\"'") + "'"
+    def _last_nonempty_line(lines: list[str]) -> str | None:
+        """Return the last non-empty terminal line (trimmed), if any."""
+        for line in reversed(lines):
+            stripped = line.strip()
+            if stripped:
+                return stripped
+        return None
 
     @staticmethod
-    def _wrap_with_markers(command: str) -> tuple[str, str, str]:
-        """Wrap a command with unique begin/end sentinels.
+    def _changed_slice(before: list[str], after: list[str]) -> list[str]:
+        """Return the changed block between two terminal snapshots."""
+        prefix = 0
+        max_prefix = min(len(before), len(after))
+        while prefix < max_prefix and before[prefix] == after[prefix]:
+            prefix += 1
 
-        Designed for the "shell integration off" fallback.
+        suffix = 0
+        max_suffix = min(len(before) - prefix, len(after) - prefix)
+        while suffix < max_suffix and before[-(suffix + 1)] == after[-(suffix + 1)]:
+            suffix += 1
 
-        Important details:
-        - The *contiguous* marker strings we search for do NOT appear in the
-          echoed command line because the token is passed as a separate printf
-          argument. This prevents false positives when scanning scrollback.
-            - We preserve the interactive shell's `$?` by ensuring the *final*
-                command in the wrapper exits with the user's command status. We do
-                this by running the user's command via `eval` inside an `if`, and
-                then using a tiny `sh -c ...; exit "$1"` trampoline to both print
-                the END marker and exit with that status.
-            - We deliberately avoid wrapping the whole thing in a subshell like
-                `( ... )` because some interactive zsh configurations auto-insert a
-                matching `)` when `(` is typed (autopair widgets), producing invalid
-                syntax.
-            - To avoid autopair widgets corrupting *the user's command text* (e.g.
-                commands containing `(`), we base64-encode the command and decode it
-                at runtime. This keeps the injected keystream free of `(` characters.
-        """
-
-        token = uuid.uuid4().hex[:12]
-        begin_prefix = f"__PYTERM_MCP_BEGIN__{token}__"
-        end_prefix = f"__PYTERM_MCP_END__{token}__"
-
-        # NOTE: We base64-encode the user command before injecting it.
-        # This prevents zle "autopair" widgets from rewriting characters like
-        # `(` in the *injected keystream* (which can otherwise lead to stray
-        # extra `)` and parse errors).
-        cmd_b64 = base64.b64encode(command.encode("utf-8")).decode("ascii")
-        cmd_b64_literal = iTermState._sh_single_quote(cmd_b64)
-
-        # Implementation notes:
-        # - We must print the END marker *after* the user's command output.
-        # - We must also preserve interactive `$?` == user's command status.
-        #
-        # We accomplish this by:
-        # 1) printing the BEGIN marker
-        # 2) running `eval <cmd>` as the `if` condition
-        # 3) in both branches, running a final `sh -c` that prints the END
-        #    marker and exits with the status passed as $1. Because that `sh`
-        #    command is the last command executed in the wrapper, the
-        #    interactive shell's `$?` remains correct.
-        end_trampoline = (
-            f'command sh -c \'printf "%s%s:%d\\n" "__PYTERM_MCP_END__" '
-            f'"{token}__" "$1"; exit "$1"\' sh'
-        )
-        wrapped = (
-            f'printf "%s%s\\n%s\\n" "__PYTERM_MCP_BEGIN__" "{token}__" ">>> {command}"; '
-            f"if eval \"`printf '%s' {cmd_b64_literal} | base64 -d`\"; then "
-            f"{end_trampoline} 0; "
-            f'else {end_trampoline} "$?"; '
-            "fi"
-        )
-
-        return wrapped, begin_prefix, end_prefix
-
-    async def _snapshot_tail_lines(
-        self, *, max_lines: int
-    ) -> tuple[int, list[screen.LineContents]]:
-        """Read the last up-to `max_lines` lines from scrollback+screen.
-
-        Returns (start_line_number, lines).
-
-        Uses a short transaction so `async_get_line_info()` and
-        `async_get_contents()` are consistent.
-        """
-        if max_lines <= 0:
-            return 0, []
-
-        async with iterm2.Transaction(self.connection):
-            li = await self.session.async_get_line_info()
-            overflow = li.overflow
-            total = li.scrollback_buffer_height + li.mutable_area_height
-            if total <= 0:
-                return overflow, []
-            bottom_exclusive = overflow + total
-            start = max(overflow, bottom_exclusive - max_lines)
-            lines = await self.session.async_get_contents(
-                first_line=start, number_of_lines=bottom_exclusive - start
-            )
-            # log.debug(
-            #     f"Snapshotting tail lines: overflow={overflow}, total={total}, start={start}, lines={len(lines)}"
-            # )
-            return start, lines
-
-    async def _snapshot_range(
-        self, *, first_line: int, last_line_inclusive: int
-    ) -> tuple[int, list[screen.LineContents]]:
-        """Read a contiguous inclusive line range.
-
-        Returns (start_line_number, lines). If the requested range is empty or
-        out-of-bounds, returns an empty list.
-        """
-        if last_line_inclusive < first_line:
-            return first_line, []
-
-        async with iterm2.Transaction(self.connection):
-            li = await self.session.async_get_line_info()
-            overflow = li.overflow
-            total = li.scrollback_buffer_height + li.mutable_area_height
-            if total <= 0:
-                return overflow, []
-            bottom_exclusive = overflow + total
-
-            start = max(overflow, first_line)
-            end_exclusive = min(bottom_exclusive, last_line_inclusive + 1)
-            if end_exclusive <= start:
-                return start, []
-            lines = await self.session.async_get_contents(
-                first_line=start, number_of_lines=end_exclusive - start
-            )
-            return start, lines
+        end = len(after) - suffix if suffix else len(after)
+        return after[prefix:end]
 
     @staticmethod
-    def _render_lines_until_end_marker(
-        lines: list[screen.LineContents], *, end_prefix: str
+    def _extract_output_from_changed_block(
+        changed: list[str], *, prompt_line: str, command: str
     ) -> str:
-        """Convert LineContents to text, stopping at the end marker.
-
-        The end marker might appear on its own line *or* be appended to the end
-        of a line when the command doesn't output a trailing newline.
         """
-        marker_token = f"{end_prefix}:"
-        out_parts: list[str] = []
-        for line in lines[1:]:  # skip the first line which is `>>> <command>`
-            s = line.string
-            pos = s.find(marker_token)
-            if pos != -1:
-                if pos > 0:
-                    out_parts.append(s[:pos])
-                # Do not include this line's hard_eol; the newline comes from
-                # the marker printf and is not part of the command output.
-                break
-            out_parts.append(s)
-            if line.hard_eol:
-                out_parts.append("\n")
-        return "".join(out_parts)
+        Trim command echo + trailing prompt from changed block and return output.
+        """
+        start = 0
+        end = len(changed)
+        while start < end and not changed[start].strip():
+            start += 1
+        while end > start and not changed[end - 1].strip():
+            end -= 1
+        block = changed[start:end]
+
+        if not block:
+            return ""
+
+        prompt_norm = prompt_line.strip()
+        command_norm = command.strip()
+
+        # Drop echoed command line (e.g. "<prompt> <command>")
+        first = block[0].strip()
+        if (
+            command_norm
+            and first.endswith(command_norm)
+            and prompt_norm
+            and prompt_norm in first
+        ):
+            block = block[1:]
+
+        # Drop trailing prompt line
+        while block and not block[-1].strip():
+            block.pop()
+        if block and block[-1].strip() == prompt_norm:
+            block.pop()
+
+        return "\n".join(line.rstrip("\n") for line in block).strip()
+
+    async def _get_prompt_candidate(
+        self, *, suppress_broadcast: bool, retries: int = 2, retry_delay: float = 0.1
+    ) -> tuple[list[str], str]:
+        """
+        Get terminal snapshot + prompt candidate.
+
+        Works even when scrollback height is 0 by scanning for the last non-empty line.
+        If no candidate exists, nudge with Enter a small bounded number of times.
+        """
+        lines = await self._get_terminal_contents()
+        prompt_line = self._last_nonempty_line(lines)
+
+        attempts = 0
+        while prompt_line is None and attempts < retries:
+            await self.session.async_send_text(
+                "\r", suppress_broadcast=suppress_broadcast
+            )
+            await asyncio.sleep(retry_delay)
+            lines = await self._get_terminal_contents()
+            prompt_line = self._last_nonempty_line(lines)
+            attempts += 1
+
+        if prompt_line is None:
+            raise RuntimeError(
+                "Unable to identify prompt line in terminal contents for fallback execution."
+            )
+
+        return lines, prompt_line
 
     async def _run_command_without_shell_integration(
-        self,
-        *,
-        command: str,
-        suppress_broadcast: bool,
-        timeout: float,
-        tail_probe_lines: int = 300,
+        self, *, command: str, suppress_broadcast: bool, timeout: float = 10.0
     ) -> str:
-        """Run a command and return output without shell integration.
-
-        Strategy:
-        - Wrap the command with begin/end sentinels.
-        - Poll the *tail* of scrollback until the end sentinel appears.
-        - Extract only the text between sentinels using bounded scrollback reads.
-
-        This avoids repeatedly fetching the entire scrollback buffer and does
-        not rely on ScreenStreamer notifications (which may not fire reliably
-        in all environments).
         """
-        # __start_lines = await self._get_terminal_contents()
-        # log.debug(f"Starting line count: {len(__start_lines)}")
-        wrapped, begin, end_prefix = self._wrap_with_markers(command)
-        end_re = re.compile(rf"{re.escape(end_prefix)}:(?P<status>-?\d+)")
-        deadline = time.monotonic() + max(0.0, timeout)
+        Run command without shell integration by snapshot-diff + prompt reappearance.
+
+        Key points:
+        - No dependency on scrollback_buffer_height > 0
+        - Uses last non-empty line as prompt candidate
+        - Bounded by timeout
+        - Requires prompt match to be stable across 2 polls
+        """
+        start_lines, prompt_line = await self._get_prompt_candidate(
+            suppress_broadcast=suppress_broadcast
+        )
+
+        log.debug(
+            f"Fallback run start: line_count={len(start_lines)}, prompt={prompt_line!r}"
+        )
 
         await self.session.async_send_text(
-            "\x01\x0b" + wrapped + "\r", suppress_broadcast=suppress_broadcast
+            command + "\r", suppress_broadcast=suppress_broadcast
         )
 
-        end_line: int | None = None
-        sleep_s = 0.05
-        while end_line is None:
-            start_line, lines = await self._snapshot_tail_lines(
-                max_lines=tail_probe_lines
-            )
-            for i in range(len(lines) - 1, -1, -1):
-                if end_re.search(lines[i].string):
-                    end_line = start_line + i
-                    break
+        loop = self.loop or asyncio.get_running_loop()
+        deadline = loop.time() + max(0.1, timeout)
+        poll_interval = 0.1
 
-            if end_line is not None:
-                break
+        saw_change = False
+        stable_prompt_polls = 0
+        end_lines = start_lines
 
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError(
-                    "Timeout waiting for command to complete (shell integration disabled)."
-                )
-            await asyncio.sleep(min(sleep_s, remaining))
-            sleep_s = min(sleep_s * 1.5, 0.5)
-
-        assert end_line is not None, (
-            "ERROR: end_line should be set here <_run_command_without_shell_integration>"
-        )
-
-        # At this point we have observed the end marker -> command finished.
-        # Now find the begin marker by scanning backward from end_line.
-        async with iterm2.Transaction(self.connection):
-            li = await self.session.async_get_line_info()
-            overflow = li.overflow
-
-        begin_line: int | None = None
-        window = max(500, tail_probe_lines)
         while True:
-            start = max(overflow, end_line - window)
-            _, block = await self._snapshot_range(
-                first_line=start, last_line_inclusive=end_line
-            )
-            for i in range(len(block) - 1, -1, -1):
-                if begin in block[i].string:
-                    begin_line = start + i
-                    break
-            if begin_line is not None:
-                break
-            if start == overflow:
-                break
-            window *= 2
+            end_lines = await self._get_terminal_contents()
 
-        # Best-effort: if begin marker scrolled out, start from the earliest available line.
-        content_start = (begin_line + 1) if begin_line is not None else overflow
-        _, output_block = await self._snapshot_range(
-            first_line=content_start, last_line_inclusive=end_line
+            if not saw_change and end_lines != start_lines:
+                saw_change = True
+
+            last_nonempty = self._last_nonempty_line(end_lines)
+            if saw_change and last_nonempty == prompt_line:
+                stable_prompt_polls += 1
+                if stable_prompt_polls >= 2:
+                    break
+            else:
+                stable_prompt_polls = 0
+
+            if loop.time() >= deadline:
+                raise TimeoutError(
+                    "Timeout waiting for command completion (shell integration disabled)."
+                )
+
+            await asyncio.sleep(poll_interval)
+
+        changed = self._changed_slice(start_lines, end_lines)
+        output = self._extract_output_from_changed_block(
+            changed, prompt_line=prompt_line, command=command
         )
-        # log.debug(
-        #     f"start={_}, total={len(output_block)}, content_start={content_start}, end_line={end_line}, overflow={overflow}"
-        # )
-        # __end_lines = await self._get_terminal_contents()
-        # log.debug(f"Ending line count: {len(__end_lines)}")
-        # log.debug(
-        #     "\n"
-        #     + "\n".join(
-        #         [
-        #             line
-        #             for line in __end_lines[len(__start_lines) - 1 : len(__end_lines) - 1]
-        #         ]
-        #     )
-        # )
-        return self._render_lines_until_end_marker(output_block, end_prefix=end_prefix)
+
+        log.debug(
+            f"Fallback run end: line_count={len(end_lines)}, output_len={len(output)}"
+        )
+        return output
 
     @_validate_state
     async def run_command(
@@ -545,7 +444,7 @@ class iTermState:
                 await self.session.async_send_text(
                     f"cd '{path}'\r", suppress_broadcast=suppress
                 )
-            shell_integration_enabled: bool = await self._shell_integration_enabled()
+            shell_integration_enabled = await self._shell_integration_enabled()
             if not shell_integration_enabled:
                 log.warning(
                     "Shell integration not enabled; falling back to non-shell-integration method."
@@ -556,7 +455,7 @@ class iTermState:
 
             async with iterm2.Transaction(self.connection):
                 await self.session.async_send_text(
-                    command + "\r", suppress_broadcast=suppress
+                    command + "\r", suppress_broadcast=suppress, timeout=timeout
                 )
                 last_prompt: prompt.Prompt | None = await self._get_prompt()
                 if last_prompt is None:
@@ -647,27 +546,43 @@ class iTermState:
     async def _shell_integration_enabled(self, new_tab_timeout: float = 30.0) -> bool:
         """Use shell-integration-only features to check if shell integration is enabled."""
 
-        async def _check_terminal_content():
+        async def check_terminal_content() -> list[str]:
             current_terminal_content = [
                 line.strip()
                 for line in await self._get_terminal_contents()
                 if line.strip()
             ]
+
             return current_terminal_content
 
-        terminal_len = len(await _check_terminal_content())
-        # log.debug(f"Checking shell integration: terminal content line count={terminal_len}")
-        if terminal_len <= 1:
+        def is_empty_tab(content: list[str]) -> bool:
+            # Consider freshly cleared tabs, which doesn't reset the prompt
+            return len(content) == 1 and not any(
+                "last login" in line.lower() for line in content
+            )
+
+        terminal_content = await check_terminal_content()
+
+        if len(terminal_content) <= 1:
             while new_tab_timeout > 0:
                 log.debug(
                     f"Terminal content appears empty; waiting for shell integration to initialize... ({new_tab_timeout:.0f}s remaining)"
                 )
                 await asyncio.sleep(5)
-                terminal_len = len(await _check_terminal_content())
-                if terminal_len > 1:
+                terminal_content = await check_terminal_content()
+
+                if is_empty_tab(terminal_content):
+                    log.debug("Terminal content is empty; no new tab.")
+                    break
+                elif len(terminal_content) > 1:
+                    log.debug("New tab detected based on terminal content.")
                     break
                 new_tab_timeout -= 5
             else:
+                log.warning(
+                    "Timeout waiting for shell integration initialization; "
+                    "treating shell integration as unavailable."
+                )
                 return False
 
         user_found = (
@@ -692,6 +607,10 @@ class iTermState:
         line_info = await self.session.async_get_line_info()
         start = line_info.overflow
         total_lines = line_info.scrollback_buffer_height + line_info.mutable_area_height
+        # log.debug(
+        #     "Getting terminal contents: "
+        #     f"overflow={line_info.overflow}, scrollback_buffer_height={line_info.scrollback_buffer_height}, mutable_area_height={line_info.mutable_area_height}"
+        # )
         contents = [
             line.string
             for line in await self.session.async_get_contents(
