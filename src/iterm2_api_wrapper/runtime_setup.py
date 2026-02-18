@@ -86,9 +86,9 @@ async def _get_tab_with_session(
 
         if new_tab is True or override_new_tab is True or (not selected_tab or not selected_session):
             selected_tab = await window.async_create_tab(profile=profile.name)
+            selected_session = selected_tab.current_session
 
         assert selected_tab is not None, "Could not get or create iTerm2 tab"
-        selected_session = selected_tab.current_session
         assert selected_session is not None, "Could not get current session in tab"
         return selected_tab, selected_session
 

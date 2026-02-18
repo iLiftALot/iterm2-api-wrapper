@@ -415,7 +415,7 @@ class iTermState:
         """
         marker_token = f"{end_prefix}:"
         out_parts: list[str] = []
-        for line in lines:
+        for line in lines[1:]:  # skip the first line which is `>>> <command>`
             s = line.string
             pos = s.find(marker_token)
             if pos != -1:
