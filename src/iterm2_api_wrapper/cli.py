@@ -10,6 +10,7 @@ from types import FunctionType
 from typing import Annotated, Any, Concatenate, Coroutine
 
 import typer
+from iterm2 import profile
 
 from iterm2_api_wrapper.alert import (
     alert_handler,
@@ -17,8 +18,9 @@ from iterm2_api_wrapper.alert import (
     text_input_alert_handler,
 )
 from iterm2_api_wrapper.client import create_iterm_client
-from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.logging import PrettyLog
+from iterm2_api_wrapper.state import iTermState
+from iterm2_api_wrapper.utils import run_until_complete
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
@@ -29,6 +31,15 @@ type CoroutineFn[T, R: Any] = Callable[Concatenate[T, ...], Coroutine[Any, Any, 
 def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop) -> T:
     """Run a coroutine in the given event loop and return a Future."""
     return asyncio.run_coroutine_threadsafe(coro, event_loop).result()
+
+
+def profiles_completion(incomplete: str, ctx: typer.Context) -> list[tuple[str, str]]:
+    profiles: list[profile.Profile] = run_until_complete(profile.Profile.async_get)
+    return [
+        (p.name, f"Profile: {p.name} ({p.guid})")
+        for p in profiles
+        if p.name.startswith(incomplete)
+    ]
 
 
 def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[str, str]]:
@@ -155,11 +166,13 @@ async def show_capabilities(state: iTermState) -> dict[str, Any]:
 
 
 async def send_command(
-    state: iTermState, command: str, path: str | None = None, timeout: float = 120.0
+    state: iTermState, command: str | None, path: str | None = None, timeout: float = 120.0
 ) -> str:
     """Send a command to the iTerm2 session."""
+
+    default_command = "echo 'Hello from iTerm2 API Wrapper!'"
     output = await state.run_command(
-        command,
+        command or default_command,
         path=str(Path(path).expanduser().resolve()) if path else None,
         broadcast=False,
         timeout=float(timeout),
@@ -182,14 +195,56 @@ def main(
                 "poly_modal_alert",
                 "all_alerts",
             ],
+            metavar="FUNCTION_NAME",
+            rich_help_panel="Function Options",
         ),
     ],
     args: Annotated[
         list[str],
         typer.Argument(
-            help="Arguments for the function",
+            help="Arguments for the function.",
             autocompletion=func_to_args_completion,
             default_factory=list,
+            metavar="*FUNCTION_ARGS",
+            rich_help_panel="Function Options",
+        ),
+    ],
+    new_tab: Annotated[
+        bool,
+        typer.Option(
+            "--new-tab/--no-new-tab",
+            "-t/-nt",
+            default_factory=lambda: False,
+            help="Whether to open a new tab for the session.",
+            rich_help_panel="iTerm Setup Options",
+            metavar="NEW_TAB?",
+        ),
+    ],
+    profile_name: Annotated[
+        str,
+        typer.Option(
+            "--profile",
+            "-p",
+            help="The iTerm2 profile to use for the session.",
+            autocompletion=profiles_completion,
+            envvar="ITERM2_DEDICATED_PROFILE",
+            default_factory=lambda: (
+                run_until_complete(profile.Profile.async_get_default).name
+            ),
+            metavar="PROFILE_NAME",
+            rich_help_panel="iTerm Setup Options",
+        ),
+    ],
+    debug: Annotated[
+        bool,
+        typer.Option(
+            "--debug/--no-debug",
+            "-d/-nd",
+            default_factory=lambda: False,
+            help="Enable debug logging.",
+            envvar="ITERM2_DEBUG",
+            metavar="DEBUG?",
+            rich_help_panel="iTerm Setup Options",
         ),
     ],
 ):
@@ -198,7 +253,6 @@ def main(
     log.info(f":rocket: [green]Running function:[/green] [bold]{func_name}[/bold]")
 
     selected_fn: CoroutineFn[iTermState, Any]
-    # fn_args: tuple[Any, ...] = tuple(args)
     fn_args, fn_kwargs = kwarg_conversion(tuple(args or []))
     log.info(f"{fn_args=}\n{fn_kwargs=}")
     match func_name:
@@ -223,10 +277,7 @@ def main(
             raise typer.Exit(code=1)
 
     with create_iterm_client(
-        timeout=None,
-        debug=False,
-        new_tab=False,
-        # dedicated_profile_name="Hotkey Window"
+        timeout=None, debug=debug, new_tab=new_tab, dedicated_profile_name=profile_name
     ) as client:
         state = client.get_state()
         event_loop = client.loop
