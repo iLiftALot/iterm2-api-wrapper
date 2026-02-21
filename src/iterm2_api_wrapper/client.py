@@ -4,7 +4,7 @@ import asyncio
 import threading
 from threading import Thread
 from types import TracebackType
-from typing import TYPE_CHECKING, Awaitable, Callable, Self, Unpack, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Unpack, cast
 
 from iterm2_api_wrapper.gateway import (
     DefaultITermGateway,
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from iterm2_api_wrapper.typings import iTermSetupKwargs
 
 
-class iTermClient[StateT: RefreshableState]:
+class iTermClient[StateT: RefreshableState[Any]]:
     def __init__(
         self,
         coro: Callable[[_Connection], Awaitable[iTermState]] | None = None,
@@ -60,7 +60,7 @@ class iTermClient[StateT: RefreshableState]:
     @classmethod
     async def create(
         cls, *, timeout: float | None = None, **kwargs: Unpack[iTermSetupKwargs]
-    ) -> Self:
+    ) -> iTermClient[StateT]:
         """Async factory — never blocks the calling event loop."""
         instance = object.__new__(cls)
         instance._setup(timeout=timeout, **kwargs)
@@ -103,7 +103,7 @@ class iTermClient[StateT: RefreshableState]:
 
     async def _init_async(self) -> StateT:
         state: StateT = await self._gateway.create_state(**self._kwargs)
-        state.refresh_callback = self._init_async
+        state._refresh_callback = self._init_async
         state._event_loop = self._loop
         return state
 
@@ -124,7 +124,11 @@ class iTermClient[StateT: RefreshableState]:
         is_own_thread = current_thread is self._thread
 
         if self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._loop.stop)
+            try:
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            except RuntimeError:
+                # Loop might already be stopping or have pending callbacks
+                pass
 
         # Only join if we're not on the client's thread
         if not is_own_thread and self._thread.is_alive():
@@ -195,7 +199,7 @@ class iTermClient[StateT: RefreshableState]:
 
         return self._state
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> iTermClient[StateT]:
         return self
 
     def __exit__(
@@ -207,7 +211,7 @@ class iTermClient[StateT: RefreshableState]:
         if not self._loop.is_closed():
             self.close()
 
-    async def __aenter__(self) -> Self:
+    async def __aenter__(self) -> iTermClient[StateT]:
         return self
 
     async def __aexit__(

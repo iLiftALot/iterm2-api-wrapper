@@ -5,7 +5,7 @@ import errno
 import os
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Protocol  # , TypeVar
+from typing import TYPE_CHECKING, Any, Protocol
 
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ class _Connection(Protocol):
     async def async_create(cls) -> Connection: ...
 
 
-class RefreshableState(Protocol):
+class RefreshableState[StateT](Protocol):
     """
     Minimal protocol that `iTermClient` needs from a "state" object.
 
@@ -28,17 +28,16 @@ class RefreshableState(Protocol):
     tests can provide simple fakes without requiring a live iTerm2 runtime.
     """
 
-    refresh_callback: Callable[[], Awaitable[Any]] | None
+    _refresh_callback: Callable[[], Awaitable[StateT]] | Awaitable[StateT] | None
     _event_loop: asyncio.AbstractEventLoop | None
 
     async def ensure_state(
         self,
-        refresh_callback: Callable[[], Awaitable[Any]] | Awaitable[Any] | None = None,
+        refresh_callback: Callable[[], Awaitable[StateT]]
+        | Awaitable[StateT]
+        | None = None,
     ) -> None: ...
-    def refresh_from(self, new_state: Any) -> None: ...
-
-
-# StateT = TypeVar("StateT", bound=RefreshableState, covariant=True)
+    def refresh_from(self, new_state: StateT) -> None: ...
 
 
 _ENV_CONNECT_TIMEOUT = "ITERM2_CONNECT_TIMEOUT"
@@ -97,7 +96,7 @@ async def _async_create_connection_with_retry(
             delay_s = min(max_delay_s, delay_s * backoff)
 
 
-class ITermGateway[StateT: RefreshableState](Protocol):
+class ITermGateway[StateT: RefreshableState[Any]](Protocol):
     """
     Creates a fully-initialized state object.
 
@@ -119,8 +118,8 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
     async def create_state(self, **kwargs: Any) -> iTermState:
         from iterm2.connection import Connection
 
-        from iterm2_api_wrapper.runtime_setup import run_iterm_setup
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
+        from iterm2_api_wrapper.runtime_setup import run_iterm_setup
 
         activate_iterm_app()
 
@@ -154,6 +153,7 @@ class SetupCoroGateway(ITermGateway["iTermState"]):
 
     async def create_state(self, **kwargs: Any) -> iTermState:
         from iterm2.connection import Connection
+
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
 
         activate_iterm_app()

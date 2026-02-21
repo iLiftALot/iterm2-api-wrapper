@@ -22,6 +22,7 @@ from iterm2 import (
 
 # from websockets import ClientConnection, ConnectionClosed, ConnectionClosedError
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
+from websockets.legacy.client import WebSocketClientProtocol
 
 from iterm2_api_wrapper.logging import PrettyLog
 from iterm2_api_wrapper.typings import (
@@ -91,8 +92,6 @@ class iTermState:
     session: session.Session
     profile: profile.Profile
 
-    # refresh_callback is set in client.py after initialization
-    refresh_callback: Callable[[], Awaitable[Any]] | None = None
     is_hotkey_window: bool = False
 
     # Variable accessors to avoid further imports; use for get_variable methods
@@ -108,11 +107,12 @@ class iTermState:
     _event_loop: asyncio.AbstractEventLoop | None = field(
         default=None, init=False, repr=False
     )
+    # One lock per instance
     _run_command_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, init=False, repr=False
     )
 
-    def refresh_from(self, new_state: Any) -> None:
+    def refresh_from(self, new_state: iTermState) -> None:
         """
         Refresh this state in-place from another state instance.
 
@@ -131,20 +131,22 @@ class iTermState:
         self.session = new_state.session
         self.profile = new_state.profile
         self.is_hotkey_window = new_state.is_hotkey_window
-        self.refresh_callback = new_state.refresh_callback
+        self._refresh_callback = new_state._refresh_callback
         # Preserve _event_loop from existing state if new_state doesn't have one
         if new_state._event_loop is not None:
             self._event_loop = new_state._event_loop
 
     async def ensure_state(
         self,
-        refresh_callback: Callable[[], Awaitable[Any]] | Awaitable[Any] | None = None,
+        refresh_callback: Callable[[], Awaitable[iTermState]]
+        | Awaitable[iTermState]
+        | None = None,
     ) -> None:
         """Ensure the state is valid, refreshing if needed."""
         if await self.validated_state():
             return
 
-        callback = refresh_callback or self.refresh_callback
+        callback = refresh_callback or self._refresh_callback
         if callback is None:
             raise RuntimeError("No refresh callback provided to ensure_state")
 
@@ -201,7 +203,9 @@ class iTermState:
         - The websocket is not open
         - The event loop is closed or not set
         """
-        websocket_open = getattr(self.connection.websocket, "open", False)
+        websocket_open: WebSocketClientProtocol | None = getattr(
+            self.connection.websocket, "open", False
+        )
         if not websocket_open:
             return False
         # Also check if event loop is still usable
@@ -213,7 +217,7 @@ class iTermState:
     @property
     def debug(self) -> bool:
         """Check if connection is in debug mode."""
-        loop = self.connection.loop
+        loop = self.loop
         if loop is None:
             return False
         return loop.get_debug()
@@ -482,9 +486,9 @@ class iTermState:
                     command=command, suppress_broadcast=suppress, timeout=timeout
                 )
 
-            async with iterm2.Transaction(self.connection):
+            async with transaction.Transaction(self.connection):
                 await self.session.async_send_text(
-                    command + "\r", suppress_broadcast=suppress, timeout=timeout
+                    command + "\r", suppress_broadcast=suppress
                 )
                 last_prompt: prompt.Prompt | None = await self._get_prompt()
                 if last_prompt is None:
@@ -509,7 +513,7 @@ class iTermState:
                 )
 
             # Re-fetch the prompt for the command we sent to get the output range
-            async with iterm2.Transaction(self.connection):
+            async with transaction.Transaction(self.connection):
                 content = await self._string_in_lines(last_prompt)
             return content
 
@@ -530,16 +534,16 @@ class iTermState:
 
     async def _wait_for_prompt(self, *, timeout: float = 30.0) -> bool:
         """Block until the running command terminates. Returns True if command ended, False on timeout."""
-        modes = [iterm2.PromptMonitor.Mode.COMMAND_END]
+        modes = [prompt.PromptMonitor.Mode.COMMAND_END]
         try:
-            async with iterm2.PromptMonitor(
+            async with prompt.PromptMonitor(
                 self.connection, self.session.session_id, modes
             ) as monitor:
                 while True:
                     _type, _ = await asyncio.wait_for(
                         monitor.async_get(), timeout=timeout
                     )
-                    if _type == iterm2.PromptMonitor.Mode.COMMAND_END:
+                    if _type == prompt.PromptMonitor.Mode.COMMAND_END:
                         return True
         except TimeoutError:
             return False
@@ -655,5 +659,5 @@ class iTermState:
             if hasattr(value, "__dict__")
             else value
             for key, value in self.__dict__.items()
-            if key not in {"refresh_callback", "_run_command_lock", "_event_loop"}
+            if not key.startswith("_")
         }
