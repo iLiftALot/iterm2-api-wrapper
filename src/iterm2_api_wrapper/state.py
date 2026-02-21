@@ -4,20 +4,37 @@ import asyncio
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, Callable, Concatenate, Coroutine, Literal, overload
+from typing import Any, Callable, ClassVar, Concatenate, Coroutine, Literal, overload
 
 import iterm2
 from dotenv import load_dotenv
-from iterm2 import app, connection, profile, prompt, session, tab, util, window
+from iterm2 import (
+    app,
+    connection,
+    profile,
+    prompt,
+    session,
+    tab,
+    transaction,
+    util,
+    window,
+)
+
+# from websockets import ClientConnection, ConnectionClosed, ConnectionClosedError
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
 from iterm2_api_wrapper.logging import PrettyLog
 from iterm2_api_wrapper.typings import (
-    GlobalVars,
-    SessionVars,
-    TabVars,
-    VarContext,
-    WindowVars,
+    GlobalVar,
+    GlobalVariable,
+    SessionVar,
+    SessionVariable,
+    TabVar,
+    TabVariable,
+    Variable,
+    VariableContext,
+    WindowVar,
+    WindowVariable,
 )
 
 
@@ -77,6 +94,17 @@ class iTermState:
     # refresh_callback is set in client.py after initialization
     refresh_callback: Callable[[], Awaitable[Any]] | None = None
     is_hotkey_window: bool = False
+
+    # Variable accessors to avoid further imports; use for get_variable methods
+    SESSION_VAR: ClassVar[type[SessionVar]] = SessionVar
+    GLOBAL_VAR: ClassVar[type[GlobalVar]] = GlobalVar
+    TAB_VAR: ClassVar[type[TabVar]] = TabVar
+    WINDOW_VAR: ClassVar[type[WindowVar]] = WindowVar
+
+    # refresh_callback and _event_loop are set in client.py after initialization
+    _refresh_callback: (
+        Callable[[], Awaitable[iTermState]] | Awaitable[iTermState] | None
+    ) = field(default=None, init=False, repr=False)
     _event_loop: asyncio.AbstractEventLoop | None = field(
         default=None, init=False, repr=False
     )
@@ -216,50 +244,50 @@ class iTermState:
             # No running loop
             return False
 
-    async def get_session_var(self, name: SessionVars) -> str:
+    async def get_session_var(self, name: SessionVariable) -> str:
         """Get a session variable."""
-        return await self.get_variable(ctx="session", variable_name=name)
+        return await self.get_variable(ctx="session", variable=name)
 
-    async def get_window_var(self, name: WindowVars) -> str:
+    async def get_window_var(self, name: WindowVariable) -> str:
         """Get a window variable."""
-        return await self.get_variable(ctx="window", variable_name=name)
+        return await self.get_variable(ctx="window", variable=name)
 
-    async def get_tab_var(self, name: TabVars) -> str:
+    async def get_tab_var(self, name: TabVariable) -> str:
         """Get a tab variable."""
-        return await self.get_variable(ctx="tab", variable_name=name)
+        return await self.get_variable(ctx="tab", variable=name)
 
-    async def get_global_var(self, name: GlobalVars) -> str:
+    async def get_global_var(self, name: GlobalVariable) -> str:
         """Get a global variable."""
-        return await self.get_variable(ctx="iterm2", variable_name=name)
+        return await self.get_variable(ctx="iterm2", variable=name)
 
     @overload
     @_validate_state
     async def get_variable(
-        self, ctx: Literal["session"], variable_name: SessionVars
+        self, ctx: Literal["session"], variable: SessionVariable
     ) -> str: ...
     @overload
     @_validate_state
-    async def get_variable(self, ctx: Literal["tab"], variable_name: TabVars) -> str: ...
+    async def get_variable(self, ctx: Literal["tab"], variable: TabVariable) -> str: ...
     @overload
     @_validate_state
     async def get_variable(
-        self, ctx: Literal["window"], variable_name: WindowVars
+        self, ctx: Literal["window"], variable: WindowVariable
     ) -> str: ...
     @overload
     @_validate_state
     async def get_variable(
-        self, ctx: Literal["iterm2"], variable_name: GlobalVars
+        self, ctx: Literal["iterm2"], variable: GlobalVariable
     ) -> str: ...
     @overload
     @_validate_state
-    async def get_variable(self, ctx: Literal["user"], variable_name: str) -> str: ...
+    async def get_variable(self, ctx: Literal["user"], variable: str) -> str: ...
     @_validate_state
-    async def get_variable(self, ctx: VarContext, variable_name: str) -> str:
+    async def get_variable(self, ctx: VariableContext, variable: Variable) -> str:
         """Get a variable from the specified context."""
 
         target: tab.Tab | window.Window | session.Session | app.App
         match ctx:
-            case "session" | "user":
+            case x if x in ["session", "user"]:
                 target = self.session
             case "tab":
                 target = self.tab
@@ -269,7 +297,8 @@ class iTermState:
                 target = self.app
             case _:
                 raise ValueError(f"Invalid context: {ctx!r}")
-        return await target.async_get_variable(variable_name)
+
+        return await target.async_get_variable(variable)
 
     @staticmethod
     def _last_nonempty_line(lines: list[str]) -> str | None:

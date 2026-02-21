@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Literal, TypeAlias, TypedDict
 
 
@@ -31,7 +32,7 @@ class iTermStateKwargs(TypedDict, total=True):
     """Whether the current window is a hotkey window."""
 
 
-VarContext: TypeAlias = Literal["iterm2", "window", "tab", "session", "user"]
+type VariableContext = Literal["iterm2", "window", "tab", "session", "user"]
 
 SessionVars: TypeAlias = Literal[
     # Session Name
@@ -91,13 +92,20 @@ SessionVars: TypeAlias = Literal[
 
 TabVars: TypeAlias = Literal[
     # Tab Context
-    "id",  # - The unique identifier for this tab.
-    "titleOverrideFormat",  # - An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not).
-    "titleOverride",  # - The value of titleOverrideFormat after evaluating it as an interpolated string.
-    "tmuxWindow",  # - In tmux integration, this is the tmux window number this tab represents.
-    "tmuxWindowTitle",  # - In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option.
-    "tmuxWindowName",  # - In tmux integration, this is the tmux window name.
-    "title",  # - The fully formatted title as it appears in the tab bar.
+    "id",
+    # - """The unique identifier for this tab."""
+    "titleOverrideFormat",
+    # - """An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not)."""
+    "titleOverride",
+    # - """The value of titleOverrideFormat after evaluating it as an interpolated string."""
+    "tmuxWindow",
+    # - """In tmux integration, this is the tmux window number this tab represents."""
+    "tmuxWindowTitle",
+    # - """In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option."""
+    "tmuxWindowName",
+    # - """In tmux integration, this is the tmux window name."""
+    "title",
+    # - """The fully formatted title as it appears in the tab bar."""
 ]
 """
 The only variables that users may directly control are those in the "user" scope of a session.
@@ -110,18 +118,187 @@ See "Setting User-Defined Variables" in Scripting Fundamentals for details on se
 
 WindowVars: TypeAlias = Literal[
     # Window Title
-    "titleOverride",  # - The value from evaluating the interpeted string in titleOverrideFormat, if set.
-    "titleOverrideFormat",  # - The window's interpolated string title. If not set, the current tab's title is used.
+    "titleOverride",  # - """The value from evaluating the interpeted string in titleOverrideFormat, if set."""
+    "titleOverrideFormat",  # - """The window's interpolated string title. If not set, the current tab's title is used."""
     # Other
-    "id",  # - The window ID.
-    "frame",  # - An array of integers giving the x origin, y origin, width, and height.
-    "style",  # - The window style. Takes one of these values: normal, non-native full screen, native full screen, full-width top, full-width bottom, full-height left, full-height right, bottom, top, left, right, no-title-bar, compact, accessory.
-    "number",  # - The window number. Corresponds to the keyboard shortcut that switches to the window. Begins at 1. Unlike the keyboard shortcut, this is set even if the number is larger than 9.
-    "isHotkeyWindow",  # - A boolean indicating if this is a hotkey window.
+    "id",  # - """The window ID."""
+    "frame",  # - """An array of integers giving the x origin, y origin, width, and height."""
+    "style",  # - """The window style. Takes one of these values: normal, non-native full screen, native full screen, full-width top, full-width bottom, full-height left, full-height right, bottom, top, left, right, no-title-bar, compact, accessory."""
+    "number",  # - """The window number. Corresponds to the keyboard shortcut that switches to the window. Begins at 1. Unlike the keyboard shortcut, this is set even if the number is larger than 9."""
+    "isHotkeyWindow",  # - """A boolean indicating if this is a hotkey window."""
 ]
+"""Defined in the context of a window"""
 
 GlobalVars: TypeAlias = Literal[
     "effectiveTheme",  # - A space-delimited list of words describing the OS theme (e.g., "dark", "light highContrast", "dark minimal")
     "localhostName",  # - The best guess of what localhost's hostname is
     "pid",  # - The process ID of the iTerm2 app
 ]
+"""Defined in the global context"""
+
+
+class SessionVar(StrEnum):
+    """Defined in the context of a session"""
+
+    # Session Name
+    autoNameFormat = "autoNameFormat"
+    """This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created."""
+    autoName = "autoName"
+    """The result of evaluating the autoNameFormat interpolated string. This attempts to match the user's intuition of the what the session's name is."""
+    name = "name"
+    """The formatted name as it appears in the tab bar (excluding tmux integration decoration). For example, if the profile is configured to show the session name and job, this would take a value like My Profile (vim)."""
+    presentationName = "presentationName"
+    """The session name exactly as it appears in the session title bar."""
+    terminalIconName = "terminalIconName"
+    """The "icon" title, as set by the control sequence OSC 0 or OSC 1."""
+    terminalWindowName = "terminalWindowName"
+    """The "window" title, as set by the control sequence OSC 0 or OSC 2."""
+    triggerName = "triggerName"
+    """The last session name set by a trigger."""
+    # Terminal
+    columns = "columns"
+    """Session's width in columns"""
+    commandLine = "commandLine"
+    """Command line of the current foreground job (job name including arguments)"""
+    jobName = "jobName"
+    """The name of the current foreground job (e.g., "emacs")"""
+    jobPid = "jobPid"
+    """The process ID of the current foreground job in this session."""
+    mouseReportingMode = "mouseReportingMode"
+    """A number indicating how mouse events are reported. -1: Not reported, 0: button clicks reported, 1: not currently implemented, 2: reports clicks and drags, 3: reports clicks, drags, and movement"""
+    parentSession = "parentSession"
+    """The session that was current when this sessionw as created. This is an alias to the context of that session so you can access its variables."""
+    pid = "pid"
+    """The process ID of the root process in this session (typically login)."""
+    processTitle = "processTitle"
+    """The (perhaps modified by the process) title of a process from its argv."""
+    rows = "rows"
+    """The session's height in rows"""
+    selection = "selection"
+    """The currently selected text."""
+    selectionLength = "selectionLength"
+    """The length in UTF-8 bytes of the currently selected text."""
+    termid = "termid"
+    """Window, tab, and pane number as used in the $TERM_SESSION_ID environment variable."""
+    tty = "tty"
+    """The path to the local TTY device"""
+    uname = "uname"
+    """Information about the operating system on the current host."""
+    shell = "shell"
+    """The shell on the current host."""
+    sshIntegrationLevel = "sshIntegrationLevel"
+    """0: No ssh integration. 1: Basic ssh integration. 2: Full ssh integration with all features available."""
+    homeDirectory = "homeDirectory"
+    """The home directory on the current host."""
+    applicationKeypad = "applicationKeypad"
+    """A boolean indicating if the session is in application keypad mode."""
+    mouseInfo = "mouseInfo"
+    """Describes the last mouse event. Is an array: [x coord, y coord, button number, click count, array of modifiers, bitmask of side effects, event type]. x coord is 0-based and gives the location in columns from the leftmost column. y coord is 0 at the first line in history, including lines which have since been lost if there are more lines of history than the maximum. button number is 0 for left, 1 for right, and 2 or greater for other buttons. click count is 1 for single click, 2 for double click, etc., and isn't artifically bounded. array of modifiers contains numbers for each modifier key that is pressed. They keys are: Control = 1; Option = 2; Command = 3; Shift = 4. bitmask of side effects comes by summing these values: Modify selection = 1; Perform action = 2; Open target (e.g., a URL or file) = 4; Report = 8; Move cursor = 16; Move find-on-page start location = 32; Open password manager = 64; Drag = 128. event type is 0 for mouse-up, 1 for mouse-down, 2 for drag."""
+    bellCount = "bellCount"
+    """Number of times the bell has rung."""
+    # Shell Integration
+    hostname = "hostname"
+    """The current hostname"""
+    lastCommand = "lastCommand"
+    """The last command run in the session"""
+    path = "path"
+    """The current working directory (this works without shell integration, but not if you ssh elsewhere)"""
+    username = "username"
+    """The current user name"""
+    # Logging
+    autoLogId = "autoLogId"
+    """When automatic logging is enabled, this is the random number portion of the filename."""
+    creationTimeString = "creationTimeString"
+    """A string giving the initial creation time of the session, used as part of the filename when automatic logging is enabled"""
+    logFilename = "logFilename"
+    """If set, the filename that logging goes to. If unset, logging is off. New in version 3.4.7."""
+    # tmux Integration
+    tmuxClientName = "tmuxClientName"
+    """The name of the tmux session when tmux integration is in use (e.g., user@localhost)."""
+    tmuxPaneTitle = "tmuxPaneTitle"
+    """The title of the tmux window pane."""
+    tmuxRole = "tmuxRole"
+    """Unset if tmux integration is not in use. Otherwise, is "gateway" for the session in which tmux -CC is running or "client" in tmux integration sessions."""
+    tmuxStatusLeft = "tmuxStatusLeft"
+    """In tmux integration, the value of the left side of the status bar."""
+    tmuxStatusRight = "tmuxStatusRight"
+    """In tmux integration, the value of the right side of the status bar."""
+    tmuxWindowPane = "tmuxWindowPane"
+    """In tmux integration, this gives the window pane number."""
+    tmuxWindowTitle = "tmuxWindowTitle"
+    """If tmux integration is in use, this gives the name of the window title from tmux."""
+    tmuxWindowPaneIndex = "tmuxWindowPaneIndex"
+    """In tmux integration, this gives the index of the window pane. It corresponds to the pane_index property in tmux."""
+    # Other
+    badge = "badge"
+    """The value of the badge. Note that the user can enter an interpolated string in the UI, but this value contains the string result of evaluating it."""
+    id = "id"
+    """A unique identifier for the session"""
+    profileName = "profileName"
+    """The name of the current profile."""
+
+
+class TabVar(StrEnum):
+    """
+    The only variables that users may directly control are those in the "user" scope of a session.
+    For example, you could set a variable named "gitBranch" to the name of the current git branch.
+    This value would then be available to display in the session title, badge, or other places,
+    and would be available to Python API scripts. You'd reference it as user.gitBranch.
+
+    See "Setting User-Defined Variables" in Scripting Fundamentals for details on setting them.
+    """
+
+    id = "id"
+    """The unique identifier for this tab."""
+    titleOverrideFormat = "titleOverrideFormat"
+    """An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not)."""
+    titleOverride = "titleOverride"
+    """The value of titleOverrideFormat after evaluating it as an interpolated string."""
+    tmuxWindow = "tmuxWindow"
+    """In tmux integration, this is the tmux window number this tab represents."""
+    tmuxWindowTitle = "tmuxWindowTitle"
+    """In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option."""
+    tmuxWindowName = "tmuxWindowName"
+    """In tmux integration, this is the tmux window name."""
+    tabTitle = "title"
+    """The fully formatted title as it appears in the tab bar."""
+
+
+class WindowVar(StrEnum):
+    """Defined in the context of a window"""
+
+    # Window Title
+    titleOverride = "titleOverride"
+    """The value from evaluating the interpeted string in titleOverrideFormat, if set."""
+    titleOverrideFormat = "titleOverrideFormat"
+    """The window's interpolated string title. If not set, the current tab's title is used."""
+    # Other
+    id = "id"
+    """The window ID."""
+    frame = "frame"
+    """An array of integers giving the x origin, y origin, width, and height."""
+    style = "style"
+    """The window style. Takes one of these values: normal, non-native full screen, native full screen, full-width top, full-width bottom, full-height left, full-height right, bottom, top, left, right, no-title-bar, compact, accessory."""
+    number = "number"
+    """The window number. Corresponds to the keyboard shortcut that switches to the window. Begins at 1. Unlike the keyboard shortcut, this is set even if the number is larger than 9."""
+    isHotkeyWindow = "isHotkeyWindow"
+    """A boolean indicating if this is a hotkey window."""
+
+
+class GlobalVar(StrEnum):
+    """Defined in the global context"""
+
+    effectiveTheme = "effectiveTheme"
+    """A space-delimited list of words describing the OS theme (e.g., "dark", "light highContrast", "dark minimal")"""
+    localhostName = "localhostName"
+    """The best guess of what localhost's hostname is"""
+    pid = "pid"
+    """The process ID of the iTerm2 app"""
+
+
+type EnumVariables = SessionVar | TabVar | WindowVar | GlobalVar
+type Variable = EnumVariables | SessionVars | TabVars | WindowVars | GlobalVars | str
+type SessionVariable = SessionVar | SessionVars
+type TabVariable = TabVar | TabVars
+type WindowVariable = WindowVar | WindowVars
+type GlobalVariable = GlobalVar | GlobalVars
