@@ -31,6 +31,7 @@ from .config import (
     StyleLike,
     _resolve_level,
     _severity,
+    get_default_log_config,
 )
 from .styles import (
     LEVEL_PROFILES,
@@ -313,31 +314,8 @@ class PrettyLog:
     def _normalize_pretty_config(pretty_config: dict[str, Any] | None) -> AllLogConfig:
         """Normalize legacy config keys and return a clean config dict."""
         if pretty_config is None:
-            return {
-                "file_manager_config": {"clear_file_on_init": True},
-                "logger_config": {"emoji": True, "sep": "\n"},
-            }
-
+            return get_default_log_config()
         normalized: dict[str, Any] = dict(pretty_config)
-        legacy_common = normalized.pop("common_kwargs", None)
-        legacy_terminal = normalized.pop("terminal_kwargs", None)
-        legacy_file = normalized.pop("file_kwargs", None)
-        legacy_print = normalized.pop("print_config", None)
-        if legacy_common or legacy_terminal or legacy_file:
-            legacy_logger = {
-                **(legacy_common or {}),
-                **(legacy_terminal or {}),
-                **(legacy_file or {}),
-            }
-            if legacy_logger:
-                normalized_logger = {**normalized.get("logger_config", {})}
-                normalized_logger.update(legacy_logger)
-                normalized["logger_config"] = normalized_logger
-        if legacy_print:
-            normalized_logger = {**normalized.get("logger_config", {})}
-            normalized_logger.update(legacy_print)
-            normalized["logger_config"] = normalized_logger
-
         allowed_keys = {
             "logger_config",
             "file_manager_config",
@@ -386,7 +364,9 @@ class PrettyLog:
         self._context: dict[str, str] = {}
         self._filters: list[Callable[[LogLevel, tuple[object, ...]], bool]] = []
         self._children: dict[str, PrettyLog] = {}
-        self._parent: PrettyLog | None = None
+        self._parent: PrettyLog = self._find_ancestor(name) if name != "root" else self
+        if self._parent is not self:
+            self._parent._children[self.name] = self
         PrettyLog._registry[name] = self
 
     # -- configuration --------------------------------------------------------
@@ -467,7 +447,7 @@ class PrettyLog:
         return dict(self._children)
 
     @property
-    def parent(self) -> PrettyLog | None:
+    def parent(self) -> PrettyLog:
         """Return the parent logger, or ``None`` for root."""
         return self._parent
 
@@ -483,9 +463,17 @@ class PrettyLog:
             f"level={self.level.value!r}, children={len(self._children)})"
         )
 
-    def set_level(self, level: LogLevelLike) -> None:
-        """Change the minimum log level at runtime."""
-        self.level = _resolve_level(level)
+    def set_level(self, level: LogLevelLike, *, propagate: bool = False) -> None:
+        """Change the minimum log level at runtime.
+
+        If ``propagate`` is ``True``, recursively apply the level to all
+        currently registered descendant loggers.
+        """
+        resolved = _resolve_level(level)
+        self.level = resolved
+        if propagate:
+            for child in self._children.values():
+                child.set_level(resolved, propagate=True)
 
     def configure(
         self,
@@ -1107,7 +1095,6 @@ class PrettyLog:
         level: LogLevelLike | None = None,
         mode: Literal["terminal", "file", "all"] | None = None,
         pretty_config: AllLogConfig | None = None,
-        stack_offset: int = 3,
         **ctx: str,
     ) -> PrettyLog:
         """Create a child logger that inherits all settings and adds extra context.

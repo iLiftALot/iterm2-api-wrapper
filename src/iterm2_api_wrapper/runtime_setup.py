@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from typing import Unpack
+from typing import Literal, Unpack
 
 from iterm2 import app, connection, profile, session, tab, window
 
@@ -12,7 +12,7 @@ from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.typings import iTermSetupKwargs
 
 
-log = PrettyLog(__name__)
+log = PrettyLog.get_logger(__name__)
 
 
 async def get_connection() -> connection.Connection:
@@ -84,7 +84,11 @@ async def _get_tab_with_session(
                     selected_tab, selected_session = t, current_session
                     break
 
-        if new_tab is True or override_new_tab is True or (not selected_tab or not selected_session):
+        if (
+            new_tab is True
+            or override_new_tab is True
+            or (not selected_tab or not selected_session)
+        ):
             selected_tab = await window.async_create_tab(profile=profile.name)
             selected_session = selected_tab.current_session
 
@@ -176,7 +180,7 @@ async def _setup_iterm(
 
     app_instance: app.App = await _get_app(connection_instance=connection_instance)
     dedicated_profile_name = kwargs.get("dedicated_profile_name") or os.getenv(
-        "ITERM2_DEDICATED_PROFILE", None
+        "ITERM_DEDICATED_PROFILE", None
     )
     profile_instance: profile.Profile = await get_profile(
         connection_instance=connection_instance, profile_name=dedicated_profile_name
@@ -208,13 +212,17 @@ async def run_iterm_setup(
     connection_instance: connection.Connection, **kwargs: Unpack[iTermSetupKwargs]
 ) -> iTermState:
     """Run iTerm2 setup. This can also be called directly."""
-
+    env_debug = os.getenv("ITERM_DEBUG", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    debug_enabled = bool(kwargs.get("debug", False) or env_debug)
+    log_level: Literal["DEBUG", "INFO"] = "DEBUG" if debug_enabled else "INFO"
+    log.parent.set_level(log_level, propagate=True)
     global_iterm_state: iTermState = await _setup_iterm(
         connection_instance=connection_instance, **kwargs
     )
-
-    if global_iterm_state.debug or kwargs.get("debug", False):
-        log.debug("Initialized iTermState:")
-        log.debug(global_iterm_state.asdict())
 
     return global_iterm_state

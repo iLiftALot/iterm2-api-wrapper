@@ -14,10 +14,10 @@ from .conftest import RUN_TIMEOUT, log_var
 
 
 pytestmark = pytest.mark.skipif(
-    str(os.getenv("ITERM2_INTEGRATION", "")).lower() not in {"1", "true", "yes"},
+    str(os.getenv("ITERM_INTEGRATION", "")).lower() not in {"1", "true", "yes"},
     reason=(
         "Integration tests require iTerm2 running with the Python API enabled. "
-        "Set ITERM2_INTEGRATION=1 to run."
+        "Set ITERM_INTEGRATION=1 to run."
     ),
 )
 

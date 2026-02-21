@@ -24,7 +24,7 @@ from iterm2_api_wrapper.utils import run_until_complete
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
-log = PrettyLog(__name__)
+log = PrettyLog.get_logger(__name__)
 type CoroutineFn[T, R: Any] = Callable[Concatenate[T, ...], Coroutine[Any, Any, R]]
 
 
@@ -166,7 +166,10 @@ async def show_capabilities(state: iTermState) -> dict[str, Any]:
 
 
 async def send_command(
-    state: iTermState, command: str | None, path: str | None = None, timeout: float = 120.0
+    state: iTermState,
+    command: str | None,
+    path: str | None = None,
+    timeout: float = 120.0,
 ) -> str:
     """Send a command to the iTerm2 session."""
 
@@ -213,7 +216,7 @@ def main(
         bool,
         typer.Option(
             "--new-tab/--no-new-tab",
-            "-t/-nt",
+            "-t/-T",
             default_factory=lambda: False,
             help="Whether to open a new tab for the session.",
             rich_help_panel="iTerm Setup Options",
@@ -227,7 +230,7 @@ def main(
             "-p",
             help="The iTerm2 profile to use for the session.",
             autocompletion=profiles_completion,
-            envvar="ITERM2_DEDICATED_PROFILE",
+            envvar="ITERM_DEDICATED_PROFILE",
             default_factory=lambda: (
                 run_until_complete(profile.Profile.async_get_default).name
             ),
@@ -239,10 +242,10 @@ def main(
         bool,
         typer.Option(
             "--debug/--no-debug",
-            "-d/-nd",
+            "-d/-D",
             default_factory=lambda: False,
             help="Enable debug logging.",
-            envvar="ITERM2_DEBUG",
+            envvar="ITERM_DEBUG",
             metavar="DEBUG?",
             rich_help_panel="iTerm Setup Options",
         ),
@@ -269,11 +272,7 @@ def main(
         case "all_alerts":
             selected_fn = test_all_alerts
         case _:
-            log.error(
-                f":warning: [red]Unknown function: {func_name}[/red]",
-                mode="terminal",
-                emoji=True,
-            )
+            log.error(f":warning: [red]Unknown function: {func_name}[/red]")
             raise typer.Exit(code=1)
 
     with create_iterm_client(
