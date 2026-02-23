@@ -43,9 +43,7 @@ def test_async_create_connection_with_retry_retries_then_succeeds() -> None:
     FlakyConnection.attempts = 0
 
     result = asyncio.run(
-        _async_create_connection_with_retry(
-            FlakyConnection, timeout_s=1.0, initial_delay_s=0.0, max_delay_s=0.0
-        )
+        _async_create_connection_with_retry(FlakyConnection, timeout_s=1.0, initial_delay_s=0.0, max_delay_s=0.0)
     )
 
     assert result == "ok"
@@ -58,10 +56,7 @@ def test_async_create_connection_with_retry_times_out() -> None:
     with pytest.raises(TimeoutError):
         asyncio.run(
             _async_create_connection_with_retry(
-                AlwaysRefusesConnection,
-                timeout_s=0.0,
-                initial_delay_s=0.0,
-                max_delay_s=0.0,
+                AlwaysRefusesConnection, timeout_s=0.0, initial_delay_s=0.0, max_delay_s=0.0
             )
         )
 
@@ -73,9 +68,7 @@ def test_async_create_connection_with_retry_does_not_retry_fatal_oserror() -> No
 
     with pytest.raises(OSError):
         asyncio.run(
-            _async_create_connection_with_retry(
-                FatalConnection, timeout_s=1.0, initial_delay_s=0.0, max_delay_s=0.0
-            )
+            _async_create_connection_with_retry(FatalConnection, timeout_s=1.0, initial_delay_s=0.0, max_delay_s=0.0)
         )
 
     assert FatalConnection.attempts == 1

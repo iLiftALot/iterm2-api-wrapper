@@ -47,8 +47,7 @@ def _log_level_from_str(level_str: str) -> LogLevel:
         return LogLevel(level_str.upper())
     except ValueError:
         raise ValueError(
-            f"Invalid log level: {level_str!r}. "
-            f"Expected one of: {', '.join(m.value for m in LogLevel)}"
+            f"Invalid log level: {level_str!r}. Expected one of: {', '.join(m.value for m in LogLevel)}"
         ) from None
 
 

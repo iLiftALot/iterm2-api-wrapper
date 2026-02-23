@@ -30,9 +30,9 @@ class iTermClient[StateT: RefreshableState[Any]]:
         **kwargs: Unpack[iTermSetupKwargs],
     ) -> None:
         self._setup(coro=coro, gateway=gateway, timeout=timeout, **kwargs)
-        self._state: StateT = asyncio.run_coroutine_threadsafe(
-            self._init_async(), self._loop
-        ).result(timeout=self._timeout)
+        self._state: StateT = asyncio.run_coroutine_threadsafe(self._init_async(), self._loop).result(
+            timeout=self._timeout
+        )
 
     def _setup(
         self,
@@ -58,16 +58,12 @@ class iTermClient[StateT: RefreshableState[Any]]:
         self._lock = asyncio.Lock()
 
     @classmethod
-    async def create(
-        cls, *, timeout: float | None = None, **kwargs: Unpack[iTermSetupKwargs]
-    ) -> iTermClient[StateT]:
+    async def create(cls, *, timeout: float | None = None, **kwargs: Unpack[iTermSetupKwargs]) -> iTermClient[StateT]:
         """Async factory — never blocks the calling event loop."""
         instance = object.__new__(cls)
         instance._setup(timeout=timeout, **kwargs)
         future = asyncio.run_coroutine_threadsafe(instance._init_async(), instance._loop)
-        instance._state = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: future.result(timeout=timeout)
-        )
+        instance._state = await asyncio.get_running_loop().run_in_executor(None, lambda: future.result(timeout=timeout))
         return instance
 
     @property
@@ -184,9 +180,7 @@ class iTermClient[StateT: RefreshableState[Any]]:
 
             return self._state
 
-        return asyncio.run_coroutine_threadsafe(_invoke(), self._loop).result(
-            timeout=self._timeout
-        )
+        return asyncio.run_coroutine_threadsafe(_invoke(), self._loop).result(timeout=self._timeout)
 
     async def _ensure_state_async(self) -> StateT:
         """Internal method. Use get_state_async instead."""
@@ -203,10 +197,7 @@ class iTermClient[StateT: RefreshableState[Any]]:
         return self
 
     def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
         if not self._loop.is_closed():
             self.close()
@@ -215,10 +206,7 @@ class iTermClient[StateT: RefreshableState[Any]]:
         return self
 
     async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
         if not self._loop.is_closed():
             self.close()
@@ -240,9 +228,7 @@ else:
     ITermClient = iTermClient
 
 
-def create_iterm_client(
-    *, timeout: float | None = None, **kwargs: Unpack[iTermSetupKwargs]
-) -> ITermClient:
+def create_iterm_client(*, timeout: float | None = None, **kwargs: Unpack[iTermSetupKwargs]) -> ITermClient:
     """
     Convenience factory that provides strong type inference for the default state type.
 

@@ -14,18 +14,15 @@ from .conftest import RUN_TIMEOUT, log_var
 
 
 pytestmark = pytest.mark.skipif(
-    str(os.getenv("ITERM_INTEGRATION", "")).lower() not in {"1", "true", "yes"},
+    str(os.getenv("PYTEST_ITERM_INTEGRATION", "")).lower() not in {"1", "true", "yes"},
     reason=(
-        "Integration tests require iTerm2 running with the Python API enabled. "
-        "Set ITERM_INTEGRATION=1 to run."
+        "Integration tests require iTerm2 running with the Python API enabled. Set PYTEST_ITERM_INTEGRATION=1 to run."
     ),
 )
 
 
 def run_coroutine_threadsafe[T](
-    coro: Coroutine[Any, Any, T],
-    loop: asyncio.AbstractEventLoop,
-    run_timeout: float = RUN_TIMEOUT,
+    coro: Coroutine[Any, Any, T], loop: asyncio.AbstractEventLoop, run_timeout: float = RUN_TIMEOUT
 ) -> T:
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     return future.result(timeout=run_timeout)

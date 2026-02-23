@@ -10,7 +10,7 @@ from io import TextIOWrapper
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Unpack, cast, overload
 
-from rich.console import Console, ConsoleOptions, JustifyMethod, RenderResult  # , NewLine
+from rich.console import Console, ConsoleOptions, JustifyMethod, RenderResult
 from rich.measure import Measurement
 from rich.pretty import pprint
 from rich.scope import render_scope
@@ -33,13 +33,7 @@ from .config import (
     _severity,
     get_default_log_config,
 )
-from .styles import (
-    LEVEL_PROFILES,
-    LOG_THEME,
-    GradientHighlighter,
-    StyleType,
-    StyleAttribute,
-)  # , LogRegexHighlighter
+from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleAttribute, StyleType
 
 
 # Install rich tracebacks globally for better error output
@@ -120,13 +114,9 @@ class _FileConsoleManager:
         resolved = path.resolve()
         if resolved in cls._instances:
             instance = cls._instances[resolved]
-            instance.reset_config(
-                file_manager_config=file_manager_config, console_config=console_config
-            )
+            instance.reset_config(file_manager_config=file_manager_config, console_config=console_config)
             return instance
-        instance = cls(
-            path, file_manager_config=file_manager_config, console_config=console_config
-        )
+        instance = cls(path, file_manager_config=file_manager_config, console_config=console_config)
         cls._instances[resolved] = instance
         return instance
 
@@ -140,9 +130,7 @@ class _FileConsoleManager:
         """
         if self._console is None:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            if not self._initialized and self._file_manager_config.get(
-                "clear_file_on_init", True
-            ):
+            if not self._initialized and self._file_manager_config.get("clear_file_on_init", True):
                 self._path.write_text("")
             self._handle = open(self._path, "a")
             self._console_config["file"] = self._handle
@@ -151,10 +139,7 @@ class _FileConsoleManager:
         return self._console
 
     def reset_config(
-        self,
-        *,
-        file_manager_config: FileManagerConfig | None = None,
-        console_config: ConsoleConfig | None = None,
+        self, *, file_manager_config: FileManagerConfig | None = None, console_config: ConsoleConfig | None = None
     ) -> None:
         """Merge new config values without destroying the active console.
 
@@ -166,9 +151,7 @@ class _FileConsoleManager:
             return
         needs_rebuild = False
         if console_config:
-            needs_rebuild = any(
-                self._console_config.get(k) != v for k, v in console_config.items()
-            )
+            needs_rebuild = any(self._console_config.get(k) != v for k, v in console_config.items())
             self._console_config.update(console_config)
         if file_manager_config:
             self._file_manager_config.update(file_manager_config)
@@ -299,12 +282,7 @@ class PrettyLog:
     }
     _registry: ClassVar[dict[str, PrettyLog]] = {}
     _CALL_CONFIG_KEYS: ClassVar[frozenset[str]] = frozenset(
-        {
-            "logger_config",
-            "file_manager_config",
-            "terminal_console_config",
-            "file_console_config",
-        }
+        {"logger_config", "file_manager_config", "terminal_console_config", "file_console_config"}
     )
     _RENDER_KWARGS_KEYS: ClassVar[frozenset[str]] = frozenset(
         {"sep", "end", "style", "justify", "emoji", "markup", "highlight"}
@@ -316,15 +294,8 @@ class PrettyLog:
         if pretty_config is None:
             return get_default_log_config()
         normalized: dict[str, Any] = dict(pretty_config)
-        allowed_keys = {
-            "logger_config",
-            "file_manager_config",
-            "terminal_console_config",
-            "file_console_config",
-        }
-        return cast(
-            AllLogConfig, {k: v for k, v in normalized.items() if k in allowed_keys}
-        )
+        allowed_keys = {"logger_config", "file_manager_config", "terminal_console_config", "file_console_config"}
+        return cast(AllLogConfig, {k: v for k, v in normalized.items() if k in allowed_keys})
 
     def __init__(
         self,
@@ -334,30 +305,20 @@ class PrettyLog:
         *,
         pretty_config: AllLogConfig | None = None,
     ) -> None:
-        pretty_config = self._normalize_pretty_config(
-            pretty_config if pretty_config is None else dict(pretty_config)
-        )
+        pretty_config = self._normalize_pretty_config(pretty_config if pretty_config is None else dict(pretty_config))
         self.name = name
         self.mode = mode
         self.level: LogLevel = _resolve_level(level)
         self._log_config: LogConfig = pretty_config.get("logger_config", {})
-        self._terminal_console_config: ConsoleConfig = pretty_config.get(
-            "terminal_console_config", {}
-        )
-        self._file_console_config: ConsoleConfig = pretty_config.get(
-            "file_console_config", {}
-        )
+        self._terminal_console_config: ConsoleConfig = pretty_config.get("terminal_console_config", {})
+        self._file_console_config: ConsoleConfig = pretty_config.get("file_console_config", {})
         self._file_manager_config: FileManagerConfig = pretty_config.get(
             "file_manager_config", FileManagerConfig(clear_file_on_init=True)
         )
-        self._terminal_console_manager = _TerminalConsoleManager.get_or_create(
-            **self._terminal_console_config
-        )
+        self._terminal_console_manager = _TerminalConsoleManager.get_or_create(**self._terminal_console_config)
         self._terminal_console_config.setdefault("theme", LOG_THEME)
         self._file_manager = _FileConsoleManager.get_or_create(
-            LOG_PATH,
-            file_manager_config=self._file_manager_config,
-            console_config=self._file_console_config,
+            LOG_PATH, file_manager_config=self._file_manager_config, console_config=self._file_console_config
         )
         self._lock = threading.Lock()
         self._enabled = True
@@ -397,11 +358,7 @@ class PrettyLog:
             dbg = PrettyLog.get_logger("app.debug", level="DEBUG")
         """
         if name is None:
-            return (
-                cls._registry["root"]
-                if "root" in cls._registry
-                else PrettyLog(name="root")
-            )
+            return cls._registry["root"] if "root" in cls._registry else PrettyLog(name="root")
         if name in cls._registry:
             logger = cls._registry[name]
             # Apply overrides to an existing logger if provided
@@ -417,9 +374,7 @@ class PrettyLog:
         # Walk up the dot hierarchy to find the closest ancestor
         parent = cls._find_ancestor(name)
         # Strip parent prefix so child() doesn't double it
-        suffix = (
-            name[len(parent.name) + 1 :] if name.startswith(parent.name + ".") else name
-        )
+        suffix = name[len(parent.name) + 1 :] if name.startswith(parent.name + ".") else name
         child = parent.child(suffix, level=level, mode=mode, pretty_config=pretty_config)
         return child
 
@@ -432,9 +387,7 @@ class PrettyLog:
             if parent_name in cls._registry:
                 return cls._registry[parent_name]
             parts = parent_name.rsplit(".", 1)
-        return (
-            cls._registry["root"] if "root" in cls._registry else PrettyLog(name="root")
-        )
+        return cls._registry["root"] if "root" in cls._registry else PrettyLog(name="root")
 
     @classmethod
     def list_loggers(cls) -> dict[str, PrettyLog]:
@@ -573,11 +526,7 @@ class PrettyLog:
         start = time.perf_counter()
         yield
         elapsed = time.perf_counter() - start
-        self(
-            f"{label} completed in {elapsed:.3f}s",
-            level=level or self.level,
-            stack_offset=5,
-        )
+        self(f"{label} completed in {elapsed:.3f}s", level=level or self.level, stack_offset=5)
 
     # -- internal helpers -----------------------------------------------------
 
@@ -593,9 +542,7 @@ class PrettyLog:
         parts.append("")
         return parts
 
-    def _merge_log_config(
-        self, call_kwargs: dict[str, Any], level: LogLevel
-    ) -> dict[str, Any]:
+    def _merge_log_config(self, call_kwargs: dict[str, Any], level: LogLevel) -> dict[str, Any]:
         """Merge init-common → init-terminal → call-time kwargs for terminal."""
         merged = {**self._log_config, **call_kwargs}
         level_style = _LEVEL_STYLES.get(level, None)
@@ -612,9 +559,7 @@ class PrettyLog:
         if not call_kwargs:
             return
         merged_file_manager = {**self._file_manager_config, **call_kwargs}
-        self._file_manager.reset_config(
-            file_manager_config=cast(FileManagerConfig, merged_file_manager)
-        )
+        self._file_manager.reset_config(file_manager_config=cast(FileManagerConfig, merged_file_manager))
 
     def _merge_terminal_console_config(self, call_kwargs: dict[str, Any]) -> None:
         """Merge init-time terminal Console config with call-time overrides."""
@@ -641,13 +586,7 @@ class PrettyLog:
         return {k: log_kwargs[k] for k in self._RENDER_KWARGS_KEYS if k in log_kwargs}
 
     def _build_log_renderable(
-        self,
-        console: Console,
-        renderables: list[Any],
-        *,
-        stack_offset: int,
-        log_locals: bool,
-        include_path: bool,
+        self, console: Console, renderables: list[Any], *, stack_offset: int, log_locals: bool, include_path: bool
     ) -> Any:
         """Build a Rich log-style renderable with time/path columns."""
         renderables = [*renderables]  # ensure log_locals table is separated from message
@@ -655,11 +594,7 @@ class PrettyLog:
         link_path = None if filename.startswith("<") else os.path.abspath(filename)
         path = filename.rpartition(os.sep)[-1] if include_path else None
         if log_locals:
-            locals_display = {
-                key: value
-                for key, value in locals_map.items()
-                if not key.startswith("__")
-            }
+            locals_display = {key: value for key, value in locals_map.items() if not key.startswith("__")}
             renderables.append(render_scope(locals_display, title="[i]locals"))
         return console._log_render(
             console,
@@ -704,9 +639,7 @@ class PrettyLog:
         if style is None and level_profile and level_profile.base:
             style = level_profile.base
 
-        print_kwargs = {
-            k: v for k, v in merged_log.items() if k not in self._RENDER_KWARGS_KEYS
-        }
+        print_kwargs = {k: v for k, v in merged_log.items() if k not in self._RENDER_KWARGS_KEYS}
 
         prefix = self._build_prefix(resolved_level)
         prefix_width = len(prefix.plain)
@@ -729,21 +662,13 @@ class PrettyLog:
                 gradient.highlight(text)
             render_messages.append(text)
 
-        aligned = tuple(
-            self._indent_continuation(m, prefix_width) for m in render_messages
-        )
+        aligned = tuple(self._indent_continuation(m, prefix_width) for m in render_messages)
         objects = (_PrefixRule(prefix), *aligned) if aligned else (prefix,)
 
         def emit_to_console(console: Console) -> None:
             nonlocal style
             renderables = console._collect_renderables(
-                objects,
-                sep,
-                end,
-                justify=justify,
-                emoji=emoji,
-                markup=markup,
-                highlight=highlight,
+                objects, sep, end, justify=justify, emoji=emoji, markup=markup, highlight=highlight
             )
             if style is not None:
                 if isinstance(style, StyleType):
@@ -755,11 +680,7 @@ class PrettyLog:
                     )
                 renderables = [Styled(renderable, style) for renderable in renderables]
             log_renderable = self._build_log_renderable(
-                console,
-                list(renderables),
-                stack_offset=stack_offset,
-                log_locals=log_locals,
-                include_path=include_path,
+                console, list(renderables), stack_offset=stack_offset, log_locals=log_locals, include_path=include_path
             )
 
             console.print(log_renderable, **print_kwargs)
@@ -833,12 +754,7 @@ class PrettyLog:
             return
 
         self._emit(
-            *messages,
-            mode=mode,
-            resolved_level=resolved_level,
-            stack_offset=stack_offset,
-            include_path=True,
-            **kwargs,
+            *messages, mode=mode, resolved_level=resolved_level, stack_offset=stack_offset, include_path=True, **kwargs
         )
 
     # -- convenience shortcuts ------------------------------------------------
@@ -853,11 +769,7 @@ class PrettyLog:
     ) -> None: ...
     @overload
     def debug(
-        self,
-        *messages: object,
-        mode: Literal["all"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[AllLogConfig],
+        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
     ) -> None: ...
     def debug(
         self,
@@ -873,13 +785,7 @@ class PrettyLog:
         else:
             if "style" not in kwargs:
                 kwargs["style"] = LEVEL_PROFILES["DEBUG"].base
-        self(
-            *messages,
-            mode=mode,
-            level=LogLevel.DEBUG,
-            stack_offset=stack_offset,
-            **kwargs,
-        )
+        self(*messages, mode=mode, level=LogLevel.DEBUG, stack_offset=stack_offset, **kwargs)
 
     @overload
     def info(
@@ -891,11 +797,7 @@ class PrettyLog:
     ) -> None: ...
     @overload
     def info(
-        self,
-        *messages: object,
-        mode: Literal["all"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[AllLogConfig],
+        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
     ) -> None: ...
     def info(
         self,
@@ -911,9 +813,7 @@ class PrettyLog:
         else:
             if "style" not in kwargs:
                 kwargs["style"] = LEVEL_PROFILES["INFO"].base
-        self(
-            *messages, mode=mode, level=LogLevel.INFO, stack_offset=stack_offset, **kwargs
-        )
+        self(*messages, mode=mode, level=LogLevel.INFO, stack_offset=stack_offset, **kwargs)
 
     @overload
     def warning(
@@ -925,11 +825,7 @@ class PrettyLog:
     ) -> None: ...
     @overload
     def warning(
-        self,
-        *messages: object,
-        mode: Literal["all"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[AllLogConfig],
+        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
     ) -> None: ...
     def warning(
         self,
@@ -945,13 +841,7 @@ class PrettyLog:
         else:
             if "style" not in kwargs:
                 kwargs["style"] = LEVEL_PROFILES["WARNING"].base
-        self(
-            *messages,
-            mode=mode,
-            level=LogLevel.WARNING,
-            stack_offset=stack_offset,
-            **kwargs,
-        )
+        self(*messages, mode=mode, level=LogLevel.WARNING, stack_offset=stack_offset, **kwargs)
 
     @overload
     def error(
@@ -963,11 +853,7 @@ class PrettyLog:
     ) -> None: ...
     @overload
     def error(
-        self,
-        *messages: object,
-        mode: Literal["all"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[AllLogConfig],
+        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
     ) -> None: ...
     def error(
         self,
@@ -987,13 +873,7 @@ class PrettyLog:
                 kwargs["log_locals"] = True
             if "style" not in kwargs:
                 kwargs["style"] = LEVEL_PROFILES["ERROR"].base
-        self(
-            *messages,
-            mode=mode,
-            level=LogLevel.ERROR,
-            stack_offset=stack_offset,
-            **kwargs,
-        )
+        self(*messages, mode=mode, level=LogLevel.ERROR, stack_offset=stack_offset, **kwargs)
 
     @overload
     def critical(
@@ -1005,11 +885,7 @@ class PrettyLog:
     ) -> None: ...
     @overload
     def critical(
-        self,
-        *messages: object,
-        mode: Literal["all"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[AllLogConfig],
+        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
     ) -> None: ...
     def critical(
         self,
@@ -1026,18 +902,10 @@ class PrettyLog:
                 kwargs["logger_config"]["style"] = LEVEL_PROFILES["CRITICAL"].base
         else:
             if "log_locals" not in kwargs:
-                kwargs["log_locals"] = (
-                    True  # Ensure locals are logged for error-level messages
-                )
+                kwargs["log_locals"] = True  # Ensure locals are logged for error-level messages
             if "style" not in kwargs:
                 kwargs["style"] = LEVEL_PROFILES["CRITICAL"].base
-        self(
-            *messages,
-            mode=mode,
-            level=LogLevel.CRITICAL,
-            stack_offset=stack_offset,
-            **kwargs,
-        )
+        self(*messages, mode=mode, level=LogLevel.CRITICAL, stack_offset=stack_offset, **kwargs)
 
     @overload
     def exception(
@@ -1049,11 +917,7 @@ class PrettyLog:
     ) -> None: ...
     @overload
     def exception(
-        self,
-        *messages: object,
-        mode: Literal["all"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[AllLogConfig],
+        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
     ) -> None: ...
     def exception(
         self,
@@ -1070,19 +934,11 @@ class PrettyLog:
                 kwargs["logger_config"]["style"] = LEVEL_PROFILES["ERROR"].base
         else:
             if "log_locals" not in kwargs:
-                kwargs["log_locals"] = (
-                    True  # Ensure locals are logged for error-level messages
-                )
+                kwargs["log_locals"] = True  # Ensure locals are logged for error-level messages
             if "style" not in kwargs:
                 kwargs["style"] = LEVEL_PROFILES["ERROR"].base
 
-        self(
-            *messages,
-            mode=mode,
-            level=LogLevel.ERROR,
-            stack_offset=stack_offset,
-            **kwargs,
-        )
+        self(*messages, mode=mode, level=LogLevel.ERROR, stack_offset=stack_offset, **kwargs)
         self._terminal_console_manager.console.print_exception(show_locals=True)
         self._file_manager.console.print_exception(show_locals=False)
 
@@ -1122,13 +978,9 @@ class PrettyLog:
                 suffix = ".".join(ctx.values())
             else:
                 suffix = f"child_{len(self._children)}"
-            child_name = (
-                f"{self.name}.{suffix}" if self.name and self.name != "root" else suffix
-            )
+            child_name = f"{self.name}.{suffix}" if self.name and self.name != "root" else suffix
         else:
-            child_name = (
-                f"{self.name}.{name}" if self.name and self.name != "root" else name
-            )
+            child_name = f"{self.name}.{name}" if self.name and self.name != "root" else name
 
         # Merge parent config with overrides
         inherited_config: AllLogConfig = {
@@ -1140,21 +992,13 @@ class PrettyLog:
         if pretty_config is not None:
             cfg: dict[str, Any] = dict(inherited_config)  # type: ignore[arg-type]
             normalized = self._normalize_pretty_config(dict(pretty_config))
-            for key in (
-                "logger_config",
-                "terminal_console_config",
-                "file_console_config",
-                "file_manager_config",
-            ):
+            for key in ("logger_config", "terminal_console_config", "file_console_config", "file_manager_config"):
                 if key in normalized:
                     cfg[key] = {**cfg.get(key, {}), **normalized[key]}
             inherited_config = cfg  # type: ignore[assignment]
 
         child_logger = PrettyLog(
-            name=child_name,
-            mode=mode or self.mode,
-            level=level or self.level,
-            pretty_config=inherited_config,
+            name=child_name, mode=mode or self.mode, level=level or self.level, pretty_config=inherited_config
         )
         child_logger._context = {**self._context, **ctx}
         child_logger._filters = list(self._filters)

@@ -50,23 +50,12 @@ def stop_client(client: iTermClient[Any]) -> None:
 def test_client_initializes_state_and_thread() -> None:
     gateway = DummyGateway([DummyState(marker="boot")])
     client: iTermClient[DummyState] = iTermClient(
-        gateway=gateway,
-        debug=True,
-        new_tab=False,
-        select_tab=True,
-        order_window_front=False,
+        gateway=gateway, debug=True, new_tab=False, select_tab=True, order_window_front=False
     )
     try:
         assert client._thread.is_alive()
         assert client.state.marker == "boot"
-        assert gateway.calls == [
-            {
-                "debug": True,
-                "new_tab": False,
-                "select_tab": True,
-                "order_window_front": False,
-            }
-        ]
+        assert gateway.calls == [{"debug": True, "new_tab": False, "select_tab": True, "order_window_front": False}]
     finally:
         stop_client(client)
 

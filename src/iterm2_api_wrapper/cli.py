@@ -12,11 +12,7 @@ from typing import Annotated, Any, Concatenate, Coroutine
 import typer
 from iterm2 import profile
 
-from iterm2_api_wrapper.alert import (
-    alert_handler,
-    poly_modal_alert_handler,
-    text_input_alert_handler,
-)
+from iterm2_api_wrapper.alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
 from iterm2_api_wrapper.client import create_iterm_client
 from iterm2_api_wrapper.logging import PrettyLog
 from iterm2_api_wrapper.state import iTermState
@@ -35,11 +31,7 @@ def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventL
 
 def profiles_completion(incomplete: str, ctx: typer.Context) -> list[tuple[str, str]]:
     profiles: list[profile.Profile] = run_until_complete(profile.Profile.async_get)
-    return [
-        (p.name, f"Profile: {p.name} ({p.guid})")
-        for p in profiles
-        if p.name.startswith(incomplete)
-    ]
+    return [(p.name, f"Profile: {p.name} ({p.guid})") for p in profiles if p.name.startswith(incomplete)]
 
 
 def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[str, str]]:
@@ -68,9 +60,7 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[s
     ]
 
 
-def kwarg_conversion(
-    maybe_kwargs: tuple[str, ...],
-) -> tuple[tuple[Any, ...], dict[str, Any]]:
+def kwarg_conversion(maybe_kwargs: tuple[str, ...]) -> tuple[tuple[Any, ...], dict[str, Any]]:
     """Convert a tuple of strings in the form key=value to a dict."""
     kwargs: dict[str, Any] = {}
     args = tuple(item for item in maybe_kwargs if "=" not in item)
@@ -92,10 +82,7 @@ async def test_poly_modal_alert(state: iTermState) -> dict[str, Any]:
         button_names=["OK", "Cancel"],
         checkboxes=[("Option 1", 0), ("Option 2", 1), ("Option 3", 0), ("Option 4", 1)],
         comboboxes=(["Choice 1", "Choice 2", "Choice 3"], "Choice 2"),
-        text_fields=(
-            ["Field 1", "Field 2", "Field 3"],
-            ["Default Value 1", "Default Value 2", "Default Value 3"],
-        ),
+        text_fields=(["Field 1", "Field 2", "Field 3"], ["Default Value 1", "Default Value 2", "Default Value 3"]),
     )
 
     log.info("Poly Modal Alert Response: \n")
@@ -166,10 +153,7 @@ async def show_capabilities(state: iTermState) -> dict[str, Any]:
 
 
 async def send_command(
-    state: iTermState,
-    command: str | None,
-    path: str | None = None,
-    timeout: float = 120.0,
+    state: iTermState, command: str | None = None, path: str | None = None, timeout: float = 120.0
 ) -> str:
     """Send a command to the iTerm2 session."""
 
@@ -189,7 +173,7 @@ def main(
         str,
         typer.Argument(
             ...,
-            help="The function to run: alert, text_input_alert, poly_modal_alert, all",
+            help="The function to run: alert, text_input_alert, poly_modal_alert, all_alerts, show_capabilities, send_command",
             autocompletion=lambda: [
                 "send_command",
                 "show_capabilities",
@@ -231,9 +215,7 @@ def main(
             help="The iTerm2 profile to use for the session.",
             autocompletion=profiles_completion,
             envvar="ITERM_DEDICATED_PROFILE",
-            default_factory=lambda: (
-                run_until_complete(profile.Profile.async_get_default).name
-            ),
+            default_factory=lambda: run_until_complete(profile.Profile.async_get_default).name,
             metavar="PROFILE_NAME",
             rich_help_panel="iTerm Setup Options",
         ),
@@ -275,9 +257,7 @@ def main(
             log.error(f":warning: [red]Unknown function: {func_name}[/red]")
             raise typer.Exit(code=1)
 
-    with create_iterm_client(
-        timeout=None, debug=debug, new_tab=new_tab, dedicated_profile_name=profile_name
-    ) as client:
+    with create_iterm_client(timeout=None, debug=debug, new_tab=new_tab, dedicated_profile_name=profile_name) as client:
         state = client.get_state()
         event_loop = client.loop
         output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)

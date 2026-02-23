@@ -11,16 +11,12 @@ from rich.pretty import pprint
 log_path = Path(__file__).resolve().parents[2] / "logs" / "iterm2_api_wrapper.log"
 log_path.parent.mkdir(parents=True, exist_ok=True)
 log_path.write_text("")  # Clear log file on each run
-file_console = Console(
-    file=open(log_path, "a"), log_time=True, log_time_format="%Y-%m-%d %H:%M:%S"
-)
+file_console = Console(file=open(log_path, "a"), log_time=True, log_time_format="%Y-%m-%d %H:%M:%S")
 terminal_console = Console(emoji=True)
 pp = partial(pprint, console=terminal_console, expand_all=True)
 
 
-def log(
-    message: object, *args, mode: Literal["terminal", "file", "all"] = "all", **kwargs
-) -> None:
+def log(message: object, *args, mode: Literal["terminal", "file", "all"] = "all", **kwargs) -> None:
     """Log a message to both the log file and the terminal."""
     if mode in ("file", "all"):
         file_console.print(message, *args, **kwargs)
@@ -65,9 +61,7 @@ def run[T, **P](
     def coro_wrapper(connection: connection.Connection) -> Coroutine[Any, Any, T]:
         return coro(connection, *args, **kwargs)
 
-    result: T = connection.Connection().run(
-        forever=forever, coro=coro_wrapper, retry=retry, debug=debug
-    )
+    result: T = connection.Connection().run(forever=forever, coro=coro_wrapper, retry=retry, debug=debug)
     return result
 
 
@@ -106,9 +100,7 @@ def run_until_complete[T, **P](
 
 
 def run_forever(
-    coro: Callable[[connection.Connection], Coroutine[Any, Any, None]],
-    retry: bool = True,
-    debug: bool = False,
+    coro: Callable[[connection.Connection], Coroutine[Any, Any, None]], retry: bool = True, debug: bool = False
 ) -> None:
     """Run the given coroutine forever, with optional retry and debug.
 

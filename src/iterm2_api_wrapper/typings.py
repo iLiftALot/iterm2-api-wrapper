@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Literal, TypeAlias, TypedDict
+from typing import TYPE_CHECKING, Literal, TypeAlias, TypedDict
 
 
 if TYPE_CHECKING:
@@ -26,8 +26,6 @@ class iTermStateKwargs(TypedDict, total=True):
     session: session.Session
     profile: profile.Profile
 
-    refresh_callback: Callable[[], Coroutine[Any, Any, iTermStateKwargs]] | None
-    """A callback to refresh the iTermState."""
     is_hotkey_window: bool
     """Whether the current window is a hotkey window."""
 
@@ -93,19 +91,19 @@ SessionVars: TypeAlias = Literal[
 TabVars: TypeAlias = Literal[
     # Tab Context
     "id",
-    # - """The unique identifier for this tab."""
+    # - The unique identifier for this tab.
     "titleOverrideFormat",
-    # - """An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not)."""
+    # - An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not).
     "titleOverride",
-    # - """The value of titleOverrideFormat after evaluating it as an interpolated string."""
+    # - The value of titleOverrideFormat after evaluating it as an interpolated string.
     "tmuxWindow",
-    # - """In tmux integration, this is the tmux window number this tab represents."""
+    # - In tmux integration, this is the tmux window number this tab represents.
     "tmuxWindowTitle",
-    # - """In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option."""
+    # - In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option.
     "tmuxWindowName",
-    # - """In tmux integration, this is the tmux window name."""
+    # - In tmux integration, this is the tmux window name.
     "title",
-    # - """The fully formatted title as it appears in the tab bar."""
+    # - The fully formatted title as it appears in the tab bar.
 ]
 """
 The only variables that users may directly control are those in the "user" scope of a session.
@@ -118,14 +116,14 @@ See "Setting User-Defined Variables" in Scripting Fundamentals for details on se
 
 WindowVars: TypeAlias = Literal[
     # Window Title
-    "titleOverride",  # - """The value from evaluating the interpeted string in titleOverrideFormat, if set."""
-    "titleOverrideFormat",  # - """The window's interpolated string title. If not set, the current tab's title is used."""
+    "titleOverride",  # - The value from evaluating the interpeted string in titleOverrideFormat, if set.
+    "titleOverrideFormat",  # - The window's interpolated string title. If not set, the current tab's title is used.
     # Other
-    "id",  # - """The window ID."""
-    "frame",  # - """An array of integers giving the x origin, y origin, width, and height."""
-    "style",  # - """The window style. Takes one of these values: normal, non-native full screen, native full screen, full-width top, full-width bottom, full-height left, full-height right, bottom, top, left, right, no-title-bar, compact, accessory."""
-    "number",  # - """The window number. Corresponds to the keyboard shortcut that switches to the window. Begins at 1. Unlike the keyboard shortcut, this is set even if the number is larger than 9."""
-    "isHotkeyWindow",  # - """A boolean indicating if this is a hotkey window."""
+    "id",  # - The window ID.
+    "frame",  # - An array of integers giving the x origin, y origin, width, and height.
+    "style",  # - The window style. Takes one of these values: normal, non-native full screen, native full screen, full-width top, full-width bottom, full-height left, full-height right, bottom, top, left, right, no-title-bar, compact, accessory.
+    "number",  # - The window number. Corresponds to the keyboard shortcut that switches to the window. Begins at 1. Unlike the keyboard shortcut, this is set even if the number is larger than 9.
+    "isHotkeyWindow",  # - A boolean indicating if this is a hotkey window.
 ]
 """Defined in the context of a window"""
 
@@ -239,14 +237,7 @@ class SessionVar(StrEnum):
 
 
 class TabVar(StrEnum):
-    """
-    The only variables that users may directly control are those in the "user" scope of a session.
-    For example, you could set a variable named "gitBranch" to the name of the current git branch.
-    This value would then be available to display in the session title, badge, or other places,
-    and would be available to Python API scripts. You'd reference it as user.gitBranch.
-
-    See "Setting User-Defined Variables" in Scripting Fundamentals for details on setting them.
-    """
+    """Defined in the context of a tab"""
 
     id = "id"
     """The unique identifier for this tab."""

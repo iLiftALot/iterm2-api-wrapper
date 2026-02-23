@@ -8,17 +8,7 @@ from typing import Any, Callable, ClassVar, Concatenate, Coroutine, Literal, ove
 
 import iterm2
 from dotenv import load_dotenv
-from iterm2 import (
-    app,
-    connection,
-    profile,
-    prompt,
-    session,
-    tab,
-    transaction,
-    util,
-    window,
-)
+from iterm2 import app, connection, profile, prompt, session, tab, transaction, util, window
 
 # from websockets import ClientConnection, ConnectionClosed, ConnectionClosedError
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
@@ -56,9 +46,7 @@ def _validate_state[**P, T](
             if loop is None:
                 raise RuntimeError("No event loop available on connection")
             future = asyncio.run_coroutine_threadsafe(
-                async_wrapper(
-                    self, *args, **kwargs
-                ),  # recurse into self on the right loop
+                async_wrapper(self, *args, **kwargs),  # recurse into self on the right loop
                 loop,
             )
             return await asyncio.get_running_loop().run_in_executor(None, future.result)
@@ -101,16 +89,12 @@ class iTermState:
     WINDOW_VAR: ClassVar[type[WindowVar]] = WindowVar
 
     # refresh_callback and _event_loop are set in client.py after initialization
-    _refresh_callback: (
-        Callable[[], Awaitable[iTermState]] | Awaitable[iTermState] | None
-    ) = field(default=None, init=False, repr=False)
-    _event_loop: asyncio.AbstractEventLoop | None = field(
+    _refresh_callback: Callable[[], Awaitable[iTermState]] | Awaitable[iTermState] | None = field(
         default=None, init=False, repr=False
     )
+    _event_loop: asyncio.AbstractEventLoop | None = field(default=None, init=False, repr=False)
     # One lock per instance
-    _run_command_lock: asyncio.Lock = field(
-        default_factory=asyncio.Lock, init=False, repr=False
-    )
+    _run_command_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     def refresh_from(self, new_state: iTermState) -> None:
         """
@@ -120,9 +104,7 @@ class iTermState:
         still updating all underlying iTerm2 objects after a reconnect.
         """
         if not isinstance(new_state, iTermState):
-            raise TypeError(
-                f"refresh_from expects an iTermState; got {type(new_state).__name__!r}"
-            )
+            raise TypeError(f"refresh_from expects an iTermState; got {type(new_state).__name__!r}")
 
         self.connection = new_state.connection
         self.app = new_state.app
@@ -137,10 +119,7 @@ class iTermState:
             self._event_loop = new_state._event_loop
 
     async def ensure_state(
-        self,
-        refresh_callback: Callable[[], Awaitable[iTermState]]
-        | Awaitable[iTermState]
-        | None = None,
+        self, refresh_callback: Callable[[], Awaitable[iTermState]] | Awaitable[iTermState] | None = None
     ) -> None:
         """Ensure the state is valid, refreshing if needed."""
         if await self.validated_state():
@@ -167,20 +146,12 @@ class iTermState:
                 return False
 
             # Check app still responds
-            if (
-                current_app := await app.async_get_app(
-                    self.connection, create_if_needed=False
-                )
-            ) is None:
+            if (current_app := await app.async_get_app(self.connection, create_if_needed=False)) is None:
                 return False
             self.app = current_app
 
             # Check session still exists
-            if (
-                new_session := current_app.get_session_by_id(
-                    self.session.session_id, include_buried=False
-                )
-            ) is None:
+            if (new_session := current_app.get_session_by_id(self.session.session_id, include_buried=False)) is None:
                 return False
             self.session = new_session
 
@@ -203,9 +174,7 @@ class iTermState:
         - The websocket is not open
         - The event loop is closed or not set
         """
-        websocket_open: WebSocketClientProtocol | None = getattr(
-            self.connection.websocket, "open", False
-        )
+        websocket_open: WebSocketClientProtocol | None = getattr(self.connection.websocket, "open", False)
         if not websocket_open:
             return False
         # Also check if event loop is still usable
@@ -266,22 +235,16 @@ class iTermState:
 
     @overload
     @_validate_state
-    async def get_variable(
-        self, ctx: Literal["session"], variable: SessionVariable
-    ) -> str: ...
+    async def get_variable(self, ctx: Literal["session"], variable: SessionVariable) -> str: ...
     @overload
     @_validate_state
     async def get_variable(self, ctx: Literal["tab"], variable: TabVariable) -> str: ...
     @overload
     @_validate_state
-    async def get_variable(
-        self, ctx: Literal["window"], variable: WindowVariable
-    ) -> str: ...
+    async def get_variable(self, ctx: Literal["window"], variable: WindowVariable) -> str: ...
     @overload
     @_validate_state
-    async def get_variable(
-        self, ctx: Literal["iterm2"], variable: GlobalVariable
-    ) -> str: ...
+    async def get_variable(self, ctx: Literal["iterm2"], variable: GlobalVariable) -> str: ...
     @overload
     @_validate_state
     async def get_variable(self, ctx: Literal["user"], variable: str) -> str: ...
@@ -330,9 +293,7 @@ class iTermState:
         return after[prefix:end]
 
     @staticmethod
-    def _extract_output_from_changed_block(
-        changed: list[str], *, prompt_line: str, command: str
-    ) -> str:
+    def _extract_output_from_changed_block(changed: list[str], *, prompt_line: str, command: str) -> str:
         """
         Trim command echo + trailing prompt from changed block and return output.
         """
@@ -352,12 +313,7 @@ class iTermState:
 
         # Drop echoed command line (e.g. "<prompt> <command>")
         first = block[0].strip()
-        if (
-            command_norm
-            and first.endswith(command_norm)
-            and prompt_norm
-            and prompt_norm in first
-        ):
+        if command_norm and first.endswith(command_norm) and prompt_norm and prompt_norm in first:
             block = block[1:]
 
         # Drop trailing prompt line
@@ -382,18 +338,14 @@ class iTermState:
 
         attempts = 0
         while prompt_line is None and attempts < retries:
-            await self.session.async_send_text(
-                "\r", suppress_broadcast=suppress_broadcast
-            )
+            await self.session.async_send_text("\r", suppress_broadcast=suppress_broadcast)
             await asyncio.sleep(retry_delay)
             lines = await self._get_terminal_contents()
             prompt_line = self._last_nonempty_line(lines)
             attempts += 1
 
         if prompt_line is None:
-            raise RuntimeError(
-                "Unable to identify prompt line in terminal contents for fallback execution."
-            )
+            raise RuntimeError("Unable to identify prompt line in terminal contents for fallback execution.")
 
         return lines, prompt_line
 
@@ -409,17 +361,11 @@ class iTermState:
         - Bounded by timeout
         - Requires prompt match to be stable across 2 polls
         """
-        start_lines, prompt_line = await self._get_prompt_candidate(
-            suppress_broadcast=suppress_broadcast
-        )
+        start_lines, prompt_line = await self._get_prompt_candidate(suppress_broadcast=suppress_broadcast)
 
-        log.debug(
-            f"Fallback run start: line_count={len(start_lines)}, prompt={prompt_line!r}"
-        )
+        log.debug(f"Fallback run start: line_count={len(start_lines)}, prompt={prompt_line!r}")
 
-        await self.session.async_send_text(
-            command + "\r", suppress_broadcast=suppress_broadcast
-        )
+        await self.session.async_send_text(command + "\r", suppress_broadcast=suppress_broadcast)
 
         loop = self.loop or asyncio.get_running_loop()
         deadline = loop.time() + max(0.1, timeout)
@@ -444,29 +390,19 @@ class iTermState:
                 stable_prompt_polls = 0
 
             if loop.time() >= deadline:
-                raise TimeoutError(
-                    "Timeout waiting for command completion (shell integration disabled)."
-                )
+                raise TimeoutError("Timeout waiting for command completion (shell integration disabled).")
 
             await asyncio.sleep(poll_interval)
 
         changed = self._changed_slice(start_lines, end_lines)
-        output = self._extract_output_from_changed_block(
-            changed, prompt_line=prompt_line, command=command
-        )
+        output = self._extract_output_from_changed_block(changed, prompt_line=prompt_line, command=command)
 
-        log.debug(
-            f"Fallback run end: line_count={len(end_lines)}, output_len={len(output)}"
-        )
+        log.debug(f"Fallback run end: line_count={len(end_lines)}, output_len={len(output)}")
         return output
 
     @_validate_state
     async def run_command(
-        self,
-        command: str,
-        path: str | None = None,
-        broadcast: bool = False,
-        timeout: float = 10.0,
+        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 10.0
     ) -> str:
         """Run a command and return its output"""
         suppress = not broadcast
@@ -474,26 +410,20 @@ class iTermState:
         async with self._run_command_lock:
             current_path = await self.get_session_var("path")
             if path and current_path != path:
-                await self.session.async_send_text(
-                    f"cd '{path}'\r", suppress_broadcast=suppress
-                )
+                await self.session.async_send_text(f"cd '{path}'\r", suppress_broadcast=suppress)
             shell_integration_enabled = await self._shell_integration_enabled()
             if not shell_integration_enabled:
-                log.warning(
-                    "Shell integration not enabled; falling back to non-shell-integration method."
-                )
+                log.debug("Shell integration not enabled; falling back to non-shell-integration method.")
                 return await self._run_command_without_shell_integration(
                     command=command, suppress_broadcast=suppress, timeout=timeout
                 )
 
             async with transaction.Transaction(self.connection):
-                await self.session.async_send_text(
-                    command + "\r", suppress_broadcast=suppress
-                )
+                await self.session.async_send_text(command + "\r", suppress_broadcast=suppress)
                 last_prompt: prompt.Prompt | None = await self._get_prompt()
                 if last_prompt is None:
                     log.warning(
-                        ":warning: Shell integration appears broken (fresh tab?); Unable to get last prompt. "
+                        ":warning: Shell integration appears broken; Unable to get last prompt. "
                         "Running command without shell integration."
                     )
                     return await self._run_command_without_shell_integration(
@@ -505,9 +435,7 @@ class iTermState:
             # Wait for the command to end.
             result = await task
             if not result:
-                log.warning(
-                    ":warning: Command timeout; Running command without shell integration."
-                )
+                log.warning(":warning: Command timeout; Running command without shell integration.")
                 return await self._run_command_without_shell_integration(
                     command=command, suppress_broadcast=suppress, timeout=timeout
                 )
@@ -520,10 +448,7 @@ class iTermState:
     async def _get_prompt(self, unique_id: str | None = None) -> None | prompt.Prompt:
         """Get prompt history from the session."""
         prompt_obj: Callable[..., Coroutine[Any, Any, None | prompt.Prompt]]
-        call_args: dict[str, Any] = {
-            "connection": self.connection,
-            "session_id": self.session.session_id,
-        }
+        call_args: dict[str, Any] = {"connection": self.connection, "session_id": self.session.session_id}
         if unique_id:
             prompt_obj = iterm2.async_get_prompt_by_id
             call_args["prompt_unique_id"] = unique_id
@@ -536,13 +461,9 @@ class iTermState:
         """Block until the running command terminates. Returns True if command ended, False on timeout."""
         modes = [prompt.PromptMonitor.Mode.COMMAND_END]
         try:
-            async with prompt.PromptMonitor(
-                self.connection, self.session.session_id, modes
-            ) as monitor:
+            async with prompt.PromptMonitor(self.connection, self.session.session_id, modes) as monitor:
                 while True:
-                    _type, _ = await asyncio.wait_for(
-                        monitor.async_get(), timeout=timeout
-                    )
+                    _type, _ = await asyncio.wait_for(monitor.async_get(), timeout=timeout)
                     if _type == prompt.PromptMonitor.Mode.COMMAND_END:
                         return True
         except TimeoutError:
@@ -580,19 +501,13 @@ class iTermState:
         """Use shell-integration-only features to check if shell integration is enabled."""
 
         async def check_terminal_content() -> list[str]:
-            current_terminal_content = [
-                line.strip()
-                for line in await self._get_terminal_contents()
-                if line.strip()
-            ]
+            current_terminal_content = [line.strip() for line in await self._get_terminal_contents() if line.strip()]
 
             return current_terminal_content
 
         def is_empty_tab(content: list[str]) -> bool:
             # Consider freshly cleared tabs, which doesn't reset the prompt
-            return len(content) == 1 and not any(
-                "last login" in line.lower() for line in content
-            )
+            return len(content) == 1 and not any("last login" in line.lower() for line in content)
 
         terminal_content = await check_terminal_content()
 
@@ -613,17 +528,12 @@ class iTermState:
                 new_tab_timeout -= 5
             else:
                 log.warning(
-                    "Timeout waiting for shell integration initialization; "
-                    "treating shell integration as unavailable."
+                    "Timeout waiting for shell integration initialization; treating shell integration as unavailable."
                 )
                 return False
 
-        user_found = (
-            user_var := await self.get_session_var("username")
-        ) is not None and user_var.strip() != ""
-        host_found = (
-            host_var := await self.get_session_var("hostname")
-        ) is not None and host_var.strip() != ""
+        user_found = (user_var := await self.get_session_var("username")) is not None and user_var.strip() != ""
+        host_found = (host_var := await self.get_session_var("hostname")) is not None and host_var.strip() != ""
         prompt_check = await self._get_prompt() is not None
 
         log.debug(
@@ -645,19 +555,14 @@ class iTermState:
         #     f"overflow={line_info.overflow}, scrollback_buffer_height={line_info.scrollback_buffer_height}, mutable_area_height={line_info.mutable_area_height}"
         # )
         contents = [
-            line.string
-            for line in await self.session.async_get_contents(
-                first_line=start, number_of_lines=total_lines
-            )
+            line.string for line in await self.session.async_get_contents(first_line=start, number_of_lines=total_lines)
         ]
         return contents
 
     def asdict(self) -> dict[str, Any]:
         """Convert iTermState to dictionary."""
         return {
-            key: {k: v for k, v in value.__dict__.items()}
-            if hasattr(value, "__dict__")
-            else value
+            key: {k: v for k, v in value.__dict__.items()} if hasattr(value, "__dict__") else value
             for key, value in self.__dict__.items()
             if not key.startswith("_")
         }

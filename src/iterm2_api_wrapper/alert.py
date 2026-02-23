@@ -5,11 +5,7 @@ from iterm2 import alert, connection
 
 
 async def alert_handler(
-    title: str,
-    subtitle: str,
-    window_id: str,
-    connection: connection.Connection,
-    button_names: list[str] | None = None,
+    title: str, subtitle: str, window_id: str, connection: connection.Connection, button_names: list[str] | None = None
 ) -> int:
     """Shows the modal alert.
 
@@ -45,11 +41,7 @@ async def text_input_alert_handler(
     """
 
     alert_instance = alert.TextInputAlert(
-        title=title,
-        subtitle=subtitle,
-        placeholder=placeholder,
-        default_value=default_value,
-        window_id=window_id,
+        title=title, subtitle=subtitle, placeholder=placeholder, default_value=default_value, window_id=window_id
     )
     response = await alert_instance.async_run(connection)
     return response
@@ -82,9 +74,7 @@ async def poly_modal_alert_handler(
     :raises iterm2.rpc.RPCException: if something goes wrong.
     """
 
-    alert_instance = alert.PolyModalAlert(
-        title=title, subtitle=subtitle, window_id=window_id
-    )
+    alert_instance = alert.PolyModalAlert(title=title, subtitle=subtitle, window_id=window_id)
 
     for btn in button_names or []:
         alert_instance.add_button(btn)

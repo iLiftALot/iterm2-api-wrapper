@@ -58,9 +58,7 @@ _html_console = Console(
 )
 
 # Terminal console for colored stderr output (avoids pytest stdout capture)
-_terminal_console = Console(
-    record=False, log_path=False, log_time=False, stderr=True, width=100
-)
+_terminal_console = Console(record=False, log_path=False, log_time=False, stderr=True, width=100)
 
 
 class MultiConsole:
@@ -72,9 +70,7 @@ class MultiConsole:
         html_console: Console,
         terminal_console: Console,
         *,
-        browser: Literal[
-            "default", "safari", "chrome", "firefox", "edge", "mozilla"
-        ] = "default",
+        browser: Literal["default", "safari", "chrome", "firefox", "edge", "mozilla"] = "default",
     ) -> None:
         self._file = file_console
         self._html = html_console
@@ -96,9 +92,7 @@ class MultiConsole:
 
     def save_html(self, path: Path, show: bool = False) -> None:
         terminal_theme = _build_terminal_theme()
-        html = self._html.export_html(
-            theme=terminal_theme, clear=False, inline_styles=False
-        )
+        html = self._html.export_html(theme=terminal_theme, clear=False, inline_styles=False)
         theme_css = _build_html_theme_css(terminal_theme)
         if theme_css:
             html = _inject_html_theme(html, theme_css)
@@ -112,15 +106,11 @@ class MultiConsole:
 
 
 console: MultiConsole = MultiConsole(
-    file_console=_file_console,
-    html_console=_html_console,
-    terminal_console=_terminal_console,
+    file_console=_file_console, html_console=_html_console, terminal_console=_terminal_console
 )
 
 
-def _linkify_text(
-    obj: Path | Text | str | ConsoleRenderable | RichCast,
-) -> Text | ConsoleRenderable | RichCast:
+def _linkify_text(obj: Path | Text | str | ConsoleRenderable | RichCast) -> Text | ConsoleRenderable | RichCast:
     if isinstance(obj, Path):
         s = f"[link={obj!s}]{obj.relative_to(Path(__file__).parents[2])!s}[/link]"
         return Text.from_markup(s)
@@ -223,11 +213,7 @@ def _terminal_theme_from_itermcolors(path: Path) -> TerminalTheme | None:
 
 
 def _load_iterm_profile() -> dict[str, object] | None:
-    if not (
-        os.getenv("TERM_PROGRAM") == "iTerm.app"
-        or os.getenv("ITERM_PROFILE")
-        or os.getenv("ITERM_PROFILE_ID")
-    ):
+    if not (os.getenv("TERM_PROGRAM") == "iTerm.app" or os.getenv("ITERM_PROFILE") or os.getenv("ITERM_PROFILE_ID")):
         return None
 
     prefs_path = Path("~/Library/Preferences/com.googlecode.iterm2.plist").expanduser()
@@ -239,9 +225,7 @@ def _load_iterm_profile() -> dict[str, object] | None:
         with prefs_path.open("rb") as handle:
             data = plistlib.load(handle)
     except Exception as e:
-        console.print(
-            f"[red]Failed to load iTerm preferences from {prefs_path}[/red]: {e}"
-        )
+        console.print(f"[red]Failed to load iTerm preferences from {prefs_path}[/red]: {e}")
         return None
 
     if not isinstance(data, dict):
@@ -251,9 +235,7 @@ def _load_iterm_profile() -> dict[str, object] | None:
     if not isinstance(profiles, list):
         return None
 
-    profile_id = os.getenv("PYTEST_HTML_THEME_PROFILE_ID") or os.getenv(
-        "ITERM_PROFILE_ID"
-    )
+    profile_id = os.getenv("PYTEST_HTML_THEME_PROFILE_ID") or os.getenv("ITERM_PROFILE_ID")
     profile_name = os.getenv("PYTEST_HTML_THEME_PROFILE") or os.getenv("ITERM_PROFILE")
 
     if profile_id:
@@ -291,9 +273,7 @@ def _build_terminal_theme() -> TerminalTheme | None:
 
     profile = _load_iterm_profile()
     if profile:
-        console.print(
-            f"[blue]Loading terminal theme from iTerm profile {profile.get('Name', 'unknown')}[/blue]"
-        )
+        console.print(f"[blue]Loading terminal theme from iTerm profile {profile.get('Name', 'unknown')}[/blue]")
         return _terminal_theme_from_iterm_dict(profile)
 
     return None
@@ -364,9 +344,7 @@ def _build_html_theme_css(theme: TerminalTheme | None) -> str | None:
     muted_rgb = _triplet_to_rgb(ansi_colors[8])
     panel_rgb = _triplet_to_rgb(ansi_colors[0])
 
-    base_css = _theme_css_from_palette(
-        bg, fg, _rgb_to_hex(link_rgb), _rgb_to_hex(panel_rgb), _rgb_to_hex(muted_rgb)
-    )
+    base_css = _theme_css_from_palette(bg, fg, _rgb_to_hex(link_rgb), _rgb_to_hex(panel_rgb), _rgb_to_hex(muted_rgb))
 
     if extra_css:
         return f"{base_css}\n{extra_css}"
@@ -437,10 +415,7 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator[None]
     env_table = Table(show_header=False, box=None, padding=(0, 2))
     env_table.add_column("Key", style="dim")
     env_table.add_column("Value")
-    env_table.add_row(
-        "Python",
-        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
-    )
+    env_table.add_row("Python", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
     env_table.add_row("Platform", platform.platform())
     env_table.add_row("Root", _linkify_text(config.rootpath))
     env_table.add_row("Log File", _linkify_text(log_path))
@@ -449,10 +424,7 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator[None]
     env_table.add_row("Timeout", f"{RUN_TIMEOUT:.0f} seconds")
     env_table.add_row("Invocation Args", " ".join(["pytest", *sys.argv[1:]]))
     env_table.add_row(
-        "Plugins",
-        " ".join(config.invocation_params.plugins)
-        if config.invocation_params.plugins
-        else "None",
+        "Plugins", " ".join(config.invocation_params.plugins) if config.invocation_params.plugins else "None"
     )
 
     console.print()
@@ -481,14 +453,7 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator[None]
     summary.append(f"  ⏱ {duration}", style="dim")
 
     console.print()
-    console.print(
-        Panel(
-            summary,
-            title="[bold]Session Complete[/]",
-            border_style=status_style,
-            padding=(0, 2),
-        )
-    )
+    console.print(Panel(summary, title="[bold]Session Complete[/]", border_style=status_style, padding=(0, 2)))
     console.print()
 
     # Save HTML version with colors
@@ -523,9 +488,7 @@ def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator[None]:
         info_parts.append(f"[cyan]param=[/]{request.param!r}")
 
     # Markers (only if present)
-    markers = [
-        m.name for m in request.node.iter_markers() if m.name not in ("usefixtures",)
-    ]
+    markers = [m.name for m in request.node.iter_markers() if m.name not in ("usefixtures",)]
     if markers:
         info_parts.append(f"[yellow]markers=[/]{', '.join(markers)}")
 

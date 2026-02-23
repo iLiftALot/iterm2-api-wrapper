@@ -24,7 +24,7 @@ class RefreshableState[StateT](Protocol):
     """
     Minimal protocol that `iTermClient` needs from a "state" object.
 
-    This intentionally does *not* depend on iTerm2 concrete types so that unit
+    This intentionally does **not** depend on iTerm2 concrete types so that unit
     tests can provide simple fakes without requiring a live iTerm2 runtime.
     """
 
@@ -32,10 +32,7 @@ class RefreshableState[StateT](Protocol):
     _event_loop: asyncio.AbstractEventLoop | None
 
     async def ensure_state(
-        self,
-        refresh_callback: Callable[[], Awaitable[StateT]]
-        | Awaitable[StateT]
-        | None = None,
+        self, refresh_callback: Callable[[], Awaitable[StateT]] | Awaitable[StateT] | None = None
     ) -> None: ...
     def refresh_from(self, new_state: StateT) -> None: ...
 
@@ -88,9 +85,7 @@ async def _async_create_connection_with_retry(
                 raise
 
             if time.monotonic() >= deadline:
-                raise TimeoutError(
-                    f"Timed out after {timeout_s:.1f}s waiting for iTerm2's Python API socket."
-                ) from exc
+                raise TimeoutError(f"Timed out after {timeout_s:.1f}s waiting for iTerm2's Python API socket.") from exc
 
             await asyncio.sleep(delay_s)
             delay_s = min(max_delay_s, delay_s * backoff)
@@ -125,9 +120,7 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
 
         connect_timeout_s = _get_connect_timeout_s()
         try:
-            conn = await _async_create_connection_with_retry(
-                Connection, timeout_s=connect_timeout_s
-            )
+            conn = await _async_create_connection_with_retry(Connection, timeout_s=connect_timeout_s)
         except TimeoutError as exc:
             raise ConnectionError(
                 "Could not connect to iTerm2's Python API. "
@@ -146,9 +139,7 @@ class SetupCoroGateway(ITermGateway["iTermState"]):
     still allowing unit tests to supply a fully-fake gateway (no iTerm2 import).
     """
 
-    def __init__(
-        self, setup_coro: Callable[[_Connection], Awaitable[iTermState]]
-    ) -> None:
+    def __init__(self, setup_coro: Callable[[_Connection], Awaitable[iTermState]]) -> None:
         self._setup_coro: Callable[..., Awaitable[iTermState]] = setup_coro
 
     async def create_state(self, **kwargs: Any) -> iTermState:
@@ -160,9 +151,7 @@ class SetupCoroGateway(ITermGateway["iTermState"]):
 
         connect_timeout_s = _get_connect_timeout_s()
         try:
-            conn = await _async_create_connection_with_retry(
-                Connection, timeout_s=connect_timeout_s
-            )
+            conn = await _async_create_connection_with_retry(Connection, timeout_s=connect_timeout_s)
         except TimeoutError as exc:
             raise ConnectionError(
                 "Could not connect to iTerm2's Python API. "
