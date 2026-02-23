@@ -4,9 +4,10 @@ import os
 import subprocess
 from typing import Literal, Unpack
 
-from iterm2 import app, connection, profile, session, tab, window
+from iterm2 import app, profile, session, tab, window
 
-from iterm2_api_wrapper.logging import PrettyLog
+from iterm2_api_wrapper._logging import PrettyLog
+from iterm2_api_wrapper.connection import connection
 from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.typings import iTermSetupKwargs
@@ -159,9 +160,9 @@ async def _setup_iterm(connection_instance: connection.Connection, **kwargs: Unp
         raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
 
     app_instance: app.App = await _get_app(connection_instance=connection_instance)
-    dedicated_profile_name = kwargs.get("dedicated_profile_name") or os.getenv("ITERM_DEDICATED_PROFILE", None)
     profile_instance: profile.Profile = await get_profile(
-        connection_instance=connection_instance, profile_name=dedicated_profile_name
+        connection_instance=connection_instance,
+        profile_name=kwargs.get("dedicated_profile_name") or os.getenv("ITERM_DEDICATED_PROFILE", None),
     )
     window_instance: window.Window = await _get_window(app_instance, connection_instance, profile_instance)
     tab_instance, session_instance = await _get_tab_with_session(
@@ -185,7 +186,7 @@ async def _setup_iterm(connection_instance: connection.Connection, **kwargs: Unp
 async def run_iterm_setup(connection_instance: connection.Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
     """Run iTerm2 setup. This can also be called directly."""
     env_debug = os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
-    debug_enabled = kwargs.get("debug", False) or env_debug
+    debug_enabled = kwargs.get("debug", None) or env_debug
     log_level: Literal["DEBUG", "INFO"] = "DEBUG" if debug_enabled else "INFO"
     log.parent.set_level(log_level, propagate=True)
     global_iterm_state: iTermState = await _setup_iterm(connection_instance=connection_instance, **kwargs)

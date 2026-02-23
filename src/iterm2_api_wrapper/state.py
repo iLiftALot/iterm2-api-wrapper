@@ -14,7 +14,7 @@ from iterm2 import app, connection, profile, prompt, session, tab, transaction, 
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 from websockets.legacy.client import WebSocketClientProtocol
 
-from iterm2_api_wrapper.logging import PrettyLog
+from iterm2_api_wrapper._logging import PrettyLog
 from iterm2_api_wrapper.typings import (
     GlobalVar,
     GlobalVariable,

@@ -14,9 +14,9 @@ from iterm2 import profile
 
 from iterm2_api_wrapper.alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
 from iterm2_api_wrapper.client import create_iterm_client
-from iterm2_api_wrapper.logging import PrettyLog
+from iterm2_api_wrapper._logging import PrettyLog
 from iterm2_api_wrapper.state import iTermState
-from iterm2_api_wrapper.utils import run_until_complete
+from iterm2_api_wrapper.connection import run_until_complete
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
