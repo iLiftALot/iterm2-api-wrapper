@@ -17,7 +17,7 @@ classifiers = [
     "Operating System :: MacOS :: MacOS X",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.12",
     "Topic :: System :: Shells",
     "Topic :: Terminals",
 ]
@@ -29,7 +29,7 @@ dependencies = [
     "pyobjc",
 ]
 optional-dependencies = { "applescript" = ["py-applescript"] }
-requires-python = ">= 3.13"
+requires-python = ">= 3.12"
 
 
 [dependency-groups]
@@ -48,7 +48,7 @@ dev = [
 
 
 [build-system]
-requires = ["uv_build >= 0.9.15, <0.10.0"]
+requires = ["uv_build >= 0.11.12, <0.12.0"]
 build-backend = "uv_build"
 
 
