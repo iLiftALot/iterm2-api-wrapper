@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
 import traceback
@@ -64,7 +65,6 @@ class Connection(connection.Connection):
         while True:
             try:
                 conn.websocket = await conn._get_connect_coro()
-                # pylint: disable=protected-access
                 conn.__dispatch_forever_future = asyncio.ensure_future(
                     conn._async_dispatch_forever(conn, asyncio.get_running_loop())
                 )
@@ -183,9 +183,33 @@ class Connection(connection.Connection):
             ping_interval=None,
             close_timeout=0,
             additional_headers=connection._headers(),
-            subprotocols=[typing.Subprotocol(subprotocol) for subprotocol in connection._subprotocols()],
+            subprotocols=[typing.Subprotocol(subproto) for subproto in connection._subprotocols()],
             max_size=None,
         )
+
+    async def async_close(self) -> None:
+        """Cancel the dispatcher task and close the websocket cleanly."""
+        dispatch_future = self.__dispatch_forever_future
+        if dispatch_future is not None and not dispatch_future.done():
+            dispatch_future.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await dispatch_future
+        self.__dispatch_forever_future = None
+
+        pending_tasks = [task for task in self.__tasks if not task.done()]
+        for task in pending_tasks:
+            task.cancel()
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+        self.__tasks = []
+
+        websocket = self.websocket
+        self.websocket = None
+        if websocket is None:
+            return
+
+        await websocket.close()
+        await websocket.wait_closed()
 
     async def async_connect[T](self, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool = False) -> T:
         """Establishes a websocket connection.
@@ -341,7 +365,7 @@ def run[T, **P](
     :param forever: Don't terminate after main returns?
     :type forever: bool
     :param coro: A coroutine (async function) to run after connecting.
-    :type coro: Callable[[connection.Connection, ...], Coroutine[Any, Any, T]]
+    :type coro: Callable[[Connection, ...], Coroutine[Any, Any, T]]
     :param retry: Keep trying to connect until it succeeds? Defaults to ``True``.
     :type retry: bool
     :param debug: Enable debug mode for the event loop? Defaults to ``False``.
@@ -374,7 +398,7 @@ def run_until_complete[T, **P](
 
     Fixes the incorrect typing of iterm2.run_until_complete.
     It demands a that only accepts a single argument of type
-    connection.Connection which then returns a coroutine
+    Connection which then returns a coroutine
     containing None. That will be incorrect if the coroutine
     returns any other type. This wrapper fixes that by
     allowing the caller to specify the return type.
@@ -411,8 +435,8 @@ def run_forever(
 
     ---
 
-    :param coro: The coroutine to run which must accept ``connection.Connection``.
-    :type coro: Callable[[connection.Connection], Coroutine[Any, Any, None]]
+    :param coro: The coroutine to run which must accept ``Connection``.
+    :type coro: Callable[[Connection], Coroutine[Any, Any, None]]
     :param retry: Whether to retry on failure. Defaults to ``True``.
     :type retry: bool
     :param debug: Whether to enable debug output. Defaults to ``False``.

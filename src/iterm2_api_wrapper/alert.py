@@ -1,11 +1,12 @@
 from functools import partial
 from typing import Literal
 
-from iterm2 import alert, connection
+from iterm2 import alert
+from iterm2_api_wrapper.connection import Connection
 
 
 async def alert_handler(
-    title: str, subtitle: str, window_id: str, connection: connection.Connection, button_names: list[str] | None = None
+    title: str, subtitle: str, window_id: str, connection: Connection, button_names: list[str] | None = None
 ) -> int:
     """Shows the modal alert.
 
@@ -29,7 +30,7 @@ async def text_input_alert_handler(
     subtitle: str,
     placeholder: str,
     default_value: str,
-    connection: connection.Connection,
+    connection: Connection,
     window_id: str | None = None,
 ):
     """Shows the modal alert.
@@ -50,7 +51,7 @@ async def text_input_alert_handler(
 async def poly_modal_alert_handler(
     title: str,
     subtitle: str,
-    connection: connection.Connection,
+    connection: Connection,
     window_id: str | None = None,
     button_names: list[str] | None = None,
     checkboxes: list[tuple[str, Literal[0, 1]]] | None = None,

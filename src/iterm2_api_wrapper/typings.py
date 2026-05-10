@@ -4,7 +4,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Literal, TypeAlias, TypedDict
 
 if TYPE_CHECKING:
-    from iterm2 import app, connection, profile, session, tab, window
+    from iterm2 import app, profile, session, tab, window
+    from iterm2_api_wrapper.connection import Connection
 
 
 class iTermSetupKwargs(TypedDict, total=False):
@@ -18,7 +19,7 @@ class iTermSetupKwargs(TypedDict, total=False):
 
 
 class iTermStateKwargs(TypedDict, total=True):
-    connection: connection.Connection
+    connection: Connection
     app: app.App
     window: window.Window
     tab: tab.Tab

@@ -60,6 +60,7 @@ _html_console = Console(
 # Terminal console for colored stderr output (avoids pytest stdout capture)
 _terminal_console = Console(record=False, log_path=False, log_time=False, stderr=True, width=100)
 
+type BrowserChoice = Literal["default", "safari", "chrome", "firefox", "edge", "mozilla"]
 
 class MultiConsole:
     """Wrapper that writes to file (plain), HTML (colored), and terminal (colored) consoles."""
@@ -70,7 +71,7 @@ class MultiConsole:
         html_console: Console,
         terminal_console: Console,
         *,
-        browser: Literal["default", "safari", "chrome", "firefox", "edge", "mozilla"] = "default",
+        browser: BrowserChoice = "default",
     ) -> None:
         self._file = file_console
         self._html = html_console
@@ -112,7 +113,16 @@ console: MultiConsole = MultiConsole(
 
 def _linkify_text(obj: Path | Text | str | ConsoleRenderable | RichCast) -> Text | ConsoleRenderable | RichCast:
     if isinstance(obj, Path):
-        s = f"[link={obj!s}]{obj.relative_to(Path(__file__).parents[2])!s}[/link]"
+        resolved = obj.expanduser().resolve()
+        for base in (Path(__file__).resolve().parents[3], Path(__file__).resolve().parents[1]):
+            try:
+                label = resolved.relative_to(base)
+                break
+            except ValueError:
+                continue
+        else:
+            label = resolved
+        s = f"[link={resolved.as_uri()}]{label!s}[/link]"
         return Text.from_markup(s)
     elif isinstance(obj, Text):
         s = obj.plain
@@ -406,10 +416,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture(autouse=True, scope="session")
-def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator[None]:
+def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator:
     config = request.config
     session = request.session
-    console._browser = config.getoption("BROWSER")
+    session_name = getattr(session, "name", "iTerm2 API Wrapper Tests")
+    start_time = getattr(session, "start_time", time.perf_counter())
+    console._browser = f"{config.getoption("BROWSER", "default")}"
 
     # Environment info table
     env_table = Table(show_header=False, box=None, padding=(0, 2))
@@ -424,14 +436,14 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator[None]
     env_table.add_row("Timeout", f"{RUN_TIMEOUT:.0f} seconds")
     env_table.add_row("Invocation Args", " ".join(["pytest", *sys.argv[1:]]))
     env_table.add_row(
-        "Plugins", " ".join(config.invocation_params.plugins) if config.invocation_params.plugins else "None"
+        "Plugins", " ".join(str(p) for p in config.invocation_params.plugins) if config.invocation_params.plugins else "None"
     )
 
     console.print()
     console.print(
         Panel(
             env_table,
-            title=f"[bold magenta]{session.name}[/]",
+            title=f"[bold magenta]{session_name}[/]",
             subtitle=f"[dim]{time.strftime('%Y-%m-%d %H:%M:%S')}[/]",
             border_style="magenta",
             padding=(1, 2),
@@ -440,7 +452,7 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator[None]
 
     yield
 
-    duration = _format_duration(time.perf_counter() - session.start_time)  # type: ignore[attr-defined]
+    duration = _format_duration(time.perf_counter() - start_time)
 
     # Results summary
     passed = session.testscollected - session.testsfailed
@@ -457,11 +469,11 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator[None]
     console.print()
 
     # Save HTML version with colors
-    console.save_html(html_path, request.config.getoption("SHOW_HTML_LOG"))
+    console.save_html(html_path, bool(request.config.getoption("SHOW_HTML_LOG", False)))
 
 
 @pytest.fixture(autouse=True, scope="module")
-def log_module_start_and_end(request: pytest.FixtureRequest) -> Generator[None]:
+def log_module_start_and_end(request: pytest.FixtureRequest) -> Generator:
     module_name = request.module.__name__.replace("tests.", "")
     module_path = Path(request.module.__file__).name
 
@@ -475,7 +487,7 @@ def log_module_start_and_end(request: pytest.FixtureRequest) -> Generator[None]:
 
 
 @pytest.fixture(autouse=True, scope="function")
-def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator[None]:
+def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator:
     assert isinstance(request.node, pytest.Function)
     test_name = request.node.originalname
     start_time = time.perf_counter()
@@ -521,6 +533,6 @@ def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator[None]:
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo) -> Generator:
     """Store test outcome on the item for access in fixtures."""
-    outcome: Result[pytest.TestReport] = yield
+    outcome: Result[pytest.TestReport] = yield  # type: ignore[assignment]
     rep = outcome.get_result()
     setattr(item, f"rep_{rep.when}", rep)

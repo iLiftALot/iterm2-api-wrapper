@@ -7,7 +7,7 @@ from typing import Literal, Unpack
 from iterm2 import app, profile, session, tab, window
 
 from iterm2_api_wrapper._logging import PrettyLog
-from iterm2_api_wrapper.connection import connection
+from iterm2_api_wrapper.connection import Connection
 from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.typings import iTermSetupKwargs
@@ -16,12 +16,12 @@ from iterm2_api_wrapper.typings import iTermSetupKwargs
 log = PrettyLog.get_logger(__name__)
 
 
-async def get_connection() -> connection.Connection:
-    conn: connection.Connection = await connection.Connection.async_create()
+async def get_connection() -> Connection:
+    conn: Connection = await Connection.async_create()
     return conn
 
 
-async def get_profile(connection_instance: connection.Connection, profile_name: str | None = None) -> profile.Profile:
+async def get_profile(connection_instance: Connection, profile_name: str | None = None) -> profile.Profile:
     async def get_default_profile() -> profile.Profile:
         default_profile: profile.Profile = await profile.Profile.async_get_default(connection_instance)
         return default_profile
@@ -37,7 +37,7 @@ async def get_profile(connection_instance: connection.Connection, profile_name: 
     raise ValueError(f"Profile with name '{profile_name}' not found")
 
 
-async def _get_app(connection_instance: connection.Connection) -> app.App:
+async def _get_app(connection_instance: Connection) -> app.App:
     app_instance: None | app.App = await app.async_get_app(connection_instance, create_if_needed=True)
     if app_instance is None:
         raise RuntimeError("Could not get iTerm2 app")
@@ -45,7 +45,7 @@ async def _get_app(connection_instance: connection.Connection) -> app.App:
 
 
 async def _get_window(
-    app: app.App, connection_instance: connection.Connection, profile: profile.Profile
+    app: app.App, connection_instance: Connection, profile: profile.Profile
 ) -> window.Window:
     selected_window: window.Window | None = app.current_window
     if selected_window is None:
@@ -58,10 +58,23 @@ async def _get_window(
 async def _get_tab_with_session(
     window: window.Window, profile: profile.Profile, new_tab: bool = False
 ) -> tuple[tab.Tab, session.Session]:
+    """
+    Returns a tuple containing a Tab and its associated Session for the
+    given window and profile. Selects an existing tab/session matching the
+    profile or creates a new tab if needed. If new_tab is True, always
+    creates a new tab. Ensures the tab and session are labeled with a unique
+    tag based on the profile name.
+    """
     log.debug(f"Looking for existing tab with profile: {profile.name}")
     iterm_mcp_tag = f"pyterm-session:{profile.name}"
 
     async def default_tab_with_session(override_new_tab: bool = False) -> tuple[tab.Tab, session.Session]:
+        """
+        Returns a tuple containing a Tab and its associated Session, either by
+        selecting an existing tab/session matching specific criteria or by
+        creating a new tab if needed. The override_new_tab parameter forces
+        creation of a new tab when set to True.
+        """
         selected_tab, selected_session = None, None
 
         if not new_tab and not override_new_tab:
@@ -154,7 +167,7 @@ def _enable_api():
         return False
 
 
-async def _setup_iterm(connection_instance: connection.Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
+async def _setup_iterm(connection_instance: Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
     activate_iterm_app()
     if not _check_api_enabled():
         raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
@@ -183,7 +196,7 @@ async def _setup_iterm(connection_instance: connection.Connection, **kwargs: Unp
     )
 
 
-async def run_iterm_setup(connection_instance: connection.Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
+async def run_iterm_setup(connection_instance: Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
     """Run iTerm2 setup. This can also be called directly."""
     env_debug = os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
     debug_enabled = kwargs.get("debug", None) or env_debug

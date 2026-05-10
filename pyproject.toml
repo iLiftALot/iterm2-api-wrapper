@@ -13,7 +13,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS :: MacOS X",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -21,7 +20,7 @@ classifiers = [
     "Topic :: System :: Shells",
     "Topic :: Terminals",
 ]
-license = {text = "MIT"}
+license = { text = "MIT" }
 dependencies = [
     "typer>=0.21.1",
     "iterm2>=2.18",

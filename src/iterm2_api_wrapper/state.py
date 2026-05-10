@@ -4,15 +4,18 @@ import asyncio
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from functools import wraps
+import inspect
+import json
 from typing import Any, Callable, ClassVar, Concatenate, Coroutine, Literal, overload
 
 from dotenv import load_dotenv
-from iterm2 import app, connection, profile, prompt, session, tab, transaction, util, window
+from iterm2 import app, profile, prompt, session, tab, transaction, util, window
 
-# from websockets import ClientConnection, ConnectionClosed, ConnectionClosedError
-from websockets.exceptions import ConnectionClosed, ConnectionClosedError
+from websockets import ConnectionClosed, ConcurrencyError
+# from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
 from iterm2_api_wrapper._logging import PrettyLog
+from iterm2_api_wrapper.connection import Connection
 from iterm2_api_wrapper.typings import (
     GlobalVar,
     GlobalVariable,
@@ -53,12 +56,12 @@ def _validate_state[**P, T](
         try:
             await self.ensure_state()
             return await method(self, *args, **kwargs)
-        except (ConnectionClosed, ConnectionClosedError):
+        except (ConnectionClosed, ConcurrencyError):
             log.warning("Connection closed, refreshing state and retrying...")
             await self.ensure_state()
             return await method(self, *args, **kwargs)
 
-    if not asyncio.iscoroutinefunction(method):
+    if not inspect.iscoroutinefunction(method):
         raise TypeError(
             "The _validate_state decorator can only be applied to async methods. "
             f"iTermState.{method!r} is not asynchronous."
@@ -71,7 +74,7 @@ def _validate_state[**P, T](
 class iTermState:
     """Global iTerm2 state."""
 
-    connection: connection.Connection
+    connection: Connection
     app: app.App
     window: window.Window
     tab: tab.Tab
@@ -140,7 +143,7 @@ class iTermState:
         """
         try:
             # Check connection is alive and event loop is usable
-            if not self.online:
+            if not await self.online():
                 return False
 
             # Check app still responds
@@ -161,24 +164,75 @@ class iTermState:
             self.tab = new_tab
 
             return True
-        except Exception:
+        except (ConnectionClosed, ConcurrencyError, RuntimeError) as e:
+            errMsg = (
+                f"The connection (iTermState.connection) is receiving or sending messages concurrently:\n{e!r}"
+                if isinstance(e, ConcurrencyError)
+                else f"The connection (iTermState.connection) is closed or has a runtime error: {e!r}"
+            )
+            log.error(
+                f"The connection (iTermState.connection) is closed:\n{
+                    json.dumps(
+                        {
+                            'code': e.code,
+                            'rcvd': e.rcvd,
+                            'sent': e.sent,
+                            'rcvd_then_sent': e.rcvd_then_sent,
+                            'reason': e.reason,
+                        },
+                        indent=4,
+                    )
+                }"
+                if isinstance(e, ConnectionClosed)
+                else errMsg
+            )
             return False
 
-    @property
-    def online(self) -> bool:
-        """Check if connection is online and event loop is running.
-
-        Returns False if:
-        - The websocket is not open
-        - The event loop is closed or not set
+    async def online(self, decode: bool = False) -> bool:
         """
-        websocket_open: bool = getattr(self.connection.websocket, "open", False)
-        if not websocket_open:
-            return False
+        Check if the iTerm2 connection is online.
+
+        This method performs a passive websocket health check.
+
+        It intentionally avoids reading from the websocket because iTerm2 keeps a
+        background dispatcher task running on the same connection. Calling
+        ``recv()`` here races with that dispatcher and can spuriously raise
+        ``ConcurrencyError`` even while the connection is healthy.
+
+        ---
+
+        :param decode: Whether to decode the received message, defaults to False
+        :type decode: ``bool``, optional
+        :raises ConnectionClosed: If the websocket connection is closed
+        :raises ConcurrencyError: If there is a concurrency error
+        :raises RuntimeError: If there is a runtime error
+        :return: True if the connection is online, False otherwise
+        :rtype: ``bool``
+        """
+        websocket = self.connection.websocket
+        del decode
+
         # Also check if event loop is still usable
         loop = self.loop
         if loop is None or loop.is_closed():
+            log.warning("Event loop is not available or closed during connection check.")
             return False
+
+        if websocket is None:
+            log.warning("No websocket connection available on iTermState.")
+            return False
+
+        websocket_state = websocket.state
+        websocket_state_name = websocket_state.name
+        if websocket_state_name != "OPEN":
+            log.warning(f"Websocket is not open during connection check: state={websocket_state_name}")
+            return False
+
+        close_code = websocket.close_code
+        if close_code is not None:
+            log.warning(f"Websocket has a close code during connection check: close_code={close_code}")
+            return False
+
         return True
 
     @property
@@ -415,6 +469,8 @@ class iTermState:
                 return await self._run_command_without_shell_integration(
                     command=command, suppress_broadcast=suppress, timeout=timeout
                 )
+
+            log.debug("Shell integration enabled.")
 
             async with transaction.Transaction(self.connection):
                 await self.session.async_send_text(command + "\r", suppress_broadcast=suppress)

@@ -9,8 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 
 if TYPE_CHECKING:
-    from iterm2.connection import Connection
-
+    from iterm2_api_wrapper.connection import Connection
     from iterm2_api_wrapper.state import iTermState
 
 
@@ -27,7 +26,7 @@ class RefreshableState[StateT](Protocol):
     This intentionally does **not** depend on iTerm2 concrete types so that unit
     tests can provide simple fakes without requiring a live iTerm2 runtime.
     """
-
+    connection: Connection
     _refresh_callback: Callable[[], Awaitable[StateT]] | Awaitable[StateT] | None
     _event_loop: asyncio.AbstractEventLoop | None
 
@@ -111,7 +110,7 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
     """
 
     async def create_state(self, **kwargs: Any) -> iTermState:
-        from iterm2.connection import Connection
+        from iterm2_api_wrapper.connection import Connection
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
         from iterm2_api_wrapper.runtime_setup import run_iterm_setup
 
@@ -142,7 +141,7 @@ class SetupCoroGateway(ITermGateway["iTermState"]):
         self._setup_coro: Callable[..., Awaitable[iTermState]] = setup_coro
 
     async def create_state(self, **kwargs: Any) -> iTermState:
-        from iterm2.connection import Connection
+        from iterm2_api_wrapper.connection import Connection
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
 
         activate_iterm_app()
