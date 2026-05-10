@@ -5,10 +5,10 @@ import os
 import sys
 import traceback
 from collections.abc import Callable, Coroutine
-from typing import Any, Concatenate, overload
+from typing import Any, Concatenate, cast, overload
 
 from iterm2 import api_pb2, connection
-from websockets import ClientConnection, connect, exceptions, unix_connect
+from websockets import ClientConnection, connect, exceptions, unix_connect, typing
 
 from iterm2_api_wrapper._logging import PrettyLog
 
@@ -109,7 +109,7 @@ class Connection(connection.Connection):
         :returns: A tuple (major version, minor version) or (0, 0) if unknown.
         :rtype: tuple[int, int]
         """
-        if self.websocket is None:
+        if self.websocket is None or self.websocket.response is None:
             return (0, 0)
         key = "X-iTerm2-Protocol-Version"
         if key not in self.websocket.response.headers:
@@ -178,13 +178,12 @@ class Connection(connection.Connection):
         :returns: A coroutine that can be awaited to establish a websocket connection using a TCP socket.
         :rtype: connect
         """
-
         return connect(
             uri=connection._uri(),
             ping_interval=None,
             close_timeout=0,
             additional_headers=connection._headers(),
-            subprotocols=connection._subprotocols(),
+            subprotocols=[typing.Subprotocol(subprotocol) for subprotocol in connection._subprotocols()],
             max_size=None,
         )
 
@@ -304,20 +303,22 @@ class Connection(connection.Connection):
                 self._remove_auth()
         raise RuntimeError("Unreachable code reached in async_connect.")
 
+    def run[T](
+        self, forever: bool, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool, debug: bool = False
+    ) -> T:
+        return cast(T, super().run(forever, coro, retry, debug))
+
 
 @overload
 def run[T](
-    forever: bool,
-    coro: Callable[[connection.Connection], Coroutine[Any, Any, T]],
-    retry: bool = True,
-    debug: bool = False,
+    forever: bool, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool = True, debug: bool = False
 ) -> T: ...
 
 
 @overload
 def run[T, **P](
     forever: bool,
-    coro: Callable[Concatenate[connection.Connection, P], Coroutine[Any, Any, T]],
+    coro: Callable[Concatenate[Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
     debug: bool = False,
     *args: P.args,
@@ -327,7 +328,7 @@ def run[T, **P](
 
 def run[T, **P](
     forever: bool,
-    coro: Callable[Concatenate[connection.Connection, P], Coroutine[Any, Any, T]],
+    coro: Callable[Concatenate[Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
     debug: bool = False,
     *args: P.args,
@@ -358,6 +359,7 @@ def run[T, **P](
         return coro(connection, *args, **kwargs)
 
     result: T = Connection().run(forever=forever, coro=coro_wrapper, retry=retry, debug=debug)
+
     return result
 
 
@@ -382,9 +384,9 @@ def run_until_complete[T, **P](
 
     ---
 
-    :param coro: The coroutine to run which must accept ``connection.Connection``
+    :param coro: The coroutine to run which must accept ``Connection``
         as its first argument, and may accept keyword arguments after that.
-    :type coro: Callable[[connection.Connection, ...], Coroutine[Any, Any, T]]
+    :type coro: Callable[[Connection, ...], Coroutine[Any, Any, T]]
     :param retry: Whether to retry on failure. Defaults to ``True``.
     :type retry: bool
     :param debug: Whether to enable debug output. Defaults to ``False``.

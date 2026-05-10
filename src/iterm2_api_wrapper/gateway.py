@@ -112,7 +112,6 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
 
     async def create_state(self, **kwargs: Any) -> iTermState:
         from iterm2.connection import Connection
-
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
         from iterm2_api_wrapper.runtime_setup import run_iterm_setup
 
@@ -144,7 +143,6 @@ class SetupCoroGateway(ITermGateway["iTermState"]):
 
     async def create_state(self, **kwargs: Any) -> iTermState:
         from iterm2.connection import Connection
-
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
 
         activate_iterm_app()

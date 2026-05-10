@@ -6,13 +6,11 @@ from dataclasses import dataclass, field
 from functools import wraps
 from typing import Any, Callable, ClassVar, Concatenate, Coroutine, Literal, overload
 
-import iterm2
 from dotenv import load_dotenv
 from iterm2 import app, connection, profile, prompt, session, tab, transaction, util, window
 
 # from websockets import ClientConnection, ConnectionClosed, ConnectionClosedError
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
-from websockets.legacy.client import WebSocketClientProtocol
 
 from iterm2_api_wrapper._logging import PrettyLog
 from iterm2_api_wrapper.typings import (
@@ -174,7 +172,7 @@ class iTermState:
         - The websocket is not open
         - The event loop is closed or not set
         """
-        websocket_open: WebSocketClientProtocol | None = getattr(self.connection.websocket, "open", False)
+        websocket_open: bool = getattr(self.connection.websocket, "open", False)
         if not websocket_open:
             return False
         # Also check if event loop is still usable
@@ -450,10 +448,10 @@ class iTermState:
         prompt_obj: Callable[..., Coroutine[Any, Any, None | prompt.Prompt]]
         call_args: dict[str, Any] = {"connection": self.connection, "session_id": self.session.session_id}
         if unique_id:
-            prompt_obj = iterm2.async_get_prompt_by_id
+            prompt_obj = prompt.async_get_prompt_by_id
             call_args["prompt_unique_id"] = unique_id
         else:
-            prompt_obj = iterm2.async_get_last_prompt
+            prompt_obj = prompt.async_get_last_prompt
         last_prompt: None | prompt.Prompt = await prompt_obj(**call_args)
         return last_prompt
 
@@ -463,8 +461,8 @@ class iTermState:
         try:
             async with prompt.PromptMonitor(self.connection, self.session.session_id, modes) as monitor:
                 while True:
-                    _type, _ = await asyncio.wait_for(monitor.async_get(), timeout=timeout)
-                    if _type == prompt.PromptMonitor.Mode.COMMAND_END:
+                    mode, *_ = await asyncio.wait_for(monitor.async_get(), timeout=timeout)
+                    if mode == prompt.PromptMonitor.Mode.COMMAND_END:
                         return True
         except TimeoutError:
             return False

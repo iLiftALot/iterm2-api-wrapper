@@ -3,7 +3,6 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING, Literal, TypeAlias, TypedDict
 
-
 if TYPE_CHECKING:
     from iterm2 import app, connection, profile, session, tab, window
 
@@ -143,7 +142,7 @@ class SessionVar(StrEnum):
     """This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created."""
     autoName = "autoName"
     """The result of evaluating the autoNameFormat interpolated string. This attempts to match the user's intuition of the what the session's name is."""
-    name = "name"
+    tabName = "name"
     """The formatted name as it appears in the tab bar (excluding tmux integration decoration). For example, if the profile is configured to show the session name and job, this would take a value like My Profile (vim)."""
     presentationName = "presentationName"
     """The session name exactly as it appears in the session title bar."""

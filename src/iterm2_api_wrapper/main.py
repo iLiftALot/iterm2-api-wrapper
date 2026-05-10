@@ -15,5 +15,5 @@ def init(retry: bool, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
 
 
 if __name__ == "__main__":
-    debug = "--debug" in sys.argv[1:]
-    global_state: iTermState = init(retry=True, debug=debug, new_tab=False)
+    debug, new_tab = ["--debug" in sys.argv[1:], "--new_tab" in sys.argv[1:]]
+    global_state: iTermState = init(retry=True, debug=debug, new_tab=new_tab)

@@ -10,7 +10,7 @@ from types import FunctionType
 from typing import Annotated, Any, Concatenate, Coroutine
 
 import typer
-from iterm2 import profile
+from iterm2 import profile, alert
 
 from iterm2_api_wrapper.alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
 from iterm2_api_wrapper.client import create_iterm_client
@@ -73,7 +73,7 @@ def kwarg_conversion(maybe_kwargs: tuple[str, ...]) -> tuple[tuple[Any, ...], di
     return args, kwargs
 
 
-async def test_poly_modal_alert(state: iTermState) -> dict[str, Any]:
+async def test_poly_modal_alert(state: iTermState) -> alert.PolyModalResult:
     poly_modal_alert = await poly_modal_alert_handler(
         title="Poly Modal Alert",
         subtitle="This is a poly modal alert with multiple options.",
@@ -120,7 +120,7 @@ async def test_alerts(state: iTermState) -> int:
     return simple_alert
 
 
-async def test_all_alerts(state: iTermState) -> tuple[int, str | None, dict[str, Any]]:
+async def test_all_alerts(state: iTermState) -> tuple[int, str | None, alert.PolyModalResult]:
     """Async main function."""
 
     simple_alert = await test_alerts(state)
