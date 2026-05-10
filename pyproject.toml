@@ -23,10 +23,10 @@ classifiers = [
 ]
 license = {text = "MIT"}
 dependencies = [
-    "typer",
-    "iterm2",
-    "dotenv",
-    "pyobjc",
+    "typer>=0.21.1",
+    "iterm2>=2.18",
+    "python-dotenv>=1.2.1",
+    "pyobjc>=12.1",
 ]
 optional-dependencies = { "applescript" = ["py-applescript"] }
 requires-python = ">= 3.12"
