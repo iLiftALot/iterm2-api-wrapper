@@ -43,6 +43,7 @@ dev = [
     "rich",
     "myst-parser>=4.0.1",
     "python-dotenv",
+    "pytest-cov>=7.0.0",
 ]
 
 
