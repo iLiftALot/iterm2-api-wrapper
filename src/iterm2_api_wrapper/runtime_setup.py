@@ -44,9 +44,7 @@ async def _get_app(connection_instance: Connection) -> app.App:
     return app_instance
 
 
-async def _get_window(
-    app: app.App, connection_instance: Connection, profile: profile.Profile
-) -> window.Window:
+async def _get_window(app: app.App, connection_instance: Connection, profile: profile.Profile) -> window.Window:
     selected_window: window.Window | None = app.current_window
     if selected_window is None:
         selected_window = await window.Window.async_create(connection_instance, profile.name)
@@ -127,19 +125,14 @@ async def _get_tab_with_session(
     return selected_tab, selected_session
 
 
-def _check_api_enabled():
+def _check_api_enabled() -> bool:
     """Check if the Python API is enabled in iTerm2 preferences."""
+    if os.getenv("IT2_APP_PATH") or os.getenv("IT2_SUITE"):
+        return True
+
     try:
         result = subprocess.run(
-            [
-                "defaults",
-                "read",
-                "com.googlecode.iterm2",
-                # "com.googlecode.iterm2.plist",
-                "EnableAPIServer",
-            ],
-            capture_output=True,
-            text=True,
+            ["defaults", "read", "com.googlecode.iterm2", "EnableAPIServer"], capture_output=True, text=True
         )
         return result.returncode == 0 and result.stdout.strip() == "1"
     except Exception:

@@ -2,6 +2,7 @@ from functools import partial
 from typing import Literal
 
 from iterm2 import alert
+
 from iterm2_api_wrapper.connection import Connection
 
 

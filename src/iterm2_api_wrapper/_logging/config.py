@@ -3,7 +3,7 @@ from typing import Any, Callable, Literal, TypedDict
 
 from rich.console import JustifyMethod, OverflowMethod
 
-from .styles import StyleLike, LOG_THEME
+from .styles import LOG_THEME, StyleLike
 
 
 class _LogLevel(IntEnum):

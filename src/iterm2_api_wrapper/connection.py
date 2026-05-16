@@ -9,7 +9,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any, Concatenate, cast, overload
 
 from iterm2 import api_pb2, connection
-from websockets import ClientConnection, connect, exceptions, unix_connect, typing
+from websockets import ClientConnection, connect, exceptions, typing, unix_connect
 
 from iterm2_api_wrapper._logging import PrettyLog
 

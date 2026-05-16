@@ -10,13 +10,13 @@ from types import FunctionType
 from typing import Annotated, Any, Concatenate, Coroutine
 
 import typer
-from iterm2 import profile, alert
+from iterm2 import alert, profile
 
+from iterm2_api_wrapper._logging import PrettyLog
 from iterm2_api_wrapper.alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
 from iterm2_api_wrapper.client import create_iterm_client
-from iterm2_api_wrapper._logging import PrettyLog
-from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.connection import run_until_complete
+from iterm2_api_wrapper.state import iTermState
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
@@ -134,7 +134,7 @@ async def test_all_alerts(state: iTermState) -> tuple[int, str | None, alert.Pol
     return (simple_alert, text_input_alert, poly_modal_alert)
 
 
-async def show_capabilities(state: iTermState) -> dict[str, Any]:
+async def show_capabilities(state: iTermState, capability: str | None = None) -> dict[str, Any]:
     """Retrieve and print iTerm2 capabilities."""
     import iterm2.capabilities
 

@@ -1,10 +1,10 @@
 import sys
 from typing import Unpack
 
+from iterm2_api_wrapper.connection import run_until_complete  # , pp
 from iterm2_api_wrapper.runtime_setup import run_iterm_setup
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.typings import iTermSetupKwargs
-from iterm2_api_wrapper.connection import run_until_complete  # , pp
 
 
 def init(retry: bool, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:

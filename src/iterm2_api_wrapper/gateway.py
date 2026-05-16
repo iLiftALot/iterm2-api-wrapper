@@ -5,11 +5,13 @@ import errno
 import os
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol
+
+from iterm2_api_wrapper.connection import Connection
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.connection import Connection
     from iterm2_api_wrapper.state import iTermState
 
 
@@ -26,7 +28,7 @@ class RefreshableState[StateT](Protocol):
     This intentionally does **not** depend on iTerm2 concrete types so that unit
     tests can provide simple fakes without requiring a live iTerm2 runtime.
     """
-    connection: Connection
+
     _refresh_callback: Callable[[], Awaitable[StateT]] | Awaitable[StateT] | None
     _event_loop: asyncio.AbstractEventLoop | None
 
@@ -90,6 +92,24 @@ async def _async_create_connection_with_retry(
             delay_s = min(max_delay_s, delay_s * backoff)
 
 
+@contextmanager
+def _temporary_iterm_env(*, it2_suite: str | None = None, it2_app_path: str | None = None):
+    managed = {"IT2_SUITE": it2_suite, "IT2_APP_PATH": it2_app_path}
+    previous = {key: os.environ.get(key) for key in managed}
+
+    try:
+        for key, value in managed.items():
+            if value:
+                os.environ[key] = value
+        yield
+    finally:
+        for key, old_value in previous.items():
+            if old_value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old_value
+
+
 class ITermGateway[StateT: RefreshableState[Any]](Protocol):
     """
     Creates a fully-initialized state object.
@@ -110,26 +130,29 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
     """
 
     async def create_state(self, **kwargs: Any) -> iTermState:
-        from iterm2_api_wrapper.connection import Connection
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
         from iterm2_api_wrapper.runtime_setup import run_iterm_setup
 
-        activate_iterm_app()
+        it2_suite = kwargs.pop("it2_suite", None)
+        it2_app_path = kwargs.pop("it2_app_path", None)
 
-        connect_timeout_s = _get_connect_timeout_s()
-        try:
-            conn = await _async_create_connection_with_retry(Connection, timeout_s=connect_timeout_s)
-        except TimeoutError as exc:
-            raise ConnectionError(
-                "Could not connect to iTerm2's Python API. "
-                "Ensure iTerm2 is running and its Python API is enabled. "
-                f"(waited {connect_timeout_s:.1f}s; set {_ENV_CONNECT_TIMEOUT} to increase)"
-            ) from exc
+        with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
+            activate_iterm_app(app_path=it2_app_path)
 
-        return await run_iterm_setup(conn, **kwargs)
+            connect_timeout_s = _get_connect_timeout_s()
+            try:
+                conn = await _async_create_connection_with_retry(Connection, timeout_s=connect_timeout_s)
+            except TimeoutError as exc:
+                raise ConnectionError(
+                    "Could not connect to iTerm2's Python API. "
+                    "Ensure iTerm2 is running and its Python API is enabled. "
+                    f"(waited {connect_timeout_s:.1f}s; set {_ENV_CONNECT_TIMEOUT} to increase)"
+                ) from exc
+
+            return await run_iterm_setup(conn, **kwargs)
 
 
-class SetupCoroGateway(ITermGateway["iTermState"]):
+class SetupCoroGateway[StateT: RefreshableState[Any]](ITermGateway[StateT]):
     """
     Gateway that builds state using a provided setup coroutine.
 
@@ -137,23 +160,26 @@ class SetupCoroGateway(ITermGateway["iTermState"]):
     still allowing unit tests to supply a fully-fake gateway (no iTerm2 import).
     """
 
-    def __init__(self, setup_coro: Callable[[_Connection], Awaitable[iTermState]]) -> None:
-        self._setup_coro: Callable[..., Awaitable[iTermState]] = setup_coro
+    def __init__(self, setup_coro: Callable[..., Awaitable[StateT]]) -> None:
+        self._setup_coro: Callable[..., Awaitable[StateT]] = setup_coro
 
-    async def create_state(self, **kwargs: Any) -> iTermState:
-        from iterm2_api_wrapper.connection import Connection
+    async def create_state(self, **kwargs: Any) -> StateT:
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
 
-        activate_iterm_app()
+        it2_suite = kwargs.pop("it2_suite", None)
+        it2_app_path = kwargs.pop("it2_app_path", None)
 
-        connect_timeout_s = _get_connect_timeout_s()
-        try:
-            conn = await _async_create_connection_with_retry(Connection, timeout_s=connect_timeout_s)
-        except TimeoutError as exc:
-            raise ConnectionError(
-                "Could not connect to iTerm2's Python API. "
-                "Ensure iTerm2 is running and its Python API is enabled. "
-                f"(waited {connect_timeout_s:.1f}s; set {_ENV_CONNECT_TIMEOUT} to increase)"
-            ) from exc
+        with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
+            activate_iterm_app(app_path=it2_app_path)
 
-        return await self._setup_coro(conn, **kwargs)
+            connect_timeout_s = _get_connect_timeout_s()
+            try:
+                conn = await _async_create_connection_with_retry(Connection, timeout_s=connect_timeout_s)
+            except TimeoutError as exc:
+                raise ConnectionError(
+                    "Could not connect to iTerm2's Python API. "
+                    "Ensure iTerm2 is running and its Python API is enabled. "
+                    f"(waited {connect_timeout_s:.1f}s; set {_ENV_CONNECT_TIMEOUT} to increase)"
+                ) from exc
+
+            return await self._setup_coro(conn, **kwargs)

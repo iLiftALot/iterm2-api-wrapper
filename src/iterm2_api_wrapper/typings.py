@@ -3,8 +3,10 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import TYPE_CHECKING, Literal, TypeAlias, TypedDict
 
+
 if TYPE_CHECKING:
     from iterm2 import app, profile, session, tab, window
+
     from iterm2_api_wrapper.connection import Connection
 
 
@@ -33,6 +35,7 @@ class iTermStateKwargs(TypedDict, total=True):
 type VariableContext = Literal["iterm2", "window", "tab", "session", "user"]
 
 SessionVars: TypeAlias = Literal[
+    "*",  # - All possible session variables.
     # Session Name
     "autoNameFormat",  # - This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created.
     "autoName",  # - The result of evaluating the autoNameFormat interpolated string. This attempts to match the user's intuition of the what the session's name is.
@@ -89,21 +92,19 @@ SessionVars: TypeAlias = Literal[
 """Defined in the context of a session"""
 
 TabVars: TypeAlias = Literal[
+    "*",  # - All possible tab variables.
     # Tab Context
-    "id",
-    # - The unique identifier for this tab.
-    "titleOverrideFormat",
-    # - An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not).
-    "titleOverride",
-    # - The value of titleOverrideFormat after evaluating it as an interpolated string.
-    "tmuxWindow",
-    # - In tmux integration, this is the tmux window number this tab represents.
-    "tmuxWindowTitle",
-    # - In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option.
-    "tmuxWindowName",
-    # - In tmux integration, this is the tmux window name.
-    "title",
-    # - The fully formatted title as it appears in the tab bar.
+    "id",  # - The unique identifier for this tab.
+    "titleOverrideFormat",  # - An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not).
+    "titleOverride",  # - The value of titleOverrideFormat after evaluating it as an interpolated string.
+    "tmuxWindow",  # - In tmux integration, this is the tmux window number this tab represents.
+    "tmuxWindowTitle",  # - In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option.
+    "tmuxWindowName",  # - In tmux integration, this is the tmux window name.
+    "title",  # - The fully formatted title as it appears in the tab bar.
+    # References to Other Contexts
+    "currentSession",  # - A reference to the context of the active session in this tab.
+    "iterm2",  # - A reference to the variables belonging to the application (i.e., the global context)
+    "window",  # - A reference to the context of the enclosing window
 ]
 """
 The only variables that users may directly control are those in the "user" scope of a session.
@@ -115,6 +116,10 @@ See "Setting User-Defined Variables" in Scripting Fundamentals for details on se
 """
 
 WindowVars: TypeAlias = Literal[
+    "*",  # - All possible window variables.
+    # References to Other Contexts
+    "currentTab",  # - A reference to the context of the active tab.
+    "iterm2",  # - A reference to the variables belonging to the application (i.e., the global context)
     # Window Title
     "titleOverride",  # - The value from evaluating the interpeted string in titleOverrideFormat, if set.
     "titleOverrideFormat",  # - The window's interpolated string title. If not set, the current tab's title is used.
@@ -128,16 +133,20 @@ WindowVars: TypeAlias = Literal[
 """Defined in the context of a window"""
 
 GlobalVars: TypeAlias = Literal[
+    "*",  # - All possible global variables.
     "effectiveTheme",  # - A space-delimited list of words describing the OS theme (e.g., "dark", "light highContrast", "dark minimal")
     "localhostName",  # - The best guess of what localhost's hostname is
     "pid",  # - The process ID of the iTerm2 app
+    "appBundlePath",  # - The path to the iTerm.app executable.
 ]
 """Defined in the global context"""
 
 
-class SessionVar(StrEnum):
+class SessionVar(StrEnum):  # TODO: Check https://iterm2.com/documentation-variables.html for potential updates
     """Defined in the context of a session"""
 
+    all = "*"
+    """All possible session variables."""
     # Session Name
     autoNameFormat = "autoNameFormat"
     """This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created."""
@@ -239,6 +248,8 @@ class SessionVar(StrEnum):
 class TabVar(StrEnum):
     """Defined in the context of a tab"""
 
+    all = "*"
+    """All possible tab variables."""
     id = "id"
     """The unique identifier for this tab."""
     titleOverrideFormat = "titleOverrideFormat"
@@ -253,11 +264,25 @@ class TabVar(StrEnum):
     """In tmux integration, this is the tmux window name."""
     tabTitle = "title"
     """The fully formatted title as it appears in the tab bar."""
+    # References to Other Contexts
+    currentSession = "currentSession"
+    """A reference to the context of the active session in this tab."""
+    iterm2 = "iterm2"
+    """A reference to the variables belonging to the application (i.e., the global context)"""
+    window = "window"
+    """A reference to the context of the enclosing window"""
 
 
 class WindowVar(StrEnum):
     """Defined in the context of a window"""
 
+    all = "*"
+    """All possible window variables."""
+    # References to Other Contexts
+    currentTab = "currentTab"
+    """A reference to the context of the active tab."""
+    iterm2 = "iterm2"
+    """"A reference to the variables belonging to the application (i.e., the global context)"""
     # Window Title
     titleOverride = "titleOverride"
     """The value from evaluating the interpeted string in titleOverrideFormat, if set."""
@@ -279,12 +304,16 @@ class WindowVar(StrEnum):
 class GlobalVar(StrEnum):
     """Defined in the global context"""
 
+    all = "*"
+    """All possible global variables."""
     effectiveTheme = "effectiveTheme"
     """A space-delimited list of words describing the OS theme (e.g., "dark", "light highContrast", "dark minimal")"""
     localhostName = "localhostName"
     """The best guess of what localhost's hostname is"""
     pid = "pid"
     """The process ID of the iTerm2 app"""
+    appBundlePath = "appBundlePath"
+    """The path to the iTerm.app executable."""
 
 
 type EnumVariables = SessionVar | TabVar | WindowVar | GlobalVar

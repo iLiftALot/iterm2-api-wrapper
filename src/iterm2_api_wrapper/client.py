@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import inspect
 import threading
 from threading import Thread
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Unpack, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Unpack, cast
 
 from iterm2_api_wrapper.gateway import (
     DefaultITermGateway,
     ITermGateway,
     RefreshableState,
     SetupCoroGateway,
-    _Connection
+    _Connection,
 )
 
 
@@ -121,12 +122,13 @@ class iTermClient[StateT: RefreshableState[Any]]:
         is_own_thread = current_thread is self._thread
 
         if self._loop.is_running() and not is_own_thread:
-            connection = self._state.connection
-            async_close = connection.async_close
-            try:
-                asyncio.run_coroutine_threadsafe(async_close(), self._loop).result(timeout=self._timeout or 5.0)
-            except (TimeoutError, RuntimeError, concurrent.futures.CancelledError):
-                pass
+            connection: _Connection | None = getattr(getattr(self, "_state", None), "connection", None)
+            async_close: Coroutine[Any, Any, None] | None = getattr(connection, "async_close", None)
+            if inspect.iscoroutinefunction(async_close):
+                try:
+                    asyncio.run_coroutine_threadsafe(async_close(), self._loop).result(timeout=self._timeout or 5.0)
+                except (TimeoutError, RuntimeError, concurrent.futures.CancelledError):
+                    pass
 
         if self._loop.is_running():
             try:

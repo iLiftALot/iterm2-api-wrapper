@@ -62,6 +62,7 @@ _terminal_console = Console(record=False, log_path=False, log_time=False, stderr
 
 type BrowserChoice = Literal["default", "safari", "chrome", "firefox", "edge", "mozilla"]
 
+
 class MultiConsole:
     """Wrapper that writes to file (plain), HTML (colored), and terminal (colored) consoles."""
 
@@ -421,7 +422,7 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator:
     session = request.session
     session_name = getattr(session, "name", "iTerm2 API Wrapper Tests")
     start_time = getattr(session, "start_time", time.perf_counter())
-    console._browser = f"{config.getoption("BROWSER", "default")}"
+    console._browser = f"{config.getoption('BROWSER', 'default')}"
 
     # Environment info table
     env_table = Table(show_header=False, box=None, padding=(0, 2))
@@ -436,7 +437,8 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator:
     env_table.add_row("Timeout", f"{RUN_TIMEOUT:.0f} seconds")
     env_table.add_row("Invocation Args", " ".join(["pytest", *sys.argv[1:]]))
     env_table.add_row(
-        "Plugins", " ".join(str(p) for p in config.invocation_params.plugins) if config.invocation_params.plugins else "None"
+        "Plugins",
+        " ".join(str(p) for p in config.invocation_params.plugins) if config.invocation_params.plugins else "None",
     )
 
     console.print()
