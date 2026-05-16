@@ -248,3 +248,4 @@ assets/pyobj_cheatsheet_general.md
 AGENTS.md
 CLAUDE.md
 tests/_dev.py
+src/iterm2_api_wrapper/triggers.py
