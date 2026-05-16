@@ -397,15 +397,25 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     object.__setattr__(session, "start_time", time.perf_counter())
 
 
+def _addoption_if_missing(parser: pytest.Parser, *names: str, **kwargs: Any) -> None:
+    try:
+        parser.addoption(*names, **kwargs)
+    except ValueError as exc:
+        if "already added" not in str(exc):
+            raise
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
+    _addoption_if_missing(
+        parser,
         "--show",
         help="Show/open HTML log file after test session completes.",
         action="store_true",
         default=False,
         dest="SHOW_HTML_LOG",
     )
-    parser.addoption(
+    _addoption_if_missing(
+        parser,
         "--browser",
         help="Browser to use for opening HTML log file after test session completes.",
         choices=["default", "safari", "chrome", "firefox", "edge", "mozilla"],

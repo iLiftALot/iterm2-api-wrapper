@@ -60,9 +60,10 @@ test-debug *ARGS:
 [arg("open", long, short="o", value="true", help="Open HTML report?")]
 test-coverage open="false":
     #!/usr/bin/env zsh
-    uv run --active --python=3.12 --group dev pytest . --cov=src/iterm2-api-wrapper --cov-report=term-missing --cov-report=html --show
     if [[ "{{open}}" == "true" ]]; then
-        open htmlcov/index.html
+        uv run --active --python=3.12 --group dev pytest . --cov=src/iterm2-api-wrapper --cov-report=term-missing --cov-report=html --show
+    else
+        uv run --active --python=3.12 --group dev pytest . --cov=src/iterm2-api-wrapper --cov-report=term-missing --cov-report=html
     fi
 
 # Build and sync the project, useful for checking that packaging is correct
