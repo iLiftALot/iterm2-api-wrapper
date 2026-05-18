@@ -22,10 +22,10 @@ classifiers = [
 ]
 license = { text = "MIT" }
 dependencies = [
-    "typer>=0.21.1",
-    "iterm2>=2.18",
-    "python-dotenv>=1.2.1",
-    "pyobjc>=12.1",
+    "typer==0.25.1",
+    "iterm2==2.19",
+    "python-dotenv==1.2.2",
+    "pyobjc==12.1",
 ]
 optional-dependencies = { "applescript" = ["py-applescript"] }
 requires-python = ">= 3.12"
@@ -33,22 +33,22 @@ requires-python = ">= 3.12"
 
 [dependency-groups]
 dev = [
-    "rust-just",
-    "cookiecutter>=2.6.0",
-    "alabaster>=1.0.0",
-    "watchdog>=6.0.0",
-    "sphinx",
-    "furo",
-    "pytest",
-    "rich",
-    "myst-parser>=4.0.1",
-    "python-dotenv",
-    "pytest-cov>=7.0.0",
+    "rust-just==1.51.0",
+    "cookiecutter==2.7.1",
+    "alabaster==1.0.0",
+    "watchdog==6.0.0",
+    "sphinx==9.1.0",
+    "furo==2025.12.19",
+    "pytest==9.0.3",
+    "rich==15.0.0",
+    "myst-parser==5.1.0",
+    "python-dotenv==1.2.2",
+    "pytest-cov==7.1.0",
 ]
 
 
 [build-system]
-requires = ["uv_build >= 0.11.12, <0.12.0"]
+requires = ["uv_build >= 0.11.14, <0.12.0"]
 build-backend = "uv_build"
 
 

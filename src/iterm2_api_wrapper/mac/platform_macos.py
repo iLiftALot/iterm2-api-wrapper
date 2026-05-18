@@ -5,14 +5,14 @@ import subprocess
 from pathlib import Path
 
 from AppKit import (
-    NSRunningApplication,  # pyright: ignore[reportAttributeAccessIssue]
-    NSWorkspace,  # pyright: ignore[reportAttributeAccessIssue]
-    NSWorkspaceLaunchAndHide,  # pyright: ignore[reportAttributeAccessIssue]
+    NSRunningApplication,  # pyright: ignore[reportAttributeAccessIssue] # ty:ignore[unresolved-import]
+    NSWorkspace,  # pyright: ignore[reportAttributeAccessIssue] # ty:ignore[unresolved-import]
+    NSWorkspaceLaunchAndHide,  # pyright: ignore[reportAttributeAccessIssue] # ty:ignore[unresolved-import]
 )
 
 
 try:
-    import applescript  # pyright: ignore[reportMissingImports]
+    import applescript  # pyright: ignore[reportMissingImports] # ty:ignore[unresolved-import]
 
     def maybe_reveal_hotkey_window(is_hotkey: bool):  # pyright: ignore[reportRedeclaration]
         apple_script = applescript.AppleScript(path=str(Path(__file__).parent / "applescripts" / "iterm_osa.scpt"))

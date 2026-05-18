@@ -10,10 +10,11 @@ from iterm2_api_wrapper.typings import iTermSetupKwargs
 def init(retry: bool, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
     """Main function to run iTerm2 setup."""
 
-    global_state: iTermState = run_until_complete(run_iterm_setup, retry, **kwargs)
+    global_state: iTermState = run_until_complete(run_iterm_setup, retry, **kwargs)  # ty:ignore[invalid-argument-type]]
     return global_state
 
 
 if __name__ == "__main__":
     debug, new_tab = ["--debug" in sys.argv[1:], "--new_tab" in sys.argv[1:]]
     global_state: iTermState = init(retry=True, debug=debug, new_tab=new_tab)
+    init(retry=False, dedicated_profile_name="", debug=True, new_tab=False)

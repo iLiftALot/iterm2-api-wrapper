@@ -1,6 +1,6 @@
 from .config import AllLogConfig, ConsoleConfig, FileManagerConfig, LogConfig, get_default_log_config
 from .logger import PrettyLog, pp
-from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleType, ThemeStyle
+from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleLike, StyleType, ThemeStyle
 
 
 __all__ = [
@@ -12,6 +12,7 @@ __all__ = [
     "GradientHighlighter",
     "LogConfig",
     "PrettyLog",
+    "StyleLike",
     "StyleType",
     "ThemeStyle",
     "get_default_log_config",

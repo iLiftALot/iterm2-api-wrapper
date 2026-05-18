@@ -1,7 +1,12 @@
+from datetime import datetime
 from enum import IntEnum, StrEnum
-from typing import Any, Callable, Literal, TypedDict
+from typing import IO, Callable, Literal, TypedDict
 
-from rich.console import JustifyMethod, OverflowMethod
+from rich.console import HighlighterType, JustifyMethod, OverflowMethod
+from rich.emoji import EmojiVariant
+from rich.style import StyleType
+from rich.text import Text
+from rich.theme import Theme
 
 from .styles import LOG_THEME, StyleLike
 
@@ -76,28 +81,28 @@ class ConsoleConfig(TypedDict, total=False):
     force_jupyter: bool | None
     force_interactive: bool | None
     soft_wrap: bool
-    theme: Any
+    theme: Theme | None
     stderr: bool
-    file: Any
+    file: IO[str] | None
     quiet: bool
     width: int | None
     height: int | None
-    style: StyleLike | None
+    style: StyleType | None  # TODO
     no_color: bool | None
     tab_size: int
     record: bool
     markup: bool
     emoji: bool
-    emoji_variant: str | None
+    emoji_variant: EmojiVariant | None
     highlight: bool
     log_time: bool
     log_path: bool
-    log_time_format: Any
-    highlighter: Any
+    log_time_format: str | Callable[[datetime], Text]
+    highlighter: HighlighterType | None
     legacy_windows: bool | None
     safe_box: bool
-    get_datetime: Callable[[], Any]
-    get_time: Callable[[], float]
+    get_datetime: Callable[[], datetime] | None
+    get_time: Callable[[], float] | None
 
 
 class FileManagerConfig(TypedDict, total=False):

@@ -8,7 +8,7 @@ __email__ = "nickcorbin17@yahoo.com"
 from dotenv import load_dotenv
 
 from . import triggers
-from ._logging import PrettyLog, get_default_log_config
+from ._logging import PrettyLog, get_default_log_config, pp
 
 
 load_dotenv()
@@ -21,4 +21,4 @@ from .state import iTermState
 
 type iTermClient = ITermClient
 
-__all__ = ["create_iterm_client", "get_shared_client", "iTermClient", "iTermState", "triggers"]
+__all__ = ["create_iterm_client", "get_shared_client", "iTermClient", "iTermState", "pp", "triggers"]

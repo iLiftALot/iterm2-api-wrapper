@@ -545,6 +545,6 @@ def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator:
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo) -> Generator:
     """Store test outcome on the item for access in fixtures."""
-    outcome: Result[pytest.TestReport] = yield  # type: ignore[assignment]
+    outcome: Result[pytest.TestReport] = yield  # type: ignore[assignment] # ty:ignore[invalid-assignment]]
     rep = outcome.get_result()
     setattr(item, f"rep_{rep.when}", rep)

@@ -19,7 +19,6 @@ from rich.styled import Styled
 from rich.text import Text
 from rich.traceback import install as install_rich_traceback
 
-# from .styles import StyleAttributes, ColorLike, ThemeStyle
 from .config import (
     _LEVEL_STYLES,
     AllLogConfig,
@@ -28,12 +27,12 @@ from .config import (
     LogConfig,
     LogLevel,
     LogLevelLike,
-    StyleLike,
     _resolve_level,
     _severity,
     get_default_log_config,
 )
-from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleAttribute, StyleType
+
+from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleAttribute, StyleLike, StyleType
 
 
 # Install rich tracebacks globally for better error output
@@ -130,7 +129,7 @@ class _FileConsoleManager:
         """
         if self._console is None:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            if not self._initialized and self._file_manager_config.get("clear_file_on_init", True):
+            if not self._initialized and self._file_manager_config.get("clear_file_on_init", False):
                 self._path.write_text("")
             self._handle = open(self._path, "a")
             self._console_config["file"] = self._handle
@@ -242,7 +241,7 @@ def pp(
     max_length: int | None = None,
     max_string: int | None = None,
     max_depth: int | None = None,
-    expand_all: bool = False,
+    expand_all: bool = True,
 ) -> None:
     """Pretty print to the active terminal console."""
     pprint(
@@ -305,9 +304,9 @@ class PrettyLog:
         *,
         pretty_config: AllLogConfig | None = None,
     ) -> None:
-        pretty_config = self._normalize_pretty_config(pretty_config if pretty_config is None else dict(pretty_config))
+        pretty_config = self._normalize_pretty_config(pretty_config if pretty_config is None else dict(**pretty_config))
         self.name = name
-        self.mode = mode
+        self.mode: Literal["terminal", "file", "all"] = mode
         self.level: LogLevel = _resolve_level(level)
         self._log_config: LogConfig = pretty_config.get("logger_config", {})
         self._terminal_console_config: ConsoleConfig = pretty_config.get("terminal_console_config", {})
@@ -367,7 +366,7 @@ class PrettyLog:
             if mode is not None:
                 logger.mode = mode
             if pretty_config is not None:
-                normalized = cls._normalize_pretty_config(dict(pretty_config))
+                normalized = cls._normalize_pretty_config(dict(**pretty_config))
                 logger.configure(**normalized)
             return logger
 
@@ -676,7 +675,8 @@ class PrettyLog:
                         color=style.color,
                         bgcolor=style.bgcolor,
                         link=style.link,
-                        **{s: True for s in (style.attributes or []) if s},
+                        **{s: True for s in (style.attributes or []) if s and s != "meta"},
+                        meta=None,
                     )
                 renderables = [Styled(renderable, style) for renderable in renderables]
             log_renderable = self._build_log_renderable(
@@ -990,12 +990,12 @@ class PrettyLog:
             "file_manager_config": self._file_manager_config,
         }
         if pretty_config is not None:
-            cfg: dict[str, Any] = dict(inherited_config)  # type: ignore[arg-type]
-            normalized = self._normalize_pretty_config(dict(pretty_config))
-            for key in ("logger_config", "terminal_console_config", "file_console_config", "file_manager_config"):
+            cfg: AllLogConfig = cast(AllLogConfig, dict(**inherited_config))
+            normalized = self._normalize_pretty_config(dict(**pretty_config))
+            for key in self._CALL_CONFIG_KEYS:
                 if key in normalized:
-                    cfg[key] = {**cfg.get(key, {}), **normalized[key]}
-            inherited_config = cfg  # type: ignore[assignment]
+                    cfg[key] = {**cfg.get(key, {}), **normalized[key]}  # ty:ignore[invalid-key]
+            inherited_config = cfg
 
         child_logger = PrettyLog(
             name=child_name, mode=mode or self.mode, level=level or self.level, pretty_config=inherited_config

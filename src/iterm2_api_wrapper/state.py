@@ -6,13 +6,12 @@ import json
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, Callable, ClassVar, Concatenate, Coroutine, Literal, overload
+from typing import Any, Callable, ClassVar, Concatenate, Coroutine, Literal, cast, overload
 
 from dotenv import load_dotenv
 from iterm2 import app, profile, prompt, session, tab, transaction, util, window
 from websockets import ConcurrencyError, ConnectionClosed
 
-# from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 from iterm2_api_wrapper._logging import PrettyLog
 from iterm2_api_wrapper.connection import Connection
 from iterm2_api_wrapper.typings import (
@@ -129,7 +128,11 @@ class iTermState:
         if callback is None:
             raise RuntimeError("No refresh callback provided to ensure_state")
 
-        new_state = await (callback() if callable(callback) else callback)
+        new_state: iTermState
+        if inspect.iscoroutine(callback) or isinstance(callback, Awaitable):
+            new_state = await cast(Awaitable[iTermState], callback)
+        else:
+            new_state = await callback()
         self.refresh_from(new_state)
 
     async def validated_state(self) -> bool:
@@ -609,16 +612,20 @@ class iTermState:
 
         user_found = (user_var := await self.get_session_var("username")) is not None and user_var.strip() != ""
         host_found = (host_var := await self.get_session_var("hostname")) is not None and host_var.strip() != ""
-        prompt_check = await self._get_prompt() is not None
+        last_command_found = (
+            last_command_var := await self.get_session_var("lastCommand")
+        ) is not None and last_command_var.strip() != ""
+        prompt_found = await self._get_prompt() is not None
 
         log.debug(
-            f"prompt_check={prompt_check}",
+            f"last_command_found={last_command_found}",
+            f"prompt_found={prompt_found}",
             f"user_found={user_found} - user_var={user_var}",
             f"host_found={host_found} - host_var={host_var}",
             sep="\n",
         )
 
-        return prompt_check and user_found and host_found
+        return prompt_found and user_found and host_found
 
     async def _get_terminal_contents(self) -> list[str]:
         """Get the terminal screen contents."""
