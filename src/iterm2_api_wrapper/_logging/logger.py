@@ -245,7 +245,7 @@ def pp(
 ) -> None:
     """Pretty print to the active terminal console."""
     pprint(
-        *objects,
+        *objects if len(objects) == 1 else [f"{obj=}" for obj in list(objects)],
         console=console or get_terminal_console(),
         indent_guides=indent_guides,
         max_length=max_length,

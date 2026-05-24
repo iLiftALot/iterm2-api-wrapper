@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import shlex
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from functools import wraps
@@ -41,14 +42,28 @@ def _validate_state[**P, T](
     async def async_wrapper(self: iTermState, *args: P.args, **kwargs: P.kwargs) -> T:
         # Auto-route: if we're on the wrong loop, hop to the correct one
         if not self._on_correct_loop():
-            loop = self.loop
-            if loop is None:
+            target_loop = self.loop
+            if target_loop is None:
                 raise RuntimeError("No event loop available on connection")
+
             future = asyncio.run_coroutine_threadsafe(
                 async_wrapper(self, *args, **kwargs),  # recurse into self on the right loop
-                loop,
+                target_loop,
             )
-            return await asyncio.get_running_loop().run_in_executor(None, future.result)
+            wrapped_future = asyncio.wrap_future(future)
+
+            try:
+                return await wrapped_future
+            except asyncio.CancelledError:
+                cancelled = future.cancel()
+                log.debug(
+                    "Cancelled cross-loop call to %s: future.cancel() -> %s (done=%s cancelled=%s)",
+                    method.__qualname__,
+                    cancelled,
+                    future.done(),
+                    future.cancelled(),
+                )
+                raise
 
         # We're on the correct loop — validate + execute
         try:
@@ -486,7 +501,7 @@ class iTermState:
         async with self._run_command_lock:
             current_path = await self.get_session_var("path")
             if path and current_path != path:
-                await self.session.async_send_text(f"cd '{path}'\r", suppress_broadcast=suppress)
+                await self.session.async_send_text(f"cd -- {shlex.quote(path)}\r", suppress_broadcast=suppress)
             shell_integration_enabled = await self._shell_integration_enabled()
             if not shell_integration_enabled:
                 log.debug("Shell integration not enabled; falling back to non-shell-integration method.")
@@ -612,10 +627,8 @@ class iTermState:
 
         user_found = (user_var := await self.get_session_var("username")) is not None and user_var.strip() != ""
         host_found = (host_var := await self.get_session_var("hostname")) is not None and host_var.strip() != ""
-        last_command_found = (
-            last_command_var := await self.get_session_var("lastCommand")
-        ) is not None and last_command_var.strip() != ""
-        prompt_found = await self._get_prompt() is not None
+        last_command_found = (await self.get_session_var("lastCommand")) is not None
+        prompt_found = (await self._get_prompt()) is not None
 
         log.debug(
             f"last_command_found={last_command_found}",
@@ -625,21 +638,17 @@ class iTermState:
             sep="\n",
         )
 
-        return prompt_found and user_found and host_found
+        return last_command_found and prompt_found and user_found and host_found
 
     async def _get_terminal_contents(self) -> list[str]:
-        """Get the terminal screen contents."""
-        line_info = await self.session.async_get_line_info()
-        start = line_info.overflow
-        total_lines = line_info.scrollback_buffer_height + line_info.mutable_area_height
-        # log.debug(
-        #     "Getting terminal contents: "
-        #     f"overflow={line_info.overflow}, scrollback_buffer_height={line_info.scrollback_buffer_height}, mutable_area_height={line_info.mutable_area_height}"
-        # )
-        contents = [
-            line.string for line in await self.session.async_get_contents(first_line=start, number_of_lines=total_lines)
-        ]
-        return contents
+        """Get a transactionally consistent snapshot of the terminal screen contents."""
+        async with transaction.Transaction(self.connection):
+            line_info = await self.session.async_get_line_info()
+            start = line_info.overflow
+            total_lines = line_info.scrollback_buffer_height + line_info.mutable_area_height
+            contents = await self.session.async_get_contents(first_line=start, number_of_lines=total_lines)
+
+        return [line.string for line in contents]
 
     def asdict(self) -> dict[str, Any]:
         """Convert iTermState to dictionary."""

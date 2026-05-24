@@ -251,7 +251,6 @@ class Connection(connection.Connection):
                 async with self._get_connect_coro() as websocket:
                     done = True
                     self.websocket = websocket
-                    # pylint: disable=broad-except
                     try:
                         result = await coro(self)
                         return result

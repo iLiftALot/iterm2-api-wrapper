@@ -335,3 +335,54 @@ def test_string_in_lines_uses_command_range_when_output_range_is_empty() -> None
         assert result == "line one\nline two"
 
     asyncio.run(scenario())
+
+
+def test_validate_state_cancels_cross_loop_future_when_outer_task_is_cancelled() -> None:
+    async def scenario() -> None:
+        caller_loop = asyncio.get_running_loop()
+        target_loop = asyncio.new_event_loop()
+
+        state = make_state(target_loop)
+
+        async def ensure_state(refresh_callback: Any = None) -> None:
+            return None
+
+        state.ensure_state = ensure_state  # type: ignore[method-assign]
+
+        started = asyncio.Event()
+        cancelled_on_target = asyncio.Event()
+
+        @_validate_state
+        async def slow_method(self: iTermState) -> str:
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                cancelled_on_target.set()
+                raise
+            return "done"
+
+        def run_target_loop() -> None:
+            asyncio.set_event_loop(target_loop)
+            target_loop.run_forever()
+
+        import threading
+
+        thread = threading.Thread(target=run_target_loop, daemon=True)
+        thread.start()
+
+        try:
+            task = asyncio.create_task(slow_method(state))
+            await asyncio.wait_for(started.wait(), timeout=1.0)
+
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            await asyncio.wait_for(cancelled_on_target.wait(), timeout=1.0)
+        finally:
+            target_loop.call_soon_threadsafe(target_loop.stop)
+            thread.join(timeout=1.0)
+            target_loop.close()
+
+    asyncio.run(scenario())
