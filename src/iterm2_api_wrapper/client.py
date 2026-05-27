@@ -103,6 +103,11 @@ class iTermClient[StateT: RefreshableState[Any]]:
         state: StateT = await self._gateway.create_state(**self._kwargs)
         state._refresh_callback = self._init_async
         state._event_loop = self._loop
+
+        connection: _Connection | None = getattr(state, "connection", None)
+        if connection is not None:
+            connection.loop = self._loop
+
         return state
 
     async def _refresh_async(self) -> None:

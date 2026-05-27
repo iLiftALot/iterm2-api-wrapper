@@ -10,18 +10,21 @@ from functools import wraps
 from typing import Any, Callable, ClassVar, Concatenate, Coroutine, Literal, cast, overload
 
 from dotenv import load_dotenv
-from iterm2 import app, profile, prompt, session, tab, transaction, util, window
+from iterm2 import app, profile, session, tab, transaction, util, window, prompt
 from websockets import ConcurrencyError, ConnectionClosed
 
 from iterm2_api_wrapper._logging import PrettyLog
 from iterm2_api_wrapper.connection import Connection
 from iterm2_api_wrapper.typings import (
+    async_get_last_prompt,
+    async_get_prompt_by_id,
     GlobalVar,
     GlobalVariable,
     SessionVar,
     SessionVariable,
     TabVar,
     TabVariable,
+    Prompt,
     Variable,
     VariableContext,
     WindowVar,
@@ -42,14 +45,16 @@ def _validate_state[**P, T](
     async def async_wrapper(self: iTermState, *args: P.args, **kwargs: P.kwargs) -> T:
         # Auto-route: if we're on the wrong loop, hop to the correct one
         if not self._on_correct_loop():
-            target_loop = self.loop
-            if target_loop is None:
-                raise RuntimeError("No event loop available on connection")
+            target_loop = self.loop_manager.require_loop()
+            routed = async_wrapper(self, *args, **kwargs)
 
-            future = asyncio.run_coroutine_threadsafe(
-                async_wrapper(self, *args, **kwargs),  # recurse into self on the right loop
-                target_loop,
-            )
+            try:
+                future = asyncio.run_coroutine_threadsafe(routed, target_loop)
+            except RuntimeError:
+                routed.close()
+                self.loop_manager._discard_loop(target_loop)
+                raise
+
             wrapped_future = asyncio.wrap_future(future)
 
             try:
@@ -71,7 +76,7 @@ def _validate_state[**P, T](
             return await method(self, *args, **kwargs)
         except (ConnectionClosed, ConcurrencyError):
             log.warning("Connection closed, refreshing state and retrying...")
-            await self.ensure_state()
+            await self.ensure_state()  # Uses the `_refresh_callback`
             return await method(self, *args, **kwargs)
 
     if not inspect.iscoroutinefunction(method):
@@ -81,6 +86,67 @@ def _validate_state[**P, T](
         )
 
     return async_wrapper
+
+
+class LoopManager:
+    """Resolve and reconcile the event loop that owns an ``iTermState``."""
+
+    def __init__(self, state: iTermState):
+        self._state = state
+
+    @staticmethod
+    def _usable_loop(loop: asyncio.AbstractEventLoop | None) -> asyncio.AbstractEventLoop | None:
+        if loop is None or loop.is_closed():
+            return None
+        return loop
+
+    def _discard_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        if self._state._event_loop is loop:
+            self._state._event_loop = None
+        if self._state.connection.loop is loop:
+            self._state.connection.loop = None
+
+    def _reconcile_loop(self) -> asyncio.AbstractEventLoop | None:
+        state_loop = self._usable_loop(self._state._event_loop)
+        connection_loop = self._usable_loop(self._state.connection.loop)
+
+        if state_loop is None and self._state._event_loop is not None:
+            self._state._event_loop = None
+        if connection_loop is None and self._state.connection.loop is not None:
+            self._state.connection.loop = None
+
+        loop = state_loop or connection_loop
+        if loop is None:
+            return None
+
+        self._state._event_loop = loop
+        self._state.connection.loop = loop
+        return loop
+
+    def require_loop(self) -> asyncio.AbstractEventLoop:
+        loop = self._reconcile_loop()
+        if loop is None:
+            raise RuntimeError("No usable iTerm event loop is available on this state.")
+
+        if not loop.is_running():
+            raise RuntimeError("The iTerm event loop is not running; recreate or refresh the client.")
+
+        return loop
+
+    def _on_correct_loop(self) -> bool:
+        loop = self.loop
+        if loop is None or not loop.is_running():
+            return False
+
+        try:
+            return asyncio.get_running_loop() is loop
+        except RuntimeError:
+            return False
+
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop | None:
+        """Get and reconcile the event loop associated with this state."""
+        return self._reconcile_loop()
 
 
 @dataclass
@@ -107,6 +173,7 @@ class iTermState:
         default=None, init=False, repr=False
     )
     _event_loop: asyncio.AbstractEventLoop | None = field(default=None, init=False, repr=False)
+    _loop_manager: LoopManager | None = field(default=None, init=False, repr=False)
     # One lock per instance
     _run_command_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
@@ -120,6 +187,13 @@ class iTermState:
         if not isinstance(new_state, iTermState):
             raise TypeError(f"refresh_from expects an iTermState; got {type(new_state).__name__!r}")
 
+        existing_loop = self.loop_manager.loop
+        new_loop = (
+            LoopManager._usable_loop(new_state._event_loop)
+            or LoopManager._usable_loop(new_state.connection.loop)
+            or existing_loop
+        )
+
         self.connection = new_state.connection
         self.app = new_state.app
         self.window = new_state.window
@@ -128,9 +202,11 @@ class iTermState:
         self.profile = new_state.profile
         self.is_hotkey_window = new_state.is_hotkey_window
         self._refresh_callback = new_state._refresh_callback
-        # Preserve _event_loop from existing state if new_state doesn't have one
-        if new_state._event_loop is not None:
-            self._event_loop = new_state._event_loop
+        self._event_loop = new_loop
+        self._loop_manager = None
+
+        if new_loop is not None:
+            self.connection.loop = new_loop
 
     async def ensure_state(
         self, refresh_callback: Callable[[], Awaitable[iTermState]] | Awaitable[iTermState] | None = None
@@ -231,7 +307,7 @@ class iTermState:
 
         # Also check if event loop is still usable
         loop = self.loop
-        if loop is None or loop.is_closed():
+        if loop is None or loop.is_closed() or not loop.is_running():
             log.warning("Event loop is not available or closed during connection check.")
             return False
 
@@ -261,13 +337,19 @@ class iTermState:
         return loop.get_debug()
 
     @property
+    def loop_manager(self) -> LoopManager:
+        if self._loop_manager is None:
+            self._loop_manager = LoopManager(self)
+        return self._loop_manager
+
+    @property
     def loop(self) -> asyncio.AbstractEventLoop | None:
         """Get the event loop associated with this state.
 
         This is the loop that all iTerm2 API calls must run on.
         Prefers the explicitly set _event_loop, falling back to connection.loop.
         """
-        return self._event_loop or self.connection.loop
+        return self.loop_manager.loop
 
     def _on_correct_loop(self) -> bool:
         """Check if the current context is running on the connection's event loop.
@@ -276,15 +358,11 @@ class iTermState:
             True if currently on the connection's loop, False otherwise.
             Also returns False if there's no running loop or no connection loop.
         """
-        conn_loop = self.loop
-        if conn_loop is None:
-            return False
-        try:
-            current_loop = asyncio.get_running_loop()
-            return current_loop is conn_loop
-        except RuntimeError:
-            # No running loop
-            return False
+        return self.loop_manager._on_correct_loop()
+
+    @_validate_state
+    async def on_state_loop[T](self, coro_factory: Coroutine[None, None, T]) -> T:
+        return await coro_factory
 
     @overload
     async def get_session_var(self, name: Literal["*", SessionVar.all]) -> dict[str, str]: ...
@@ -355,6 +433,7 @@ class iTermState:
             case _:
                 raise ValueError(f"Invalid context: {ctx!r}")
 
+        log.debug(f"Getting variable: {ctx}.{variable}")
         result: str | dict[str, str] = await target.async_get_variable(variable)
         return result
 
@@ -513,7 +592,7 @@ class iTermState:
 
             async with transaction.Transaction(self.connection):
                 await self.session.async_send_text(command + "\r", suppress_broadcast=suppress)
-                last_prompt: prompt.Prompt | None = await self._get_prompt()
+                last_prompt: Prompt | None = await self._get_prompt()
                 if last_prompt is None:
                     log.warning(
                         ":warning: Shell integration appears broken; Unable to get last prompt. "
@@ -538,33 +617,43 @@ class iTermState:
                 content = await self._string_in_lines(last_prompt)
             return content
 
-    async def _get_prompt(self, unique_id: str | None = None) -> None | prompt.Prompt:
+    async def _get_prompt(self, unique_id: str | None = None) -> None | Prompt:
         """Get prompt history from the session."""
-        prompt_obj: Callable[..., Coroutine[Any, Any, None | prompt.Prompt]]
+        prompt_obj: Callable[..., Coroutine[Any, Any, None | Prompt]]
         call_args: dict[str, Any] = {"connection": self.connection, "session_id": self.session.session_id}
         if unique_id:
-            prompt_obj = prompt.async_get_prompt_by_id
+            prompt_obj = async_get_prompt_by_id
             call_args["prompt_unique_id"] = unique_id
         else:
-            prompt_obj = prompt.async_get_last_prompt
-        last_prompt: None | prompt.Prompt = await prompt_obj(**call_args)
+            prompt_obj = async_get_last_prompt
+
+        last_prompt: None | Prompt = await prompt_obj(**call_args)
         return last_prompt
 
     async def _wait_for_prompt(self, *, timeout: float = 30.0) -> bool:
         """Block until the running command terminates. Returns True if command ended, False on timeout."""
-        modes = [prompt.PromptMonitor.Mode.COMMAND_END]
+        ModeFactory = prompt.PromptMonitor.Mode
+        modes = [ModeFactory.COMMAND_START, ModeFactory.COMMAND_END, ModeFactory.PROMPT]
         try:
             async with prompt.PromptMonitor(self.connection, self.session.session_id, modes) as monitor:
                 while True:
                     mode, *_ = await asyncio.wait_for(monitor.async_get(), timeout=timeout)
-                    if mode == prompt.PromptMonitor.Mode.COMMAND_END:
+                    if mode == ModeFactory.PROMPT:
+                        rest = cast(Prompt, _[0]) # prompt object
+                        log.debug("PROMPT DETECTED: ", {"mode": mode, "Prompt": rest.__dict__})
+                    if mode == ModeFactory.COMMAND_START:
+                        rest = cast(str, _[0]) # command
+                        log.debug("COMMAND STARTED: ", {"mode": mode, "command": rest})
+                    if mode == ModeFactory.COMMAND_END:
+                        rest = cast(int, _[0]) # exit code
+                        log.debug("COMMAND FINISHED:", {"mode": mode, "exit_code": rest})
                         return True
         except TimeoutError:
             return False
 
-    async def _string_in_lines(self, prompt: prompt.Prompt) -> str:
+    async def _string_in_lines(self, prompt: Prompt) -> str:
         """Returns a string with the content in a range of lines."""
-        updated_prompt = await self._get_prompt(getattr(prompt, "unique_id", ""))
+        updated_prompt = await self._get_prompt(prompt.unique_id)
         if updated_prompt is None:
             log.error(":error: Unable to get updated prompt; raising RuntimeError.")
             raise RuntimeError("Failed to retrieve prompt after command execution.")

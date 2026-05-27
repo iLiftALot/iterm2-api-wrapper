@@ -194,6 +194,66 @@ def test_online_uses_passive_websocket_state() -> None:
     asyncio.run(scenario())
 
 
+def test_loop_manager_uses_connection_loop_when_state_loop_is_missing() -> None:
+    async def scenario() -> None:
+        loop = asyncio.get_running_loop()
+        state = make_state(loop)
+
+        assert state._event_loop is None
+        assert state.loop is loop
+        assert state._event_loop is loop
+        assert state.connection.loop is loop
+
+    asyncio.run(scenario())
+
+
+def test_loop_manager_reconciles_connection_to_usable_state_loop() -> None:
+    async def scenario() -> None:
+        state_loop = asyncio.get_running_loop()
+        stale_connection_loop = asyncio.new_event_loop()
+        state = make_state(stale_connection_loop)
+        state._event_loop = state_loop
+
+        try:
+            assert state.loop is state_loop
+            assert state._event_loop is state_loop
+            assert state.connection.loop is state_loop
+        finally:
+            stale_connection_loop.close()
+
+    asyncio.run(scenario())
+
+
+def test_loop_manager_discards_closed_state_loop_and_uses_connection_loop() -> None:
+    async def scenario() -> None:
+        connection_loop = asyncio.get_running_loop()
+        closed_state_loop = asyncio.new_event_loop()
+        state = make_state(connection_loop)
+        state._event_loop = closed_state_loop
+        closed_state_loop.close()
+
+        assert state.loop is connection_loop
+        assert state._event_loop is connection_loop
+        assert state.connection.loop is connection_loop
+
+    asyncio.run(scenario())
+
+
+def test_loop_manager_rejects_non_running_required_loop() -> None:
+    loop = asyncio.new_event_loop()
+    state = make_state(loop)
+
+    try:
+        with pytest.raises(RuntimeError, match="not running"):
+            state.loop_manager.require_loop()
+
+        assert state.loop is loop
+        assert state._event_loop is loop
+        assert state.connection.loop is loop
+    finally:
+        loop.close()
+
+
 def test_variable_helpers_dispatch_to_expected_targets() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
@@ -304,7 +364,7 @@ def test_run_command_changes_directory_before_fallback() -> None:
         result = await state.run_command("pwd", path="/new", broadcast=False, timeout=4.0)
 
         assert result == "fallback-output"
-        assert state.session.sent == [("cd '/new'\r", True)]
+        assert state.session.sent == [("cd -- /new\r", True)]
 
     asyncio.run(scenario())
 

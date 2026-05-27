@@ -36,7 +36,8 @@ from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleAttribu
 
 
 # Install rich tracebacks globally for better error output
-install_rich_traceback(show_locals=True, width=120)
+install_rich_traceback(show_locals=True, width=120, locals_max_depth=2, locals_max_length=5, locals_max_string=120)
+# install_rich_traceback(show_locals=True, width=120)
 LOG_PATH = Path(__file__).resolve().parents[3] / "logs" / "iterm2_api_wrapper.log"
 
 
@@ -245,7 +246,8 @@ def pp(
 ) -> None:
     """Pretty print to the active terminal console."""
     pprint(
-        *objects if len(objects) == 1 else [f"{obj=}" for obj in list(objects)],
+        # objects[0] if len(list(objects)) == 1 else [f"{obj=}" for obj in list(objects)],
+        objects,
         console=console or get_terminal_console(),
         indent_guides=indent_guides,
         max_length=max_length,

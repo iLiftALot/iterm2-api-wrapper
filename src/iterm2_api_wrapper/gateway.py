@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 
 # Connection protocol for iTerm2's Python API.
 class _Connection(Protocol):
+    loop: asyncio.AbstractEventLoop | None
     @classmethod
     async def async_create(cls) -> Connection: ...
-
 
 class RefreshableState[StateT](Protocol):
     """

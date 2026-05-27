@@ -64,10 +64,10 @@ class Connection(connection.Connection):
 
         while True:
             try:
+                loop = asyncio.get_running_loop()
+                conn.loop = loop
                 conn.websocket = await conn._get_connect_coro()
-                conn.__dispatch_forever_future = asyncio.ensure_future(
-                    conn._async_dispatch_forever(conn, asyncio.get_running_loop())
-                )
+                conn.__dispatch_forever_future = asyncio.ensure_future(conn._async_dispatch_forever(conn, loop))
                 return conn
             except exceptions.InvalidStatus as status_code_exception:
                 if status_code_exception.response.status_code == 401:
