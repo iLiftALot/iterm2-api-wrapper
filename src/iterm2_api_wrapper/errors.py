@@ -3,17 +3,20 @@ from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.typings import PartialProfile
+    from iterm2_api_wrapper.typings import PartialProfile, Profile
 
 
 class ErrorMeta(type(BaseException)):
     msg: str
 
-    def __new__(cls: type[ErrorMeta], name: str, bases: tuple[type, ...], namespace: dict[str, Any], /, **kwds: Any) -> ErrorMeta:
+    def __new__(
+        cls: type[ErrorMeta], name: str, bases: tuple[type, ...], namespace: dict[str, Any], /, **kwds: Any
+    ) -> ErrorMeta:
         namespace["msg"] = namespace.get("msg", kwds.get("msg", name))
         namespace["__module__"] = namespace.get("__module__", kwds.get("__module__", name))
         instance = super().__new__(cls, name, bases, namespace, **kwds)
         return instance
+
 
 class iTermError(BaseException, metaclass=ErrorMeta):
     """Base error class for iTerm API errors."""
@@ -29,11 +32,30 @@ class ProfileNotFoundError(iTermError):
     Profile with name '{name}' not found. Available profiles:\n{profiles}
     """.strip()
 
-    def __init__(self, *, target_profile_name: str, profile_data: dict[str, PartialProfile]) -> None:
+    def __init__(
+        self, *, target_profile_name: str, profile_data: dict[str, PartialProfile] | dict[str, Profile]
+    ) -> None:
         super().__init__(
-            name=target_profile_name,
-            profiles="\n".join([f"- {name} ({p.guid})" for name, p in profile_data.items()]),
+            name=target_profile_name, profiles="\n".join([f"- {name} ({p.guid})" for name, p in profile_data.items()])
         )
+
+
+class WindowNotFoundError(iTermError):
+    msg = """
+    Window could not be found using profile '{name}'.
+    """.strip()
+
+    def __init__(self, name: str):
+        super().__init__(name=name)
+
+
+class TabNotFoundError(iTermError):
+    msg = """
+    Tab could not be found using profile '{name}'.
+    """.strip()
+
+    def __init__(self, name: str):
+        super().__init__(name=name)
 
 
 class SessionNotFoundError(iTermError):
@@ -43,4 +65,3 @@ class SessionNotFoundError(iTermError):
 
     def __init__(self, name_or_guid: str):
         super().__init__(name=name_or_guid)
-

@@ -1,207 +1,53 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from typing import Literal, Unpack
 
-from iterm2.app import App, async_get_app
-from iterm2.profile import Profile
-from iterm2.session import Session
-from iterm2.tab import Tab
-from iterm2.window import Window
+from iterm2.capabilities import (
+    check_supports_apply_layout,
+    check_supports_get_default_profile,
+    check_supports_prompt_id,
+)
 
 from iterm2_api_wrapper._logging import PrettyLog
 from iterm2_api_wrapper.connection import Connection
-from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
 from iterm2_api_wrapper.state import iTermState
-from iterm2_api_wrapper.typings import iTermSetupKwargs
+from iterm2_api_wrapper.typings import iTermSetupKwargs, check_supports_prompt_monitor_modes
 
 
 log = PrettyLog.get_logger(__name__)
 
 
-async def get_connection() -> Connection:
-    conn: Connection = await Connection.async_create()
-    return conn
+def _validate_app_version(connection: Connection) -> None:
+    """Check if the iTerm app meets the minimum threshold (1.14 with apply layout)"""
+    check_supports_prompt_monitor_modes(connection)
+    check_supports_get_default_profile(connection)
+    check_supports_prompt_id(connection)
+    check_supports_apply_layout(connection)
+
+    major_version, minor_version = connection.iterm2_protocol_version
+    log.debug(f"iTerm version >= minimum required version: {major_version}.{minor_version}")
 
 
-async def get_profile(connection_instance: Connection, profile_name: str | None = None) -> Profile:
-    async def get_default_profile() -> Profile:
-        default_profile: Profile = await Profile.async_get_default(connection_instance)
-        return default_profile
+async def _setup_iterm(connection: Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
+    """Compatibility wrapper for the enhanced class-based iTerm API setup."""
+    from iterm2_api_wrapper.api import create_iterm_state
 
-    if profile_name is None:
-        return await get_default_profile()
-
-    profiles = await Profile.async_get(connection=connection_instance)
-    for p in profiles:
-        if p.name == profile_name:
-            return p
-
-    raise ValueError(
-        f"Profile with name '{profile_name}' not found. Available profiles:\n"
-        + "\n".join([f"- {p.name}" for p in profiles])
-    )
-
-
-async def _get_app(connection_instance: Connection) -> App:
-    app_instance: None | App = await async_get_app(connection_instance, create_if_needed=True)
-    if app_instance is None:
-        raise RuntimeError("Could not get iTerm2 app")
-    return app_instance
-
-
-async def _get_window(app: App, connection_instance: Connection, profile: Profile) -> Window:
-    selected_window: Window | None = app.current_window
-    if selected_window is None:
-        selected_window = await Window.async_create(connection_instance, profile.name)
-
-    assert selected_window is not None, "Could not get or create iTerm2 window"
-    return selected_window
-
-
-async def _get_tab_with_session(window: Window, profile: Profile, new_tab: bool = False) -> tuple[Tab, Session]:
-    """
-    Returns a tuple containing a :class:`Tab` and its associated :class:`Profile`
-    for the given window and profile. Selects an existing tab/session matching the
-    profile or creates a new tab if needed.
-
-    If :param:`new_tab` is True, always creates a new tab.
-
-    Ensures the tab and session are labeled with a unique tag based on the
-    profile name.
-    """
-    log.debug(f"Looking for existing tab with profile: {profile.name}")
-    iterm_mcp_tag = f"pyterm-session:{profile.name}"
-
-    async def default_tab_with_session(override_new_tab: bool = False) -> tuple[Tab, Session]:
-        """
-        Returns a tuple containing a Tab and its associated Session, either by
-        selecting an existing tab/session matching specific criteria or by
-        creating a new tab if needed. The override_new_tab parameter forces
-        creation of a new tab when set to True.
-        """
-        selected_tab, selected_session = None, None
-
-        if not new_tab and not override_new_tab:
-            for t in window.tabs:
-                current_session = t.current_session
-                if current_session is None:
-                    continue
-                tab_title = await t.async_get_variable("title")
-                session_name = current_session.name
-                if iterm_mcp_tag in [tab_title, session_name]:
-                    selected_tab, selected_session = t, current_session
-                    break
-
-        if new_tab is True or override_new_tab is True or (not selected_tab or not selected_session):
-            selected_tab = await window.async_create_tab(profile=profile.name)
-            selected_session = selected_tab.current_session if selected_tab else None
-
-        assert selected_tab is not None, "Could not get or create iTerm2 tab"
-        assert selected_session is not None, "Could not get current session in tab"
-        return selected_tab, selected_session
-
-    if new_tab is True:
-        log.debug("Creating new tab due to new_tab=True")
-        return await default_tab_with_session()
-
-    for t in window.tabs:
-        current_session = t.current_session
-        if current_session is None:
-            continue
-        # profile_name = (await current_session.async_get_profile()).name
-        profile_name = await current_session.async_get_variable("profileName")
-        session_name = current_session.name
-        # log.debug(f"Checking tab: {session_name=} - {profile_name=}")
-        tab_title = await t.async_get_variable("title")
-        if profile.name == profile_name and iterm_mcp_tag in [tab_title, session_name]:
-            log.debug(f"Found match: {session_name=} - {profile.name=} - {profile_name=}")
-            selected_tab, selected_session = t, current_session
-            break
-    else:
-        log.debug("No matching tab found; creating new tab")
-        selected_tab, selected_session = await default_tab_with_session(override_new_tab=True)
-
-    tab_title = await selected_tab.async_get_variable("title")
-    session_name = selected_session.name
-    if iterm_mcp_tag not in [tab_title, session_name]:
-        log.debug(f"Renaming tab and session to '{iterm_mcp_tag}'")
-        await selected_tab.async_set_title(iterm_mcp_tag)
-        await selected_session.async_set_name(iterm_mcp_tag)
-
-    return selected_tab, selected_session
-
-
-def _check_api_enabled() -> bool:
-    """Check if the Python API is enabled in iTerm2 preferences."""
-    if os.getenv("IT2_APP_PATH") or os.getenv("IT2_SUITE"):
-        return True
-
-    try:
-        result = subprocess.run(
-            ["defaults", "read", "com.googlecode.iterm2", "EnableAPIServer"], capture_output=True, text=True
-        )
-        return result.returncode == 0 and result.stdout.strip() == "1"
-    except Exception:
-        return False
-
-
-def _enable_api():
-    """Enable the Python API in iTerm2 preferences."""
-    try:
-        subprocess.run(
-            [
-                "defaults",
-                "write",
-                "com.googlecode.iterm2",
-                # "com.googlecode.iterm2.plist",
-                "EnableAPIServer",
-                "-bool",
-                "true",
-            ],
-            check=True,
-            capture_output=True,
-        )
-        return True
-    except Exception:
-        return False
-
-
-async def _setup_iterm(connection_instance: Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
-    activate_iterm_app()
-    if not _check_api_enabled():
-        raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
-
-    app_instance: App = await _get_app(connection_instance=connection_instance)
-    profile_instance: Profile = await get_profile(
-        connection_instance=connection_instance,
+    return await create_iterm_state(
+        connection,
         profile_name=kwargs.get("dedicated_profile_name") or os.getenv("ITERM_DEDICATED_PROFILE", None),
-    )
-    window_instance: Window = await _get_window(app_instance, connection_instance, profile_instance)
-    tab_instance, session_instance = await _get_tab_with_session(
-        window=window_instance, profile=profile_instance, new_tab=kwargs.get("new_tab", False)
-    )
-
-    # Check hotkey window status here (we're already async on the correct loop)
-    is_hotkey_window = bool(await window_instance.async_get_variable("isHotkeyWindow"))
-
-    return iTermState(
-        connection=connection_instance,
-        app=app_instance,
-        profile=profile_instance,
-        window=window_instance,
-        tab=tab_instance,
-        session=session_instance,
-        is_hotkey_window=is_hotkey_window,
+        **kwargs,
     )
 
 
-async def run_iterm_setup(connection_instance: Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
+async def run_iterm_setup(connection: Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
     """Run iTerm2 setup. This can also be called directly."""
+    _validate_app_version(connection)
+
     env_debug = os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
     debug_enabled = kwargs.get("debug", None) or env_debug
     log_level: Literal["DEBUG", "INFO"] = "DEBUG" if debug_enabled else "INFO"
     log.parent.set_level(log_level, propagate=True)
-    global_iterm_state: iTermState = await _setup_iterm(connection_instance=connection_instance, **kwargs)
+    global_iterm_state: iTermState = await _setup_iterm(connection=connection, **kwargs)
+
     return global_iterm_state

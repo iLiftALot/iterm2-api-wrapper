@@ -17,4 +17,6 @@ def test_init_delegates_to_run_until_complete(monkeypatch) -> None:
     result = package_main.init(retry=False, debug=True, new_tab=True)
 
     assert result == "state"
-    assert calls == [{"coro": package_main.run_iterm_setup, "retry": False, "kwargs": {"debug": True, "new_tab": True}}]
+    assert calls == [
+        {"coro": package_main.create_iterm_state, "retry": False, "kwargs": {"debug": True, "new_tab": True}}
+    ]

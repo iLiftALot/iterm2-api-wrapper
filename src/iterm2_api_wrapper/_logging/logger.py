@@ -9,13 +9,16 @@ from contextlib import contextmanager
 from io import TextIOWrapper
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Unpack, cast, overload
+from urllib.parse import quote
 
 from rich.console import Console, ConsoleOptions, JustifyMethod, RenderResult
+from rich.containers import Renderables
 from rich.measure import Measurement
 from rich.pretty import pprint
 from rich.scope import render_scope
 from rich.style import Style
 from rich.styled import Styled
+from rich.table import Table
 from rich.text import Text
 from rich.traceback import install as install_rich_traceback
 
@@ -31,7 +34,6 @@ from .config import (
     _severity,
     get_default_log_config,
 )
-
 from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleAttribute, StyleLike, StyleType
 
 
@@ -586,25 +588,81 @@ class PrettyLog:
         """Return render kwargs from log config."""
         return {k: log_kwargs[k] for k in self._RENDER_KWARGS_KEYS if k in log_kwargs}
 
+    @staticmethod
+    def _vscode_file_uri(filename: str, line_no: int | None = None, column_no: int = 1) -> str:
+        """Return a VS Code deep link for *filename* and optional line/column."""
+        abs_path = os.path.abspath(filename)
+        uri = f"vscode://file{quote(abs_path, safe='/:')}"
+        if line_no is not None:
+            uri = f"{uri}:{line_no}:{column_no}"
+        return uri
+
+    def _build_path_text(self, filename: str, line_no: int | None) -> Text:
+        """Build compact path text with VS Code-native click targets."""
+        path = filename.rpartition(os.sep)[-1]
+        if filename.startswith("<"):
+            if line_no is None:
+                return Text(path)
+            return Text(f"{path}:{line_no}")
+
+        path_text = Text()
+        path_text.append(path, style=f"link {self._vscode_file_uri(filename)}")
+        if line_no is not None:
+            path_text.append(":")
+            path_text.append(str(line_no), style=f"link {self._vscode_file_uri(filename, line_no)}")
+        return path_text
+
+    @staticmethod
+    def _build_log_time(console: Console) -> Text:
+        """Build the time column using the active Rich Console log settings."""
+        log_render = console._log_render
+        log_time = console.get_datetime()
+        time_format = log_render.time_format
+        if callable(time_format):
+            log_time_display = time_format(log_time)
+        else:
+            log_time_display = Text(log_time.strftime(time_format))
+        if log_time_display == log_render._last_time and log_render.omit_repeated_times:
+            return Text(" " * len(log_time_display))
+        log_render._last_time = log_time_display
+        return log_time_display
+
+    def _build_log_table(
+        self, console: Console, renderables: list[Any], *, filename: str, line_no: int | None
+    ) -> Table:
+        """Build a Rich log table without Rich's hardcoded file:// path links."""
+        log_render = console._log_render
+        output = Table.grid(padding=(0, 1))
+        output.expand = True
+        if log_render.show_time:
+            output.add_column(style="log.time")
+        if log_render.show_level:
+            output.add_column(style="log.level", width=log_render.level_width)
+        output.add_column(ratio=1, style="log.message", overflow="fold")
+        show_path = log_render.show_path and line_no is not None
+        if show_path:
+            output.add_column(style="log.path")
+        row: list[Any] = []
+        if log_render.show_time:
+            row.append(self._build_log_time(console))
+        if log_render.show_level:
+            row.append("")
+        row.append(Renderables(renderables))
+        if show_path:
+            row.append(self._build_path_text(filename, line_no))
+        output.add_row(*row)
+        return output
+
     def _build_log_renderable(
         self, console: Console, renderables: list[Any], *, stack_offset: int, log_locals: bool, include_path: bool
     ) -> Any:
         """Build a Rich log-style renderable with time/path columns."""
         renderables = [*renderables]  # ensure log_locals table is separated from message
         filename, line_no, locals_map = console._caller_frame_info(stack_offset + 1)
-        link_path = None if filename.startswith("<") else os.path.abspath(filename)
-        path = filename.rpartition(os.sep)[-1] if include_path else None
         if log_locals:
             locals_display = {key: value for key, value in locals_map.items() if not key.startswith("__")}
             renderables.append(render_scope(locals_display, title="[i]locals"))
-        return console._log_render(
-            console,
-            renderables,
-            log_time=console.get_datetime(),
-            path=path,
-            line_no=line_no if include_path else None,
-            link_path=link_path if include_path else None,
-        )
+        return self._build_log_table(console, renderables, filename=filename, line_no=line_no if include_path else None)
 
     def _emit(
         self,
@@ -682,7 +740,7 @@ class PrettyLog:
                     )
                 renderables = [Styled(renderable, style) for renderable in renderables]
             log_renderable = self._build_log_renderable(
-                console, list(renderables), stack_offset=stack_offset, log_locals=log_locals, include_path=include_path
+                console, renderables, stack_offset=stack_offset, log_locals=log_locals, include_path=include_path
             )
 
             console.print(log_renderable, **print_kwargs)

@@ -166,7 +166,7 @@ def test_validated_state_updates_current_iterm_objects(monkeypatch: pytest.Monke
         async def online() -> bool:
             return True
 
-        monkeypatch.setattr(state_module.app, "async_get_app", fake_get_app)
+        monkeypatch.setattr(state_module, "async_get_app", fake_get_app)
         state.online = online  # type: ignore[method-assign]
 
         assert await state.validated_state() is True
@@ -295,7 +295,7 @@ def test_get_prompt_candidate_nudges_empty_terminal(monkeypatch: pytest.MonkeyPa
         async def no_sleep(delay: float) -> None:
             return None
 
-        state._get_terminal_contents = get_contents  # type: ignore[method-assign]
+        state._get_terminal_snapshot = get_contents  # type: ignore[method-assign]
         monkeypatch.setattr(state_module.asyncio, "sleep", no_sleep)
 
         lines, prompt_line = await state._get_prompt_candidate(suppress_broadcast=True)
@@ -325,7 +325,7 @@ def test_run_command_without_shell_integration_uses_snapshot_diff(monkeypatch: p
         async def no_sleep(delay: float) -> None:
             return None
 
-        state._get_terminal_contents = get_contents  # type: ignore[method-assign]
+        state._get_terminal_snapshot = get_contents  # type: ignore[method-assign]
         monkeypatch.setattr(state_module.asyncio, "sleep", no_sleep)
 
         result = await state._run_command_without_shell_integration(
@@ -369,7 +369,7 @@ def test_run_command_changes_directory_before_fallback() -> None:
     asyncio.run(scenario())
 
 
-def test_string_in_lines_uses_command_range_when_output_range_is_empty() -> None:
+def test_string_in_lines_uses_command_range_when_output_range_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
         updated_prompt = SimpleNamespace(
@@ -388,9 +388,20 @@ def test_string_in_lines_uses_command_range_when_output_range_is_empty() -> None
             assert unique_id == "prompt-1"
             return updated_prompt
 
-        state._get_prompt = get_prompt  # type: ignore[method-assign]
+        class NoopTransaction:
+            def __init__(self, connection: object) -> None:
+                self.connection = connection
 
-        result = await state._string_in_lines(SimpleNamespace(unique_id="prompt-1"))
+            async def __aenter__(self) -> NoopTransaction:
+                return self
+
+            async def __aexit__(self, *args: object) -> None:
+                return None
+
+        state._get_prompt = get_prompt  # type: ignore[method-assign]
+        monkeypatch.setattr(state_module.transaction, "Transaction", NoopTransaction)
+
+        result = await state._get_prompt_output("prompt-1")
 
         assert result == "line one\nline two"
 
@@ -399,7 +410,6 @@ def test_string_in_lines_uses_command_range_when_output_range_is_empty() -> None
 
 def test_validate_state_cancels_cross_loop_future_when_outer_task_is_cancelled() -> None:
     async def scenario() -> None:
-        caller_loop = asyncio.get_running_loop()
         target_loop = asyncio.new_event_loop()
 
         state = make_state(target_loop)

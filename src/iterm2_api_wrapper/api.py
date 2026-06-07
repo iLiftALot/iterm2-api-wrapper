@@ -2,219 +2,862 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import TYPE_CHECKING
+import os
+import re
+import subprocess
+from collections.abc import AsyncGenerator
+from typing import Literal, Unpack, cast, overload
+
+from iterm2.lifecycle import NewSessionMonitor
 
 from iterm2_api_wrapper._logging import PrettyLog
 from iterm2_api_wrapper.connection import Connection
-from iterm2_api_wrapper.errors import ProfileNotFoundError, SessionNotFoundError
-from iterm2_api_wrapper.typings import App, PartialProfile, Session, Tab, Window, async_get_app
-
-
-if TYPE_CHECKING:
-    from iterm2 import session, tab
-    from iterm2_api_wrapper.typings import Profile
+from iterm2_api_wrapper.errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
+from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
+from iterm2_api_wrapper.state import iTermState
+from iterm2_api_wrapper.typings import (
+    App,
+    PartialProfile,
+    Profile,
+    PromptMonitor,
+    Session,
+    Tab,
+    Window,
+    async_get_app,
+    iTermSetupKwargs,
+)
 
 
 log = PrettyLog.get_logger(__name__)
 
 
+def contains_matching_term(regex_pattern: re.Pattern[str], *terms: str) -> bool:
+    matches = list(filter(bool, [regex_pattern.search(term) for term in terms]))
+    return len(matches) > 0
+
+
 class iTermAPI:
-    def __init__(self, profile_name: str | None = None) -> None:
-        self.loop = asyncio.new_event_loop()
-        self.profile_name = profile_name
-        self.conn: Connection | None = None
-        self.app: App | None = None
+    __connection: Connection | None = None
+    __app: App | None = None
+
+    def __init__(
+        self,
+        profile_name: str | None = None,
+        service_name: str = "iterm-api",
+        *,
+        connection_instance: Connection | None = None,
+        auto_initialize: bool = True,
+        new_tab: bool = False,
+        debug: bool | None = None,
+        activate: bool = True,
+    ) -> None:
+        self._connection: Connection | None = connection_instance
+        self._app: App | None = None
+        self._profile_cache: dict[str, Profile | PartialProfile] = {}
+
+        self.profile_name = profile_name or os.getenv("ITERM_DEDICATED_PROFILE", None)
+        self.service_name = service_name
+        self.new_tab = new_tab
+        self.debug = debug or os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true"}
+        self.activate = activate
         self.window: Window | None = None
         self.tab: Tab | None = None
         self.session: Session | None = None
-        self.__profile_data: dict[str, PartialProfile] = {}
+        self.profile: Profile | PartialProfile | None = None
+
+        if connection_instance is not None:
+            type(self).__connection = connection_instance
+
+        if not auto_initialize:
+            return
+
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop is not None:
+            raise RuntimeError(
+                "iTermAPI cannot be synchronously initialized while an event loop is running. "
+                "Use 'await iTermAPI.async_create(...)' inside async code."
+            )
+
+        self.loop = asyncio.new_event_loop()
         self.loop.run_until_complete(self._initialize())
 
+    @property
+    def app(self) -> App:
+        if not self._app:
+            if not self.__app:
+                raise RuntimeError("iTermAPI._app not set.")
+            self._app = self.__app
+        return self._app
+
+    @property
+    def connection(self) -> Connection:
+        if not self._connection:
+            if not self.__connection:
+                raise RuntimeError("iTermAPI._app not set.")
+            self._connection = self.__connection
+        return self._connection
+
+    @classmethod
+    async def async_create(
+        cls,
+        profile_name: str | None = None,
+        *,
+        connection_instance: Connection | None = None,
+        new_tab: bool = False,
+        debug: bool | None = None,
+        activate: bool = True,
+    ) -> iTermAPI:
+        api = cls(
+            profile_name=profile_name,
+            connection_instance=connection_instance,
+            auto_initialize=False,
+            new_tab=new_tab,
+            debug=debug,
+            activate=activate,
+        )
+        api.loop = asyncio.get_running_loop()
+        await api._initialize()
+        return api
+
     async def _initialize(self) -> None:
-        conn = self.conn = await self.get_connection()
-        self.app = await self.get_app(conn)
+        self._configure_logging()
+
+        if self.activate:
+            activate_iterm_app()
+
+        if not self._check_api_enabled():
+            raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
+
+        self._connection = await self.get_connection()
+        self._app = await self.get_app()
         self.profile = await self.get_profile()
-        self.window = await self.get_window()  # Potentially sets tab and session
-        self.tab = self.tab or await self.get_tab()
-        self.session = self.session or await self.get_session()
+        self.profile_name = self.profile_name or self.profile.name
+        self._profile_cache[self.profile_name] = self.profile
 
-    @staticmethod
-    async def get_connection() -> Connection:
-        conn: Connection = await Connection.async_create()
-        return conn
+        selected_window: Window
+        selected_tab: Tab
+        selected_session: Session
 
-    @staticmethod
-    async def get_app(conn: Connection | None = None) -> App:
-        if conn is None:
-            conn = await iTermAPI.get_connection()
+        if not self.new_tab:
+            tagged_context = await self._find_tagged_context(self.profile)
+        else:
+            tagged_context = None
 
-        app_instance: App | None = await async_get_app(conn, create_if_needed=True)
+        if tagged_context is not None:
+            selected_window, selected_tab, selected_session = tagged_context
+        else:
+            selected_window = await self.get_window()
+            selected_tab, selected_session = await self._get_tagged_tab_with_session(
+                selected_window, self.profile, new_tab=self.new_tab
+            )
 
-        if app_instance is None:
-            raise RuntimeError("Could not get iTerm2 app")
+        self.window, self.tab, self.session = selected_window, selected_tab, selected_session
 
-        return app_instance
+    @classmethod
+    async def get_connection(cls) -> Connection:
+        if cls.__connection is None:
+            cls.__connection = await Connection.async_create()
+        return cls.__connection
 
-    async def get_profile(self, profile_name: str | None = None) -> PartialProfile:
-        if not self.conn:
-            self.conn = await self.get_connection()
+    @classmethod
+    async def get_app(cls) -> App:
+        if cls.__app is None:
+            conn = await cls.get_connection()
+            cls.__app = await async_get_app(conn, create_if_needed=True)
+        return cls.__app
 
-        profile: PartialProfile | None = None
-        profile_name = profile_name or self.profile_name
+    async def get_profile(self, target_profile_name: str | None = None) -> Profile | PartialProfile:
+        target_profile_name = target_profile_name or self.profile_name or self._profile_name(self.profile)
+        target_is_current = (self.profile is not None) and (
+            target_profile_name is None or target_profile_name == self.profile.name
+        )
+        target_in_cache = target_profile_name in self._profile_cache
 
-        if profile_name is None:
-            profile = await PartialProfile.async_get_default(self.conn)
+        if target_is_current:
+            return cast(Profile, self.profile)
 
-        profile_entries: list[PartialProfile] = await PartialProfile.async_get(self.conn)
+        if target_in_cache:
+            profile = self._profile_cache[target_profile_name]
+            return profile
 
-        for profile_obj in profile_entries:
-            p_name = profile_obj.name
-            self.__profile_data[p_name] = profile_obj
+        conn = await self.get_connection()
 
-            if not profile and p_name == profile_name:
-                profile = profile_obj
+        if target_profile_name is None:
+            profile = await Profile.async_get_default(conn)
+            self._profile_cache[profile.name] = profile
+            return profile
 
-        if not profile:
-            raise ProfileNotFoundError(target_profile_name=f"{profile_name}", profile_data=self.__profile_data)
+        profile_entries: dict[str, Profile] = {p.name: p for p in await Profile.async_get(conn)}
+        profile = profile_entries.get(target_profile_name)
 
+        if profile is None:
+            raise ProfileNotFoundError(target_profile_name=f"{target_profile_name}", profile_data=profile_entries)
+
+        self._profile_cache[profile.name] = profile
         return profile
 
-    async def get_window(self, *, profile_name: str | None = None, window_id: str | None = None) -> Window:
-        """Finds or creates a new window.
-
-        :param connection: A :class:`Connection`.
-        :param profile: The name of the :class:`PartialProfile` to use for the new window.
-        :param command: A command to run in lieu of the shell in the new
-            session. Mutually exclusive with profile_customizations.
-        :param profile_customizations: :class:`~iterm2.LocalWriteOnlyProfile` giving changes to
-            make in profile. Mutually exclusive with command.
-
-        :return: Returns a new :class:`Window` or `None` if the session ended right away.
-        :rtype: :class:`Window` | `None`
-
-        :raises CreateWindowException: Raises :class:`~iterm2.CreateWindowException` if something went wrong.
-        """
-        if not self.app:
-            conn = self.conn
-
-            if not conn:
-                conn = self.conn = await self.get_connection()
-
-            self.app = await self.get_app(conn)
-
+    @overload
+    async def get_window(self, *, window_id: str | None = None) -> Window: ...
+    @overload
+    async def get_window(self, *, profile_name: str | None = None) -> Window: ...
+    @overload
+    async def get_window(self, *, tab_id: str | None = None) -> Window: ...
+    async def get_window(
+        self, *, window_id: str | None = None, profile_name: str | None = None, tab_id: str | None = None
+    ) -> Window:
+        app = await self.get_app()
+        profile = await self.get_profile(profile_name)
         window: Window | None = None
 
-        if window_id and (window := await self.app.tab_delegate_get_window_by_id(window_id)):
-            return window
+        async def from_window_id(id: str) -> Window | None:
+            if self.window and self.window.window_id == id:
+                return self.window
 
-        profile_name = profile_name or self.profile.name
-        profile_guid = self._profile_guid(self.__profile_data[profile_name])
+            _window = app.get_window_by_id(id) or await app.tab_delegate_get_window_by_id(id)
+            return _window
 
-        for w in self.app.windows:
-            for t in w.tabs:
-                for s in t.all_sessions:
-                    session_profile = await s.async_get_profile()
-                    session_profile_guid = self._profile_guid(session_profile)
-                    # profile_name = await s.async_get_variable("profileName")
+        async def from_profile() -> Window | None:
+            if self.window and self._current_context_matches(profile, require_window=True):
+                return self.window
 
-                    if session_profile_guid == profile_guid:
-                        log.debug(
-                            f"PROFILE FOUND: '{profile_name}' ({profile_guid}) in window '{w.window_id}' for session '{s.name}' ({s.session_id})"
-                        )
-                        self.tab, self.session = t, s
-                        return w
+            profile_guid = self._profile_guid(profile)
+
+            async for _window, _, session in self._iter_sessions():
+                session_profile = await session.async_get_profile()
+
+                if self._profiles_match(session_profile, profile):
                     log.debug(
-                        f"PROFILE SKIPPED: '{session_profile.name}' ({session_profile_guid}) != '{profile_name}' ({profile_guid}) from session '{s.name}' ({s.session_id})"
+                        f"PROFILE FOUND: '{profile.name}' ({profile_guid}) in window "
+                        f"'{_window.window_id}' for session '{session.name}' ({session.session_id})"
                     )
+                    return _window
 
-        log.debug(f"Profile with name '{profile_name}' ({profile_guid}) not found.")
-        return self.app.windows[0]
+                session_profile_guid = self._profile_guid(session_profile)
+                log.debug(
+                    f"PROFILE SKIPPED: '{self._profile_name(session_profile)}' "
+                    f"({session_profile_guid}) != '{profile.name}' ({profile_guid}) "
+                    f"from session '{session.name}' ({session.session_id})"
+                )
 
-    async def get_tab(self, profile_name: str | None = None, tab_id: str | None = None) -> Tab:
-        if not self.app:
-            conn = self.conn
+            log.debug(f"No existing window has a session for profile '{profile.name}' ({profile_guid}).")
+            return None
 
-            if not conn:
-                conn = self.conn = await self.get_connection()
+        async def from_tab_id(id: str) -> Window | None:
+            _window = app.get_window_for_tab(id)
+            if _window is not None:
+                return _window
 
-            self.app = await self.get_app()
+            for window_obj in app.windows:
+                for tab in window_obj.tabs:
+                    if id == tab.tab_id:
+                        return window_obj
 
-        tab: tab.Tab | None = None
+            return None
 
-        if tab_id and (tab := await self.app.window_delegate_get_tab_by_id(tab_id)):
-            return tab
+        async def from_none() -> Window | None:
+            if self.window and (self.profile_name or self.profile):
+                _window = await from_profile()
+            else:
+                _window = app.current_window or app.windows[0] or await self.create_window(profile_name=profile.name)
 
-        profile_name = profile_name or self.profile.name
-        profile_guid = self._profile_guid(self.__profile_data[profile_name])
+            return _window
 
-        if not self.window:
-            self.window = await self.get_window(profile_name=profile_name)
-
-        for t in self.window.tabs:
-            tab_profile_name = await t.async_get_variable("currentSession.profileName")
-            tab_profile = self.__profile_data[tab_profile_name]
-            tab_profile_guid = self._profile_guid(tab_profile)
-
-            if tab_profile_guid == profile_guid:
-                tab = t
-                break
+        if window_id:
+            window = await from_window_id(window_id)
+        elif profile_name:
+            window = await from_profile()
+        elif tab_id:
+            window = await from_tab_id(tab_id)
         else:
-            tab = await self.window.async_create_tab(profile=profile_name)
+            window = await from_none()
+
+        if window is None:
+            raise WindowNotFoundError(f"{profile.name} ({self._profile_guid(profile)})")
+
+        return window
+
+    @overload
+    async def get_tab(self, *, tab_id: str | None = None) -> Tab: ...
+    @overload
+    async def get_tab(self, *, profile_name: str | None = None) -> Tab: ...
+    @overload
+    async def get_tab(self, *, window_id: str | None = None) -> Tab: ...
+    async def get_tab(
+        self,
+        *,
+        tab_id: str | None = None,
+        profile_name: str | None = None,
+        window_id: str | None = None,
+        session_id: str | None = None,
+    ) -> Tab:
+        app = await self.get_app()
+        profile = await self.get_profile(profile_name)
+        # TODO: update this if get_window gets updated
+        window = await self.get_window(**{"window_id": window_id, "profile_name": profile_name, "tab_id": tab_id})
+        tab: Tab | None = None
+
+        async def from_tab_id(id: str) -> Tab | None:
+            if self.tab and self.tab.tab_id == id:
+                return self.tab
+            _tab = app.get_tab_by_id(id) or await app.window_delegate_get_tab_by_id(id)
+            return _tab
+
+        async def from_profile() -> Tab | None:
+            if self.tab and self._current_context_matches(profile, require_tab=True):
+                return self.tab
+
+            profile_guid = self._profile_guid(profile)
+
+            async for _, _tab, session in self._iter_sessions():
+                session_profile = await session.async_get_profile()
+
+                if self._profiles_match(session_profile, profile):
+                    log.debug(
+                        f"PROFILE FOUND: '{profile.name}' ({profile_guid}) in tab "
+                        f"'{_tab.tab_id}' for session '{session.name}' ({session.session_id})"
+                    )
+                    return _tab
+
+                session_profile_guid = self._profile_guid(session_profile)
+                log.debug(
+                    f"PROFILE SKIPPED: '{self._profile_name(session_profile)}' "
+                    f"({session_profile_guid}) != '{profile.name}' ({profile_guid}) "
+                    f"from session '{session.name}' ({session.session_id})"
+                )
+
+            log.debug(f"No existing tab has a session for profile '{profile.name}' ({profile_guid}).")
+            return None
+
+        async def from_window_id() -> Tab | None:
+            tagged_ctx = await self._find_tagged_context(profile, window)
+            return tagged_ctx[1] if tagged_ctx else None
+
+        async def from_session_id(id: str) -> Tab | None:
+            session = await self.get_session(session_id=id)
+            _tab = session.tab or app.session_delegate_get_tab(session)
+            return _tab
+
+        async def from_none() -> Tab | None:
+            if self.tab and (self.profile_name or self.profile):
+                _tab = await from_profile()
+            else:
+                _tab = window.current_tab or window.tabs[0] or await self.create_tab(window, profile)
+
+            return _tab
+
+        if tab_id:
+            tab = await from_tab_id(tab_id)
+        elif profile_name:
+            tab = await from_profile()
+        elif window_id:
+            tab = await from_window_id()
+        elif session_id:
+            tab = await from_session_id(session_id)
+        else:
+            tab = await from_none()
 
         if tab is None:
-            raise RuntimeError(f"Unable to find or create a new tab with profile '{profile_name}'.")
+            raise TabNotFoundError(f"{profile.name} ({self._profile_guid(profile)})")
 
         return tab
 
-    async def get_session(self, profile_name: str | None = None, session_id: str | None = None) -> Session:
-        if not self.app:
-            conn = self.conn
+    @overload
+    async def get_session(self, *, session_id: str | None = None) -> Session: ...
+    @overload
+    async def get_session(self, *, profile_name: str | None = None) -> Session: ...
+    @overload
+    async def get_session(self, *, tab_id: str | None = None) -> Session: ...
+    @overload
+    async def get_session(self, *, window_id: str | None = None) -> Session: ...
+    async def get_session(
+        self,
+        *,
+        session_id: str | None = None,
+        profile_name: str | None = None,
+        tab_id: str | None = None,
+        window_id: str | None = None,
+    ) -> Session:
+        app = await self.get_app()
+        profile = await self.get_profile(profile_name)
+        tab = await self.get_tab(tab_id=tab_id)
+        window = await self.get_window(window_id=window_id)
+        session: Session | None = None
 
-            if not conn:
-                conn = self.conn = await self.get_connection()
+        async def from_session_id(id: str) -> Session | None:
+            if self.session and self.session.session_id == id:
+                return self.session
 
-            self.app = await self.get_app()
+            _session = app.get_session_by_id(id)
+            return _session
 
-        session: session.Session | None = None
+        async def from_profile() -> Session | None:
+            if self.session and self._current_context_matches(profile, require_tab=True):
+                return self.session
 
-        if session_id and (session := self.app.get_session_by_id(session_id)):
-            if session.buried:
-                await session.async_activate(False, False)
+            profile_guid = self._profile_guid(profile)
 
-            return session
+            async for _, _tab, _session in self._iter_sessions():
+                session_profile = await _session.async_get_profile()
 
-        profile_name = profile_name or self.profile.name
-        profile_guid = self._profile_guid(self.__profile_data[profile_name])
+                if self._profiles_match(session_profile, profile):
+                    log.debug(
+                        f"PROFILE FOUND: '{profile.name}' ({profile_guid}) in tab "
+                        f"'{_tab.tab_id}' for session '{_session.name}' ({_session.session_id})"
+                    )
+                    return _session
 
-        if not self.tab:
-            self.tab = await self.get_tab(profile_name=profile_name)
+                session_profile_guid = self._profile_guid(session_profile)
+                log.debug(
+                    f"PROFILE SKIPPED: '{self._profile_name(session_profile)}' "
+                    f"({session_profile_guid}) != '{profile.name}' ({profile_guid}) "
+                    f"from session '{_session.name}' ({_session.session_id})"
+                )
 
-        for s in self.tab.all_sessions:
-            session_profile = await s.async_get_profile()
-            session_guid = self._profile_guid(session_profile)
+            log.debug(f"No existing session has a session for profile '{profile.name}' ({profile_guid}).")
+            return None
 
-            if session_guid == profile_guid:
-                session = s
-                break
+        async def from_tab_id() -> Session:
+            _session = tab.current_session or tab.all_sessions[0]
+            return _session
+
+        async def from_window_id() -> Session | None:
+            tagged_ctx = await self._find_tagged_context(profile, window)
+            return tagged_ctx[2] if tagged_ctx else None
+
+        async def from_none() -> Session | None:
+            if self.session and (self.profile_name or self.profile):
+                _session = await from_profile()
+            else:
+                _session = tab.current_session or tab.all_sessions[0]
+
+            return _session
+
+        if session_id:
+            session = await from_session_id(session_id)
+        elif profile_name:
+            session = await from_profile()
+        elif tab_id:
+            session = await from_tab_id()
+        elif window_id:
+            session = await from_window_id()
         else:
-            raise SessionNotFoundError(f"{profile_name} ({profile_guid})")
+            session = await from_none()
+
+        if session is None:
+            raise SessionNotFoundError(f"{profile.name} ({self._profile_guid(profile)})")
+
+        if session.buried:
+            await session.async_set_buried(False)
 
         return session
 
-    @staticmethod
-    def _profile_guid(profile: Profile | PartialProfile) -> str | None:
-        return profile.original_guid or profile.guid
+    async def create_window(self, *, profile_name: str | None = None, command: str | None = None) -> Window | None:
+        connection = await self.get_connection()
+        window = await Window.async_create(connection, profile_name, command)
+        return window
 
-    def __str__(self) -> str:
+    @overload
+    async def create_tab(
+        self,
+        window: Window | None = None,
+        profile: Profile | PartialProfile | None = None,
+        *,
+        with_session: Literal[True],
+        timeout: float = 30.0,
+    ) -> tuple[Tab, Session]: ...
+    @overload
+    async def create_tab(
+        self,
+        window: Window | None = None,
+        profile: Profile | PartialProfile | None = None,
+        *,
+        with_session: Literal[False],
+        timeout: float = 30.0,
+    ) -> Tab: ...
+    @overload
+    async def create_tab(
+        self,
+        window: Window | None = None,
+        profile: Profile | PartialProfile | None = None,
+        *,
+        with_session: bool = False,
+        timeout: float = 30.0,
+    ) -> Tab: ...
+    async def create_tab(
+        self,
+        window: Window | None = None,
+        profile: Profile | PartialProfile | None = None,
+        *,
+        with_session: bool = False,
+        timeout: float = 30.0,
+    ) -> tuple[Tab, Session] | Tab:
+        tab, session = await self._create_tab_get_with_session(window, profile, timeout=timeout)
+        if with_session is True:
+            return tab, session
+        return tab
+
+    async def _create_tab_get_with_session(
+        self, window: Window | None = None, profile: Profile | PartialProfile | None = None, *, timeout: float = 30.0
+    ) -> tuple[Tab, Session]:
+        connection = await self.get_connection()
+        window = window or await self.get_window()
+        profile = profile or await self.get_profile()
+
+        def session_in_tab(tab: Tab, session_id: str) -> Session | None:
+            current_session = tab.current_session
+
+            if current_session and current_session.session_id == session_id:
+                return current_session
+
+            for session_obj in tab.all_sessions:
+                if session_obj.session_id == session_id:
+                    return session_obj
+
+            return None
+
+        def expected_session_id(tab: Tab) -> str | None:
+            current_session = tab.current_session
+
+            if current_session is not None:
+                return current_session.session_id
+
+            sessions = tab.all_sessions
+
+            if len(sessions) == 1:
+                return sessions[0].session_id
+
+            return None
+
+        async def wait_for_created_session_id(monitor: NewSessionMonitor, created_tab: Tab) -> str:
+            expected_id = expected_session_id(created_tab)
+
+            async with asyncio.timeout(timeout):
+                while True:
+                    session_id = await monitor.async_get()
+
+                    if expected_id is None or session_id == expected_id:
+                        return session_id
+
+                    log.debug(
+                        "Ignoring unrelated iTerm2 session creation",
+                        {"expected_session_id": expected_id, "received_session_id": session_id},
+                    )
+
+        async def wait_for_tab_loaded(session_id: str) -> None:
+            Mode = PromptMonitor.Mode
+            modes = [Mode.PROMPT, Mode.COMMAND_START, Mode.COMMAND_END]
+
+            async with PromptMonitor(connection, session_id, modes) as monitor:
+                event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
+                log.debug(
+                    "New iTerm2 tab session is prompt-ready",
+                    {"session_id": session_id, "mode": event[0], "exit_code": event[1], "prompt_id": event[2]},
+                )
+
+        async with NewSessionMonitor(connection) as monitor:
+            created_tab = await window.async_create_tab(profile=profile.name)
+
+            if created_tab is None:
+                raise RuntimeError(f"Unable to create a new tab with profile '{profile.name}'.")
+
+            session_id = await wait_for_created_session_id(monitor, created_tab)
+
+        await wait_for_tab_loaded(session_id)
+        app = await self.get_app()
+        session_obj = session_in_tab(created_tab, session_id) or app.get_session_by_id(session_id)
+
+        if session_obj is None:
+            raise RuntimeError(f"New iTerm2 tab loaded, but session '{session_id}' could not be resolved.")
+
+        return created_tab, session_obj
+
+    def _configure_logging(self) -> None:
+        log_level: Literal["DEBUG", "INFO"] = "DEBUG" if self.debug else "INFO"
+        log.parent.set_level(log_level, propagate=True)
+
+    @staticmethod
+    def _check_api_enabled() -> bool:
+        """Check if the Python API is enabled in iTerm2 preferences."""
+        if os.getenv("IT2_APP_PATH") or os.getenv("IT2_SUITE"):
+            return True
+
+        try:
+            result = subprocess.run(
+                ["defaults", "read", "com.googlecode.iterm2", "EnableAPIServer"], capture_output=True, text=True
+            )
+            return result.returncode == 0 and result.stdout.strip() == "1"
+        except Exception:
+            return False
+
+    @staticmethod
+    def _enable_api() -> bool:
+        """Enable the Python API in iTerm2 preferences."""
+        try:
+            subprocess.run(
+                ["defaults", "write", "com.googlecode.iterm2", "EnableAPIServer", "-bool", "true"],
+                check=True,
+                capture_output=True,
+            )
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _build_tag_regex(
+        service_name: str, profile: Profile | PartialProfile, extra_id: str | None = None
+    ) -> re.Pattern[str]:
+        tag_regex = re.compile(
+            rf"{re.escape(service_name)}:{re.escape(profile.name)}{f':{re.escape(extra_id)}' if extra_id else ''}"
+        )
+        return tag_regex
+
+    @staticmethod
+    def _build_tag_name(service_name: str, profile: Profile | PartialProfile, extra_id: str | None = None) -> str:
+        tag = f"{service_name}:{profile.name}{f':{extra_id}' if extra_id else ''}"
+        return tag
+
+    async def _find_tagged_context(
+        self, profile: Profile | PartialProfile, window: Window | None = None
+    ) -> tuple[Window, Tab, Session] | None:
+        tag_regex = self._build_tag_regex(self.service_name, profile)
+
+        log.add_context(status=f"Searching for tagged context for {profile.name}")
+        async for window_obj, tab_obj, session_obj in self._iter_sessions(window):
+            current_session = session_obj
+            if current_session is None:
+                continue
+
+            session_profile = await current_session.async_get_profile()
+            session_name = current_session.name
+            tab_title = await tab_obj.async_get_variable("title")
+
+            if self._profiles_match(session_profile, profile) and contains_matching_term(
+                tag_regex, session_name, tab_title
+            ):
+                log.remove_context("status")
+                log.debug(
+                    "Found tagged iTermAPI context:"
+                    f"\n- {session_name=}\n- {tab_title=}\n- {profile.name=}\n- {session_profile.name=}"
+                )
+                return window_obj, tab_obj, current_session
+
+            log.debug(f"Skipping session '{session_name}' in tab '{tab_title}' with profile '{session_profile.name}'.")
+
+        log.remove_context("status")
+        return None
+
+    async def _get_tagged_tab_with_session(
+        self, window: Window, profile: Profile | PartialProfile, new_tab: bool = False
+    ) -> tuple[Tab, Session]:
+        """Select or create a tagged tab/session for this API context."""
+        tag_regex = self._build_tag_regex(self.service_name, profile)
+        new_tag = self._build_tag_name(self.service_name, profile)
+
+        async def default_tab_with_session(override_new_tab: bool = False) -> tuple[Tab, Session]:
+            selected_tab: Tab | None = None
+            selected_session: Session | None = None
+
+            if not new_tab and not override_new_tab:
+                for tab_obj in window.tabs:
+                    current_session = tab_obj.current_session
+
+                    if current_session is None:
+                        continue
+
+                    tab_title = await tab_obj.async_get_variable("title")
+                    session_name = current_session.name
+
+                    if contains_matching_term(tag_regex, tab_title, session_name):
+                        selected_tab, selected_session = tab_obj, current_session
+                        break
+
+            if new_tab or override_new_tab or selected_tab is None or selected_session is None:
+                selected_tab, selected_session = await self.create_tab(window, profile, with_session=True)
+
+            if selected_tab is None:
+                raise RuntimeError("Could not get or create iTerm2 tab")
+
+            if selected_session is None:
+                raise RuntimeError("Could not get current session in tab")
+
+            return selected_tab, selected_session
+
+        if new_tab:
+            log.debug("Creating new tab due to new_tab=True")
+            selected_tab, selected_session = await default_tab_with_session()
+        else:
+            for tab_obj in window.tabs:
+                current_session = tab_obj.current_session
+
+                if current_session is None:
+                    continue
+
+                session_profile = await current_session.async_get_profile()
+                session_name = current_session.name
+                tab_title = await tab_obj.async_get_variable("title")
+
+                if self._profiles_match(session_profile, profile) and contains_matching_term(
+                    tag_regex, tab_title, session_name
+                ):
+                    selected_tab, selected_session = tab_obj, current_session
+                    break
+            else:
+                selected_tab, selected_session = await default_tab_with_session(override_new_tab=True)
+
+        tab_title = await selected_tab.async_get_variable("title")
+        session_name = selected_session.name
+
+        if contains_matching_term(tag_regex, tab_title, session_name) is False:
+            log.debug(f"Renaming tab and session to '{new_tag}'")
+            await selected_session.async_set_name(new_tag)
+            await selected_tab.async_set_title(new_tag)
+
+        return selected_tab, selected_session
+
+    async def _iter_sessions(self, window: Window | None = None) -> AsyncGenerator[tuple[Window, Tab, Session]]:
+        app = await self.get_app()
+        windows = [window] if window is not None else app.windows
+
+        for window in windows:
+            for tab in window.tabs:
+                for session in tab.all_sessions:
+                    yield window, tab, session
+
+    def _current_context_matches(
+        self,
+        profile: Profile | PartialProfile,
+        *,
+        require_window: bool = False,
+        require_tab: bool = False,
+        require_session: bool = False,
+    ) -> bool:
+        if require_window and self.window is None:
+            return False
+
+        if require_tab and self.tab is None:
+            return False
+
+        if require_session and self.session is None:
+            return False
+
+        ctx_profile = self.profile
+        if ctx_profile is not None and self._profiles_match(ctx_profile, profile):
+            return True
+
+        return False
+
+    @overload
+    @staticmethod
+    def _profile_guid(profile: None) -> None: ...
+    @overload
+    @staticmethod
+    def _profile_guid(profile: Profile | PartialProfile | dict[str, str]) -> str: ...
+    @staticmethod
+    def _profile_guid(profile: Profile | PartialProfile | dict[str, str] | None) -> str | None:
+        if profile is None:
+            return None
+
+        if isinstance(profile, dict):
+            return profile.get("original_guid") or profile.get("guid")
+
+        return (
+            getattr(profile, "original_guid", None)
+            or getattr(profile, "guid", None)
+            or profile.all_properties.get("Guid")
+        )
+
+    @overload
+    @staticmethod
+    def _profile_name(profile: None) -> None: ...
+    @overload
+    @staticmethod
+    def _profile_name(profile: Profile | PartialProfile | dict[str, str]) -> str: ...
+    @staticmethod
+    def _profile_name(profile: Profile | PartialProfile | dict[str, str] | None) -> str | None:
+        if profile is None:
+            return None
+
+        return profile.name if isinstance(profile, (PartialProfile, Profile)) else profile.get("name")
+
+    @classmethod
+    def _profiles_match(
+        cls, candidate_profile: Profile | PartialProfile, target_profile: Profile | PartialProfile
+    ) -> bool:
+        candidate_guid = cls._profile_guid(candidate_profile)
+        target_guid = cls._profile_guid(target_profile)
+        return candidate_guid == target_guid
+
+    @property
+    def version(self) -> str:
+        connection = self.connection
+        if connection is None:
+            return "0.0"
+        return ".".join(str(v) for v in connection.iterm2_protocol_version)
+
+    def json(self) -> str:
         return json.dumps(
             {
-                "profile": {"name": self.profile_name, "guid": self._profile_guid(self.profile)},
-                "iterm2_protocol_version": ".".join([str(v) for v in self.conn.iterm2_protocol_version]),  # type: ignore
-                "app": {"windows": len(self.app.windows), "active": self.app.app_active},  # type: ignore
-                "window": {"tabs": len(self.window.tabs), "id": self.window.window_id},  # type: ignore
-                "tab": {"id": self.tab.tab_id, "sessions": len(self.tab.all_sessions)},  # type: ignore
-                "session": {"id": self.session.session_id, "name": self.session.name},  # type: ignore
-                "connection": str(self.conn.websocket),  # type: ignore
+                "profile": {"name": self._profile_name(self.profile), "guid": self._profile_guid(self.profile)},
+                "iterm2_protocol_version": self.version,
+                "app": {
+                    "windows": len(self.app.windows),
+                    "broadcast_domains": len(self.app.broadcast_domains),
+                    "buried_sessions": len(self.app.buried_sessions),
+                }
+                if self.app
+                else None,
+                "window": {
+                    "tabs": len(self.window.tabs),
+                    "id": self.window.window_id,
+                    "number": self.window.window_number,
+                }
+                if self.window
+                else None,
+                "tab": {
+                    "id": self.tab.tab_id,
+                    "sessions": len(self.tab.all_sessions),
+                    "active_session_id": self.tab.active_session_id,
+                }
+                if self.tab
+                else None,
+                "session": {"id": self.session.session_id, "name": self.session.name} if self.session else None,
+                "connection": repr(self.connection) if self.connection else None,
             },
             indent=4,
         )
+
+
+async def create_iterm_state(
+    connection_instance: Connection | None = None,
+    *,
+    profile_name: str | None = None,
+    activate: bool = True,
+    **kwargs: Unpack[iTermSetupKwargs],
+) -> iTermState:
+    """Create and return a fully populated :class:`iTermState` using :class:`iTermAPI`.
+
+    This is the coroutine adapter for call sites that historically expected a
+    ``run_iterm_setup(connection, **kwargs) -> iTermState`` shape. The enhanced
+    class owns all setup logic; this helper only unwraps the populated state.
+    """
+    api = await iTermAPI.async_create(
+        connection_instance=connection_instance,
+        profile_name=kwargs.get("dedicated_profile_name", profile_name),
+        new_tab=kwargs.get("new_tab", False),
+        debug=kwargs.get("debug", None),
+        activate=activate,
+    )
+    state = iTermState(
+        connection=await api.get_connection(),
+        app=await api.get_app(),
+        window=await api.get_window(),
+        tab=await api.get_tab(),
+        session=await api.get_session(),
+        profile=await api.get_profile(),
+    )
+
+    return state

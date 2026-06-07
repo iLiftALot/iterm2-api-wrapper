@@ -74,12 +74,12 @@ def test_default_gateway_creates_state_with_lazy_runtime_dependencies(monkeypatc
         calls.append(("connect", timeout_s))
         return "connection"
 
-    async def fake_setup(connection: str, **kwargs: Any) -> FakeState:
-        return FakeState(connection=connection, kwargs=kwargs)
+    async def fake_setup(connection: str, *, activate: bool, **kwargs: Any) -> FakeState:
+        return FakeState(connection=connection, kwargs={**kwargs, "activate": activate})
 
     import iterm2_api_wrapper.connection as connection_module
     import iterm2_api_wrapper.mac.platform_macos as platform_macos
-    import iterm2_api_wrapper.runtime_setup as runtime_setup
+    import iterm2_api_wrapper.api as api_module
 
     monkeypatch.setattr(
         platform_macos, "activate_iterm_app", lambda app_path=None: calls.append(("activate", app_path))
@@ -87,11 +87,11 @@ def test_default_gateway_creates_state_with_lazy_runtime_dependencies(monkeypatc
     monkeypatch.setattr(gateway_module, "_get_connect_timeout_s", lambda: 0.25)
     monkeypatch.setattr(gateway_module, "_async_create_connection_with_retry", fake_create_connection)
     monkeypatch.setattr(connection_module, "Connection", object)
-    monkeypatch.setattr(runtime_setup, "run_iterm_setup", fake_setup)
+    monkeypatch.setattr(api_module, "create_iterm_state", fake_setup)
 
     result = asyncio.run(DefaultITermGateway().create_state(debug=True))
 
-    assert result == FakeState(connection="connection", kwargs={"debug": True})
+    assert result == FakeState(connection="connection", kwargs={"debug": True, "activate": False})
     assert calls == [("activate", None), ("connect", 0.25)]
 
 

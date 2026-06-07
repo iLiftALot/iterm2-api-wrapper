@@ -15,11 +15,14 @@ if TYPE_CHECKING:
     from iterm2_api_wrapper.state import iTermState
 
 
-# Connection protocol for iTerm2's Python API.
 class _Connection(Protocol):
+    """Connection protocol for iTerm2's Python API."""
+
     loop: asyncio.AbstractEventLoop | None
+
     @classmethod
     async def async_create(cls) -> Connection: ...
+
 
 class RefreshableState[StateT](Protocol):
     """
@@ -54,6 +57,7 @@ def _get_connect_timeout_s() -> float:
     Override via the `ITERM2_CONNECT_TIMEOUT` environment variable.
     """
     raw = os.getenv(_ENV_CONNECT_TIMEOUT)
+
     if raw is None:
         return _DEFAULT_CONNECT_TIMEOUT_S
 
@@ -130,8 +134,8 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
     """
 
     async def create_state(self, **kwargs: Any) -> iTermState:
+        from iterm2_api_wrapper.api import create_iterm_state
         from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
-        from iterm2_api_wrapper.runtime_setup import run_iterm_setup
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
@@ -149,7 +153,7 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
                     f"(waited {connect_timeout_s:.1f}s; set {_ENV_CONNECT_TIMEOUT} to increase)"
                 ) from exc
 
-            return await run_iterm_setup(conn, **kwargs)
+            return await create_iterm_state(conn, activate=False, **kwargs)
 
 
 class SetupCoroGateway[StateT: RefreshableState[Any]](ITermGateway[StateT]):

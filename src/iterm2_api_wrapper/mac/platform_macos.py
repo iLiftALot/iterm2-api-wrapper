@@ -35,12 +35,15 @@ def activate_iterm_app(app_path: str | None = None) -> None:
     if target_path:
         bundle_path = str(Path(target_path).expanduser().resolve())
         result = subprocess.run(["open", "-g", bundle_path], capture_output=True, text=True)
+
         if result.returncode != 0:
             raise RuntimeError(f"Could not launch iTerm2 at {bundle_path}: {result.stderr.strip()}")
+
         return
 
     bundle = "com.googlecode.iterm2"
     ws = NSWorkspace.sharedWorkspace()
+
     if not NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle):
         ok, _ = ws.launchAppWithBundleIdentifier_options_additionalEventParamDescriptor_launchIdentifier_(
             bundle,
@@ -51,5 +54,6 @@ def activate_iterm_app(app_path: str | None = None) -> None:
             None,
             None,
         )
+
         if not ok:
             raise RuntimeError("Could not launch iTerm2 application")

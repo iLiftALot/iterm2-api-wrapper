@@ -3,37 +3,52 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import re
 import shlex
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from functools import wraps
+from pathlib import Path
 from typing import Any, Callable, ClassVar, Concatenate, Coroutine, Literal, cast, overload
 
-from dotenv import load_dotenv
-from iterm2 import app, profile, session, tab, transaction, util, window, prompt
+from iterm2 import transaction
 from websockets import ConcurrencyError, ConnectionClosed
 
 from iterm2_api_wrapper._logging import PrettyLog
+from iterm2_api_wrapper.alert import poly_modal_alert_handler
 from iterm2_api_wrapper.connection import Connection
 from iterm2_api_wrapper.typings import (
-    async_get_last_prompt,
-    async_get_prompt_by_id,
+    App,
+    CommandStatus,
     GlobalVar,
     GlobalVariable,
+    HexCode,
+    HexCodeValue,
+    PartialProfile,
+    Profile,
+    Prompt,
+    PromptMonitor,
+    Session,
     SessionVar,
     SessionVariable,
+    Tab,
     TabVar,
     TabVariable,
-    Prompt,
+    UserVar,
+    UserVariable,
     Variable,
     VariableContext,
+    Window,
     WindowVar,
     WindowVariable,
+    async_get_app,
+    async_get_last_prompt,
+    async_get_prompt_by_id,
 )
 
 
-load_dotenv()
 log = PrettyLog.get_logger(__name__)
+DEFAULT_SHELL_INTEGRATION_PATH = "~/.iterm2_shell_integration.{shell}"
 
 
 def _validate_state[**P, T](
@@ -86,6 +101,58 @@ def _validate_state[**P, T](
         )
 
     return async_wrapper
+
+
+class User:
+    """Helper class for user-defined variable context"""
+
+    __user_ref_pattern = re.compile(r"([\S]*?)\.?(user\.[\S]*)")
+
+    def __init__(self, state: iTermState) -> None:
+        self.__state = state
+
+    def __contains_user_ref(self, name: str) -> bool:
+        return bool(type(self).__user_ref_pattern.search(name))
+
+    def __is_session_member(self, name: str) -> bool:
+        user_ctx_part: str = ""
+        maybe_match = type(self).__user_ref_pattern.match(name)
+        log.debug(f"Checking: {name}... ", maybe_match)
+
+        if maybe_match:
+            maybe_prefix_part = maybe_match.group(1)
+            maybe_suffix_part = maybe_match.group(2)
+            if maybe_prefix_part:
+                user_ctx_part = getattr(self.__state.SESSION_VAR, maybe_prefix_part, "")
+                log.debug("Found user context part: ", user_ctx_part)
+            elif maybe_suffix_part:
+                user_ctx_part = maybe_suffix_part
+                log.debug("Found user context part: ", user_ctx_part)
+
+        return bool(user_ctx_part)
+
+    def display_name(self, name: str) -> str:
+        return f"user.{name}" if not self.__contains_user_ref(name) else name
+
+    @overload
+    async def async_get_variable(self, name: Literal["*", UserVar.all]) -> dict[str, str]: ...
+    @overload
+    async def async_get_variable(self, name: UserVariable) -> str: ...
+    async def async_get_variable(self, name: UserVariable) -> str | dict[str, str]:
+        target = self.__state.session
+
+        if not name.endswith("*"):
+            name = self.display_name(name)
+            return await target.async_get_variable(name)
+
+        all_session_vars: dict[str, str] = await target.async_get_variable("*")
+        all_user_vars = {
+            var_name: var_value
+            for var_name, var_value in all_session_vars.items()
+            if self.__contains_user_ref(var_name) and self.__is_session_member(var_name)
+        }
+
+        return all_user_vars
 
 
 class LoopManager:
@@ -154,19 +221,25 @@ class iTermState:
     """Global iTerm2 state."""
 
     connection: Connection
-    app: app.App
-    window: window.Window
-    tab: tab.Tab
-    session: session.Session
-    profile: profile.Profile
+    app: App
+    window: Window
+    tab: Tab
+    session: Session
+    profile: Profile | PartialProfile
 
     is_hotkey_window: bool = False
 
-    # Variable accessors to avoid further imports; use for get_variable methods
+    # Variable accessors to avoid further imports
     SESSION_VAR: ClassVar[type[SessionVar]] = SessionVar
+    """Enum class :class:`SessionVar` for type-hinted :class:`~iterm2.Session` variable options. Use for :meth:`~iTermState.get_variable` methods"""
     GLOBAL_VAR: ClassVar[type[GlobalVar]] = GlobalVar
+    """Enum class :class:`GlobalVar` for type-hinted global variable options. Use for :meth:`~iTermState.get_variable` methods"""
     TAB_VAR: ClassVar[type[TabVar]] = TabVar
+    """Enum class :class:`TabVar` for type-hinted :class:`~iterm2.Tab` variable options. Use for :meth:`~iTermState.get_variable` methods"""
     WINDOW_VAR: ClassVar[type[WindowVar]] = WindowVar
+    """Enum class :class:`WindowVar` for type-hinted :class:`~iterm2.Window` variable options. Use for the :meth:`~iTermState.get_variable` method."""
+    HEX: ClassVar[type[HexCode]] = HexCode
+    """Enum class :class:`HexCode` for type-hinted hex codes to use with :meth:`~iTermState.send_escape_sequence`."""
 
     # refresh_callback and _event_loop are set in client.py after initialization
     _refresh_callback: Callable[[], Awaitable[iTermState]] | Awaitable[iTermState] | None = field(
@@ -176,6 +249,10 @@ class iTermState:
     _loop_manager: LoopManager | None = field(default=None, init=False, repr=False)
     # One lock per instance
     _run_command_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+
+    # --------------------------------------------------
+    # Validation Helpers
+    # --------------------------------------------------
 
     def refresh_from(self, new_state: iTermState) -> None:
         """
@@ -240,7 +317,7 @@ class iTermState:
                 return False
 
             # Check app still responds
-            if (current_app := await app.async_get_app(self.connection, create_if_needed=False)) is None:
+            if (current_app := await async_get_app(self.connection, create_if_needed=False)) is None:
                 return False
             self.app = current_app
 
@@ -360,46 +437,98 @@ class iTermState:
         """
         return self.loop_manager._on_correct_loop()
 
+    # --------------------------------------------------
+    # Public API
+    # --------------------------------------------------
+
+    @_validate_state
+    async def maybe_load_shell_integration(self, path: str | None = None, skip_confirm: bool = False) -> bool:
+        user_shell = await self.get_session_var("shell")
+        si_path = Path(path or DEFAULT_SHELL_INTEGRATION_PATH.format(shell=user_shell))
+        load_si_prompt_response = poly_modal_alert_handler(
+            connection=self.connection,
+            title="Load Shell Integration Confirmation",
+            subtitle="Automatic shell integration loading is enabled, but it doesn't seem to be initialized yet "
+            "(prompt retrieval capabilities are unavailable).\nWould you like to load shell integration now?\n",
+            window_id=self.window.window_id,
+            button_names=["Yes", "No"],
+            text_fields=(["/path/to/.iterm2_shell_integration.{zsh,bash,fish}"], [str(si_path)]),
+        )
+        should_load_shell_integration: bool = skip_confirm is True
+
+        if skip_confirm is False:
+            load_si_prompt_response = await load_si_prompt_response
+            should_load_shell_integration = str(load_si_prompt_response.button).lower() == "yes"
+            si_path = Path(load_si_prompt_response.tf_text or si_path).expanduser().resolve()
+
+        log.debug(f"{should_load_shell_integration=}")
+
+        if should_load_shell_integration:
+            if si_path.exists():
+                log.debug(f"Loading shell integration at: {si_path!s}")
+                await self.session.async_send_text(f"source {shlex.quote(str(si_path))}\r")
+                si_load_output = await self._wait_for_prompt()
+                log.debug(
+                    "Shell integration loaded with output:",
+                    await self._get_prompt_output(f"{si_load_output.prompt_id}"),
+                )
+                return await self._shell_integration_enabled()
+
+            log.warning(f"Unknown shell integration file - '{si_path!s}' does not exist.")
+
+        return False
+
     @_validate_state
     async def on_state_loop[T](self, coro_factory: Coroutine[None, None, T]) -> T:
         return await coro_factory
 
     @overload
-    async def get_session_var(self, name: Literal["*", SessionVar.all]) -> dict[str, str]: ...
+    async def get_session_var(self, name: Literal["*", SessionVar.all]) -> dict[SessionVariable, str]: ...
     @overload
     async def get_session_var(self, name: SessionVariable) -> str: ...
-    async def get_session_var(self, name: SessionVariable) -> str | dict[str, str]:
+    async def get_session_var(self, name: SessionVariable) -> str | dict[SessionVariable, str]:
         """Get a session variable."""
-        return await self.get_variable(ctx="session", variable=name)
+        ctx = "session" if not (len(parts := name.split(".")) >= 2 and parts[-2] == "user") else "user"
+        return await self.get_variable(ctx=ctx, variable=name)
 
     @overload
-    async def get_window_var(self, name: Literal["*", WindowVar.all]) -> dict[str, str]: ...
+    async def get_window_var(self, name: Literal["*", WindowVar.all]) -> dict[WindowVariable, str]: ...
     @overload
     async def get_window_var(self, name: WindowVariable) -> str: ...
-    async def get_window_var(self, name: WindowVariable) -> str | dict[str, str]:
+    async def get_window_var(self, name: WindowVariable) -> str | dict[WindowVariable, str]:
         """Get a window variable."""
         return await self.get_variable(ctx="window", variable=name)
 
     @overload
-    async def get_tab_var(self, name: Literal["*", TabVar.all]) -> dict[str, str]: ...
+    async def get_tab_var(self, name: Literal["*", TabVar.all]) -> dict[TabVariable, str]: ...
     @overload
     async def get_tab_var(self, name: TabVariable) -> str: ...
-    async def get_tab_var(self, name: TabVariable) -> str | dict[str, str]:
+    async def get_tab_var(self, name: TabVariable) -> str | dict[TabVariable, str]:
         """Get a tab variable."""
         return await self.get_variable(ctx="tab", variable=name)
 
     @overload
-    async def get_global_var(self, name: Literal["*", GlobalVar.all]) -> dict[str, str]: ...
+    async def get_global_var(self, name: Literal["*", GlobalVar.all]) -> dict[GlobalVariable, str]: ...
     @overload
     async def get_global_var(self, name: GlobalVariable) -> str: ...
-    async def get_global_var(self, name: GlobalVariable) -> str | dict[str, str]:
+    async def get_global_var(self, name: GlobalVariable) -> str | dict[GlobalVariable, str]:
         """Get a global variable."""
         return await self.get_variable(ctx="iterm2", variable=name)
 
     @overload
+    async def get_user_var(self, name: Literal["*", UserVar.all]) -> dict[UserVariable, str]: ...
+    @overload
+    async def get_user_var(self, name: UserVariable) -> str: ...
+    async def get_user_var(self, name: UserVariable) -> str | dict[UserVariable, str]:
+        """Get a user variable."""
+        return await self.get_variable(ctx="user", variable=name)
+
+    @overload
     @_validate_state
     async def get_variable(
-        self, ctx: VariableContext, variable: Literal["*", GlobalVar.all, WindowVar.all, TabVar.all, SessionVar.all]
+        self,
+        ctx: VariableContext,
+        variable: Literal["*", GlobalVar.all, WindowVar.all, TabVar.all, SessionVar.all, UserVar.all],
     ) -> dict[str, str]: ...
     @overload
     @_validate_state
@@ -415,14 +544,14 @@ class iTermState:
     async def get_variable(self, ctx: Literal["iterm2"], variable: GlobalVariable) -> str: ...
     @overload
     @_validate_state
-    async def get_variable(self, ctx: Literal["user"], variable: str) -> str: ...
+    async def get_variable(self, ctx: Literal["user"], variable: UserVariable) -> str: ...
     @_validate_state
     async def get_variable(self, ctx: VariableContext, variable: Variable) -> str | dict[str, str]:
         """Get a variable from the specified context."""
 
-        target: tab.Tab | window.Window | session.Session | app.App
+        target: Tab | Window | Session | App | User
         match ctx:
-            case x if x in ["session", "user"]:
+            case "session":
                 target = self.session
             case "tab":
                 target = self.tab
@@ -430,12 +559,213 @@ class iTermState:
                 target = self.window
             case "iterm2":
                 target = self.app
+            case "user":
+                target = User(self)
             case _:
                 raise ValueError(f"Invalid context: {ctx!r}")
 
-        log.debug(f"Getting variable: {ctx}.{variable}")
+        log.debug(
+            f"Getting variable: {f'{ctx}.{variable}' if not isinstance(target, User) else f'{target.display_name(variable)}'}"
+        )
         result: str | dict[str, str] = await target.async_get_variable(variable)
         return result
+
+    @_validate_state
+    async def send_escape_sequence(self, *sequences: HexCode | HexCodeValue | str, broadcast: bool = False) -> None:
+        """
+        Send one or more escape/control sequences to the session.
+
+        Each argument may be a ``HexCode`` member (e.g. ``HexCode.CNTRL_C``),
+        a ``HexCode`` member *name* (e.g. ``"CNTRL_C"`` or ``"ESC"``), or a raw
+        string. Member names are resolved to their underlying control bytes.
+        Multiple arguments are concatenated in order, so
+        ``send_escape_sequence(HexCode.ESC, "B")`` sends ``"\\x1bb"``.
+
+        :param sequences: HexCode members, member names, and/or raw strings.
+        :param broadcast: If False (default), suppress broadcast to other
+            sessions; if True, allow it.
+        """
+        if not sequences:
+            raise ValueError("send_escape_sequence requires at least one sequence")
+
+        def _resolve(seq: HexCode | str) -> HexCode | str:
+            if isinstance(seq, HexCode):
+                return str(seq)
+
+            # Resolve a HexCode member name (including aliases) to its bytes.
+            member = HexCode.__members__.get(seq)
+            return str(member) if member is not None else seq
+
+        payload = "".join(_resolve(seq) for seq in sequences)
+        await self.session.async_send_text(payload, suppress_broadcast=not broadcast)
+
+    @_validate_state
+    async def run_command(
+        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 10.0
+    ) -> str:
+        """Run a command and return its output"""
+        suppress = not broadcast
+
+        async with self._run_command_lock:
+            current_path = await self.get_session_var("path")
+
+            if path and current_path != path:
+                await self.session.async_send_text(f"cd -- {shlex.quote(path)}\r", suppress_broadcast=suppress)
+
+            shell_integration_enabled = await self._shell_integration_enabled()
+
+            if not shell_integration_enabled:
+                log.debug("Shell integration not enabled; falling back to non-shell-integration method.")
+                return await self._run_command_without_shell_integration(
+                    command=command, suppress_broadcast=suppress, timeout=timeout
+                )
+
+            log.debug("Shell integration enabled.")
+
+            async with transaction.Transaction(self.connection):
+                await self.session.async_send_text(command + "\r", suppress_broadcast=suppress)
+                last_prompt: Prompt | None = await self._get_prompt()
+
+                if last_prompt is None:
+                    log.warning(
+                        ":warning: Shell integration appears broken; Unable to get last prompt. "
+                        "Running command without shell integration."
+                    )
+                    return await self._run_command_without_shell_integration(
+                        command=command, suppress_broadcast=suppress, timeout=timeout
+                    )
+
+                task = asyncio.create_task(self._wait_for_prompt(timeout=timeout))
+
+            # Wait for the command to end.
+            result = await task
+
+            if result.prompt_id is None:
+                log.warning(":warning: Command timeout; Running command without shell integration.")
+                return await self._run_command_without_shell_integration(
+                    command=command, suppress_broadcast=suppress, timeout=timeout
+                )
+
+            # Re-fetch the prompt for the command we sent to get the output range
+            async with transaction.Transaction(self.connection):
+                content = await self._get_prompt_output(result.prompt_id)
+
+            return content
+
+    # --------------------------------------------------
+    # Shell-Integration-Related Helpers
+    # --------------------------------------------------
+
+    async def _get_prompt(self, unique_id: str | None = None) -> None | Prompt:
+        """Get prompt history from the session."""
+        prompt_obj: Callable[..., Coroutine[Any, Any, None | Prompt]]
+        call_args: dict[str, Any] = {"connection": self.connection, "session_id": self.session.session_id}
+        if unique_id:
+            prompt_obj = async_get_prompt_by_id
+            call_args["prompt_unique_id"] = unique_id
+        else:
+            prompt_obj = async_get_last_prompt
+
+        last_prompt: None | Prompt = await prompt_obj(**call_args)
+        return last_prompt
+
+    async def _wait_for_prompt(self, *, timeout: float = 30.0) -> CommandStatus:
+        """Block until the running command terminates. Returns string if command ended, None on timeout."""
+        ModeFactory = PromptMonitor.Mode
+        modes = [ModeFactory.COMMAND_START, ModeFactory.COMMAND_END, ModeFactory.PROMPT]
+        try:
+            async with PromptMonitor(self.connection, self.session.session_id, modes) as monitor:
+                active_prompt_id: str | None = None
+                active_command: str | None = None
+
+                while True:
+                    event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
+
+                    if event[0] == ModeFactory.PROMPT:
+                        prompt = event[1]
+                        prompt_id = event[2]
+                        active_prompt_id = prompt_id or (prompt.unique_id if prompt is not None else None)
+                        log.debug("PROMPT DETECTED: ", {"mode": event[0], "prompt_id": active_prompt_id})
+                        continue
+                    if event[0] == ModeFactory.COMMAND_START:
+                        command = event[1]
+                        prompt_id = event[2]
+                        active_command = command
+                        active_prompt_id = prompt_id or active_prompt_id
+                        log.debug("COMMAND STARTED: ", {"mode": event[0], "command": active_command})
+                        continue
+                    if event[0] == ModeFactory.COMMAND_END:
+                        raw_exit_code = event[1]
+                        exit_code = CommandStatus.ExitCode.coerce(raw_exit_code)
+                        prompt_id = event[2] or active_prompt_id
+                        log.debug(
+                            "COMMAND FINISHED:",
+                            {"mode": event[0], "exit_code": raw_exit_code, "known_exit_code": exit_code},
+                        )
+                        return CommandStatus(prompt_id=prompt_id, command=active_command, exit_code=exit_code)
+        except TimeoutError:
+            return CommandStatus(
+                prompt_id=None, command=None, exit_code=CommandStatus.ExitCode.GENERAL_FAILURE, timed_out=True
+            )
+
+    async def _get_prompt_output(self, prompt_id: str) -> str:
+        """Returns a string with the content in a range of lines."""
+        updated_prompt = await self._get_prompt(prompt_id)
+
+        if updated_prompt is None:
+            log.error(":error: Unable to get updated prompt; raising RuntimeError.")
+            raise RuntimeError("Failed to retrieve prompt after command execution.")
+
+        no_output_message = "<no output>"
+
+        output_range = updated_prompt.output_range
+        start_y = output_range.start.y
+        end_y = output_range.end.y
+
+        if start_y == 0 and end_y == 0:
+            cmd_range = updated_prompt.command_range
+            start_y = cmd_range.start.y + 1
+            end_y = cmd_range.end.y + 1
+
+        if end_y < start_y:
+            return no_output_message
+
+        async with transaction.Transaction(self.connection):
+            contents = await self.session.async_get_contents(start_y, max(1, end_y - start_y))
+
+        result = "\n".join(line.string for line in contents).strip()
+
+        if not result:
+            return no_output_message
+
+        return result
+
+    async def _shell_integration_enabled(self) -> bool:
+        """
+        Check if shell integration is enabled via profile settings and prompt
+        retrieval capabilities.
+        """
+
+        shell_integration_property: Literal[0, 1] = self.profile.all_properties.get(
+            "Load Shell Integration Automatically", 0
+        )
+
+        has_integration_settings = bool(shell_integration_property)
+
+        last_command_found = await self.get_session_var("lastCommand") is not None
+        prompt_found = await self._get_prompt() is not None
+
+        has_integration_prompt_capabilities = last_command_found and prompt_found
+
+        # if has_integration_settings and not has_integration_prompt_capabilities:
+        if has_integration_settings and not has_integration_prompt_capabilities:
+            await self.maybe_load_shell_integration()
+
+        return has_integration_prompt_capabilities
+
+    # --------------------------------------------------
+    # NON-Shell-Integration-Related Helpers
+    # --------------------------------------------------
 
     @staticmethod
     def _last_nonempty_line(lines: list[str]) -> str | None:
@@ -495,7 +825,7 @@ class iTermState:
         return "\n".join(line.rstrip("\n") for line in block).strip()
 
     async def _get_prompt_candidate(
-        self, *, suppress_broadcast: bool, retries: int = 2, retry_delay: float = 0.1
+        self, *, suppress_broadcast: bool, retries: int = 5, retry_delay: float = 0.1
     ) -> tuple[list[str], str]:
         """
         Get terminal snapshot + prompt candidate.
@@ -503,14 +833,14 @@ class iTermState:
         Works even when scrollback height is 0 by scanning for the last non-empty line.
         If no candidate exists, nudge with Enter a small bounded number of times.
         """
-        lines = await self._get_terminal_contents()
+        lines = await self._get_terminal_snapshot()
         prompt_line = self._last_nonempty_line(lines)
 
         attempts = 0
         while prompt_line is None and attempts < retries:
             await self.session.async_send_text("\r", suppress_broadcast=suppress_broadcast)
             await asyncio.sleep(retry_delay)
-            lines = await self._get_terminal_contents()
+            lines = await self._get_terminal_snapshot()
             prompt_line = self._last_nonempty_line(lines)
             attempts += 1
 
@@ -546,7 +876,7 @@ class iTermState:
         end_lines = start_lines
 
         while True:
-            end_lines = await self._get_terminal_contents()
+            end_lines = await self._get_terminal_snapshot()
 
             if not saw_change and end_lines != start_lines:
                 saw_change = True
@@ -570,166 +900,7 @@ class iTermState:
         log.debug(f"Fallback run end: line_count={len(end_lines)}, output_len={len(output)}")
         return output
 
-    @_validate_state
-    async def run_command(
-        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 10.0
-    ) -> str:
-        """Run a command and return its output"""
-        suppress = not broadcast
-
-        async with self._run_command_lock:
-            current_path = await self.get_session_var("path")
-            if path and current_path != path:
-                await self.session.async_send_text(f"cd -- {shlex.quote(path)}\r", suppress_broadcast=suppress)
-            shell_integration_enabled = await self._shell_integration_enabled()
-            if not shell_integration_enabled:
-                log.debug("Shell integration not enabled; falling back to non-shell-integration method.")
-                return await self._run_command_without_shell_integration(
-                    command=command, suppress_broadcast=suppress, timeout=timeout
-                )
-
-            log.debug("Shell integration enabled.")
-
-            async with transaction.Transaction(self.connection):
-                await self.session.async_send_text(command + "\r", suppress_broadcast=suppress)
-                last_prompt: Prompt | None = await self._get_prompt()
-                if last_prompt is None:
-                    log.warning(
-                        ":warning: Shell integration appears broken; Unable to get last prompt. "
-                        "Running command without shell integration."
-                    )
-                    return await self._run_command_without_shell_integration(
-                        command=command, suppress_broadcast=suppress, timeout=timeout
-                    )
-
-                task = asyncio.create_task(self._wait_for_prompt(timeout=timeout))
-
-            # Wait for the command to end.
-            result = await task
-            if not result:
-                log.warning(":warning: Command timeout; Running command without shell integration.")
-                return await self._run_command_without_shell_integration(
-                    command=command, suppress_broadcast=suppress, timeout=timeout
-                )
-
-            # Re-fetch the prompt for the command we sent to get the output range
-            async with transaction.Transaction(self.connection):
-                content = await self._string_in_lines(last_prompt)
-            return content
-
-    async def _get_prompt(self, unique_id: str | None = None) -> None | Prompt:
-        """Get prompt history from the session."""
-        prompt_obj: Callable[..., Coroutine[Any, Any, None | Prompt]]
-        call_args: dict[str, Any] = {"connection": self.connection, "session_id": self.session.session_id}
-        if unique_id:
-            prompt_obj = async_get_prompt_by_id
-            call_args["prompt_unique_id"] = unique_id
-        else:
-            prompt_obj = async_get_last_prompt
-
-        last_prompt: None | Prompt = await prompt_obj(**call_args)
-        return last_prompt
-
-    async def _wait_for_prompt(self, *, timeout: float = 30.0) -> bool:
-        """Block until the running command terminates. Returns True if command ended, False on timeout."""
-        ModeFactory = prompt.PromptMonitor.Mode
-        modes = [ModeFactory.COMMAND_START, ModeFactory.COMMAND_END, ModeFactory.PROMPT]
-        try:
-            async with prompt.PromptMonitor(self.connection, self.session.session_id, modes) as monitor:
-                while True:
-                    mode, *_ = await asyncio.wait_for(monitor.async_get(), timeout=timeout)
-                    if mode == ModeFactory.PROMPT:
-                        rest = cast(Prompt, _[0]) # prompt object
-                        log.debug("PROMPT DETECTED: ", {"mode": mode, "Prompt": rest.__dict__})
-                    if mode == ModeFactory.COMMAND_START:
-                        rest = cast(str, _[0]) # command
-                        log.debug("COMMAND STARTED: ", {"mode": mode, "command": rest})
-                    if mode == ModeFactory.COMMAND_END:
-                        rest = cast(int, _[0]) # exit code
-                        log.debug("COMMAND FINISHED:", {"mode": mode, "exit_code": rest})
-                        return True
-        except TimeoutError:
-            return False
-
-    async def _string_in_lines(self, prompt: Prompt) -> str:
-        """Returns a string with the content in a range of lines."""
-        updated_prompt = await self._get_prompt(prompt.unique_id)
-        if updated_prompt is None:
-            log.error(":error: Unable to get updated prompt; raising RuntimeError.")
-            raise RuntimeError("Failed to retrieve prompt after command execution.")
-
-        output_range: util.CoordRange = updated_prompt.output_range
-        cmd_range: util.CoordRange = updated_prompt.command_range
-        start_y = output_range.start.y
-        end_y = output_range.end.y
-        if start_y == 0 and end_y == 0:
-            # output_range not populated; fall back to command_range
-            log.debug("Prompt output range is empty; falling back to command range.")
-            # Add 1 to avoid including the prompt line itself, which is not part of the command output
-            start_y = cmd_range.start.y + 1
-            end_y = cmd_range.end.y + 1
-
-        contents = await self.session.async_get_contents(start_y, max(1, end_y - start_y))
-        result = ""
-        for line in contents:
-            if not line.string.strip():
-                continue
-            result += line.string
-            if line.hard_eol:
-                result += "\n"
-        return result
-
-    async def _shell_integration_enabled(self, new_tab_timeout: float = 30.0) -> bool:
-        """Use shell-integration-only features to check if shell integration is enabled."""
-
-        async def check_terminal_content() -> list[str]:
-            current_terminal_content = [line.strip() for line in await self._get_terminal_contents() if line.strip()]
-
-            return current_terminal_content
-
-        def is_empty_tab(content: list[str]) -> bool:
-            # Consider freshly cleared tabs, which doesn't reset the prompt
-            return len(content) == 1 and not any("last login" in line.lower() for line in content)
-
-        terminal_content = await check_terminal_content()
-
-        if len(terminal_content) <= 1:
-            while new_tab_timeout > 0:
-                log.debug(
-                    f"Terminal content appears empty; waiting for shell integration to initialize... ({new_tab_timeout:.0f}s remaining)"
-                )
-                await asyncio.sleep(5)
-                terminal_content = await check_terminal_content()
-
-                if is_empty_tab(terminal_content):
-                    log.debug("Terminal content is empty; no new tab.")
-                    break
-                elif len(terminal_content) > 1:
-                    log.debug("New tab detected based on terminal content.")
-                    break
-                new_tab_timeout -= 5
-            else:
-                log.warning(
-                    "Timeout waiting for shell integration initialization; treating shell integration as unavailable."
-                )
-                return False
-
-        user_found = (user_var := await self.get_session_var("username")) is not None and user_var.strip() != ""
-        host_found = (host_var := await self.get_session_var("hostname")) is not None and host_var.strip() != ""
-        last_command_found = (await self.get_session_var("lastCommand")) is not None
-        prompt_found = (await self._get_prompt()) is not None
-
-        log.debug(
-            f"last_command_found={last_command_found}",
-            f"prompt_found={prompt_found}",
-            f"user_found={user_found} - user_var={user_var}",
-            f"host_found={host_found} - host_var={host_var}",
-            sep="\n",
-        )
-
-        return last_command_found and prompt_found and user_found and host_found
-
-    async def _get_terminal_contents(self) -> list[str]:
+    async def _get_terminal_snapshot(self) -> list[str]:
         """Get a transactionally consistent snapshot of the terminal screen contents."""
         async with transaction.Transaction(self.connection):
             line_info = await self.session.async_get_line_info()

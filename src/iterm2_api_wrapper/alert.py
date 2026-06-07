@@ -1,13 +1,14 @@
+import asyncio
 from functools import partial
 from typing import Literal
 
-from iterm2 import alert
+from iterm2 import alert, app
 
 from iterm2_api_wrapper.connection import Connection
 
 
 async def alert_handler(
-    title: str, subtitle: str, window_id: str, connection: Connection, button_names: list[str] | None = None
+    connection: Connection, title: str, subtitle: str, window_id: str, button_names: list[str] | None = None
 ) -> int:
     """Shows the modal alert.
 
@@ -27,11 +28,11 @@ async def alert_handler(
 
 
 async def text_input_alert_handler(
+    connection: Connection,
     title: str,
     subtitle: str,
     placeholder: str,
     default_value: str,
-    connection: Connection,
     window_id: str | None = None,
 ):
     """Shows the modal alert.
@@ -50,9 +51,9 @@ async def text_input_alert_handler(
 
 
 async def poly_modal_alert_handler(
+    connection: Connection,
     title: str,
     subtitle: str,
-    connection: Connection,
     window_id: str | None = None,
     button_names: list[str] | None = None,
     checkboxes: list[tuple[str, Literal[0, 1]]] | None = None,
@@ -133,3 +134,32 @@ poly_modal_alert = await poly_modal_alert_handler(
     ),
 )
 """
+
+
+############################################################
+# Interactive Testing
+############################################################
+
+
+_app: app.App | None = None
+_conn: Connection | None = None
+
+
+async def main():
+    global _conn, _app, run_until_complete
+    from iterm2_api_wrapper.connection import Connection, run_until_complete
+
+    if _conn is None:
+        _conn = await Connection.async_create()
+
+        protocol_version = _conn.iterm2_protocol_version
+        print(f"\nConnection created with protocol version {protocol_version[0]}.{protocol_version[1]}")
+
+    if _app is None:
+        _app = await app.async_get_app(_conn)
+
+    print("Use the `run_until_complete` function.")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

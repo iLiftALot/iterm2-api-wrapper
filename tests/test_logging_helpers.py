@@ -37,6 +37,34 @@ def test_prefix_rule_renders_rule_to_remaining_width() -> None:
     assert "[INFO]" in console.export_text()
 
 
+def test_path_text_uses_compact_label_and_vscode_line_link(tmp_path: Path) -> None:
+    source = tmp_path / "api.py"
+    source.write_text("print('hello')\n")
+    log = logger_module.PrettyLog("path-test", mode="terminal")
+
+    path_text = log._build_path_text(str(source), 587)
+
+    assert path_text.plain == "api.py:587"
+    assert path_text.spans[0].style == f"link {log._vscode_file_uri(str(source))}"
+    assert path_text.spans[1].style == f"link {log._vscode_file_uri(str(source), 587)}"
+    assert path_text.spans[1].style.endswith(":587:1")  # pyright: ignore[reportAttributeAccessIssue]
+    assert "vscode://file" in path_text.spans[1].style  # pyright: ignore[reportOperatorIssue]
+
+
+def test_log_table_respects_rich_time_and_path_flags(tmp_path: Path) -> None:
+    source = tmp_path / "api.py"
+    source.write_text("print('hello')\n")
+    console = Console(record=True, force_terminal=False, log_time=False, log_path=False)
+    log = logger_module.PrettyLog("path-flags", mode="terminal")
+
+    console.print(log._build_log_table(console, [Text("message")], filename=str(source), line_no=587))
+
+    output = console.export_text()
+    assert "message" in output
+    assert "api.py" not in output
+    assert "587" not in output
+
+
 def test_file_console_manager_lazily_creates_and_rebuilds(tmp_path: Path) -> None:
     path = tmp_path / "log.txt"
     manager = logger_module._FileConsoleManager.get_or_create(

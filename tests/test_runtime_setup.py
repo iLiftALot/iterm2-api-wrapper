@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from iterm2_api_wrapper import api as api_module
 from iterm2_api_wrapper import runtime_setup
 
 
@@ -64,7 +65,7 @@ def test_get_profile_returns_default_or_named_profile(monkeypatch: pytest.Monkey
             async def async_get(connection: object) -> list[FakeProfile]:
                 return profiles
 
-        monkeypatch.setattr(runtime_setup.profile, "Profile", ProfileAPI)
+        monkeypatch.setattr(runtime_setup, "Profile", ProfileAPI)
 
         assert await runtime_setup.get_profile("connection") is default
         assert (await runtime_setup.get_profile("connection", "Work")).name == "Work"
@@ -82,13 +83,13 @@ def test_get_app_requires_iterm_app(monkeypatch: pytest.MonkeyPatch) -> None:
             assert create_if_needed is True
             return app_instance
 
-        monkeypatch.setattr(runtime_setup.app, "async_get_app", get_app)
+        monkeypatch.setattr(runtime_setup, "async_get_app", get_app)
         assert await runtime_setup._get_app("connection") is app_instance
 
         async def get_none(connection: object, *, create_if_needed: bool) -> None:
             return None
 
-        monkeypatch.setattr(runtime_setup.app, "async_get_app", get_none)
+        monkeypatch.setattr(runtime_setup, "async_get_app", get_none)
         with pytest.raises(RuntimeError, match="Could not get iTerm2 app"):
             await runtime_setup._get_app("connection")
 
@@ -110,7 +111,7 @@ def test_get_window_uses_current_window_or_creates(monkeypatch: pytest.MonkeyPat
                 assert profile_name == "Default"
                 return created_window
 
-        monkeypatch.setattr(runtime_setup.window, "Window", WindowAPI)
+        monkeypatch.setattr(runtime_setup, "Window", WindowAPI)
         app_without_window = SimpleNamespace(current_window=None)
         assert (
             await runtime_setup._get_window(app_without_window, "connection", FakeProfile("Default")) is created_window
@@ -206,5 +207,32 @@ def test_run_iterm_setup_sets_debug_level_from_env(monkeypatch: pytest.MonkeyPat
 
         assert await runtime_setup.run_iterm_setup("connection", debug=False) is state
         assert levels == [("DEBUG", True)]
+
+    asyncio.run(scenario())
+
+
+def test_setup_iterm_delegates_to_api_create_iterm_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        state = object()
+        calls: list[tuple[object, dict[str, object]]] = []
+
+        async def create_iterm_state(connection_instance: object, **kwargs: object) -> object:
+            calls.append((connection_instance, kwargs))
+            return state
+
+        monkeypatch.setattr(api_module, "create_iterm_state", create_iterm_state)
+
+        assert (
+            await runtime_setup._setup_iterm(
+                "connection", dedicated_profile_name="pyterm-mcp", new_tab=True, debug=True
+            )
+            is state
+        )
+        assert calls == [
+            (
+                "connection",
+                {"profile_name": "pyterm-mcp", "dedicated_profile_name": "pyterm-mcp", "new_tab": True, "debug": True},
+            )
+        ]
 
     asyncio.run(scenario())
