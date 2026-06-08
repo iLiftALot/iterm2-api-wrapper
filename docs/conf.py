@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # -- Project information -----------------------------------------------------
 project = "iterm2-api-wrapper"
-copyright = f"2026, Nicholas Corbin"  # noqa: A001
+copyright = "2026, Nicholas Corbin"  # noqa: A001
 author = "Nicholas Corbin"
 release = "0.1.0"
 
@@ -50,7 +50,6 @@ autodoc_mock_imports = [
     "AppKit",
     "iterm2",
     "applescript",
-    "rich",
     "typer",
     "websockets",
 ]

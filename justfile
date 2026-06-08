@@ -76,10 +76,7 @@ build:
     uv build-backend build-wheel .
     uv build-backend build-editable .
     uv sync --active
-
-build-install:
-    @just build
-    uv tool uninstall iterm2_api_wrapper 2>/dev/null || echo "Not yet installed."
+    uv tool uninstall iterm2_api_wrapper 2>/dev/null || echo "❌ '{{BOLD + ITALIC + RED}}iterm2_api_wrapper{{NORMAL}}' {{RED}}executable is {{UNDERLINE + BOLD}}not yet installed{{NORMAL}}.\n⏳{{GREEN}}Installing now...{{NORMAL}}"
     uv tool install . --editable
 
 VERSION := "$(uv version --active --short)"
@@ -103,15 +100,20 @@ clean-build:
     rm -fr build/
     rm -fr dist/
     rm -fr .eggs/
-    find . -name '*.egg-info' -exec rm -fr {} +
-    find . -name '*.egg' -exec rm -f {} +
+    find . -name '*.egg-info' -type d -exec rm -fr {} +
+    find . -name '*.egg' -type f -exec rm -f {} +
 
 # remove Python file artifacts
 clean-pyc:
-    find . -name '*.pyc' -exec rm -f {} +
-    find . -name '*.pyo' -exec rm -f {} +
-    find . -name '*~' -exec rm -f {} +
-    find . -name '__pycache__' -exec rm -fr {} +
+    find . -name '*.pyc' -type f -exec rm -f {} +
+    find . -name '*.pyo' -type f -exec rm -f {} +
+    find . -name '*~' -type f -exec rm -f {} +
+    find . -name '__pycache__' -type d -exec rm -fr {} +
+
+# remove linter artifacts
+clean-linter:
+    find . -name '.mypy_cache' -type d -exec rm -rf {} +
+    find . -name '.ruff_cache' -type d -exec rm -rf {} +
 
 # remove test and coverage artifacts
 clean-test:
@@ -119,10 +121,11 @@ clean-test:
     rm -fr htmlcov/
     rm -fr .pytest_cache
 
-# remove all build, test, coverage and Python artifacts
+# remove all build, mypy, test, coverage and Python artifacts
 clean:
     @just clean-build
     @just clean-pyc
+    @just clean-linter
     @just clean-test
 
 # Build docs
