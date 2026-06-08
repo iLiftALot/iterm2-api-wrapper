@@ -923,7 +923,9 @@ class UserVar(StrEnum):
 # Generated to match the literal coverage exactly; do not hand-add deeper paths.
 # ---------------------------------------------------------------------------
 class _SessionAtCurrentSessionParentSession(StrEnum):
-    """Reference view: currentSession.parentSession (the parent of the tab's active session)."""
+    """Reference view: currentSession.parentSession (the parent of the tab's active session).
+    - [Session Enum Explanation](obsidian://adv-uri?vault=Mind%20Hive&filepath=08%20Code%2FProjects%2FiTerm-API-Wrapper%2FSession%20Enum%20Explanation.md)
+    """
 
     autoNameFormat = "currentSession.parentSession.autoNameFormat"
     """This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created."""
@@ -1027,7 +1029,9 @@ class _SessionAtCurrentSessionParentSession(StrEnum):
 
 
 class _SessionAtCurrentTabCurrentSession(StrEnum):
-    """Reference view: currentTab.currentSession (the window's active session)."""
+    """Reference view: currentTab.currentSession (the window's active session).
+    - [Session Enum Explanation](obsidian://adv-uri?vault=Mind%20Hive&filepath=08%20Code%2FProjects%2FiTerm-API-Wrapper%2FSession%20Enum%20Explanation.md)
+    """
 
     autoNameFormat = "currentTab.currentSession.autoNameFormat"
     """This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created."""
@@ -1131,7 +1135,9 @@ class _SessionAtCurrentTabCurrentSession(StrEnum):
 
 
 class _SessionAtParentSession(StrEnum):
-    """Reference view: parentSession (the session that was current when this session was created)."""
+    """Reference view: parentSession (the session that was current when this session was created).
+    - [Session Enum Explanation](obsidian://adv-uri?vault=Mind%20Hive&filepath=08%20Code%2FProjects%2FiTerm-API-Wrapper%2FSession%20Enum%20Explanation.md)
+    """
 
     autoNameFormat = "parentSession.autoNameFormat"
     """This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created."""
@@ -1238,32 +1244,11 @@ class _SessionAtParentSession(StrEnum):
     """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
 
 
-class _TabAtTab(StrEnum):
-    """Reference view: tab (the active tab containing this session)."""
-
-    id = "tab.id"
-    """The unique identifier for this tab."""
-    titleOverrideFormat = "tab.titleOverrideFormat"
-    """An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not)."""
-    titleOverride = "tab.titleOverride"
-    """The value of titleOverrideFormat after evaluating it as an interpolated string."""
-    tmuxWindow = "tab.tmuxWindow"
-    """In tmux integration, this is the tmux window number this tab represents."""
-    tmuxWindowTitle = "tab.tmuxWindowTitle"
-    """In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option."""
-    tmuxWindowName = "tab.tmuxWindowName"
-    """In tmux integration, this is the tmux window name."""
-    tabTitle = "tab.title"
-    """The fully formatted title as it appears in the tab bar."""
-
-    iterm2 = nonmember(PrefixedEnum(GlobalVar, "tab.iterm2"))
-    """A reference to the variables belonging to the application (i.e., the global context)."""
-    window = nonmember(PrefixedEnum(WindowEnum, "tab.window"))
-    """A reference to the context of the enclosing window."""
-
-
 class _SessionAtCurrentSession(StrEnum):
-    """Reference view: currentSession (the active session in this tab)."""
+    """Reference view: currentSession (the active session in this tab).
+    - [Session Enum Explanation: ](obsidian://adv-uri?vault=Mind%20Hive&filepath=08%20Code%2FProjects%2FiTerm-API-Wrapper%2FSession%20Enum%20Explanation.md)
+        - obsidian://adv-uri?vault=Mind%20Hive&filepath=08%20Code%2FProjects%2FiTerm-API-Wrapper%2FSession%20Enum%20Explanation.md
+    """
 
     autoNameFormat = "currentSession.autoNameFormat"
     """This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created."""
@@ -1370,26 +1355,28 @@ class _SessionAtCurrentSession(StrEnum):
     """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
 
 
-class _WindowAtWindow(StrEnum):
-    """Reference view: window (the window enclosing this tab)."""
+class _TabAtTab(StrEnum):
+    """Reference view: tab (the active tab containing this session)."""
 
-    titleOverride = "window.titleOverride"
-    """The value from evaluating the interpeted string in titleOverrideFormat, if set."""
-    titleOverrideFormat = "window.titleOverrideFormat"
-    """The window's interpolated string title. If not set, the current tab's title is used."""
-    id = "window.id"
-    """The window ID."""
-    frame = "window.frame"
-    """An array of integers giving the x origin, y origin, width, and height."""
-    style = "window.style"
-    """The window style. Takes one of these values: normal, non-native full screen, native full screen, full-width top, full-width bottom, full-height left, full-height right, bottom, top, left, right, no-title-bar, compact, accessory."""
-    number = "window.number"
-    """The window number. Corresponds to the keyboard shortcut that switches to the window. Begins at 1. Unlike the keyboard shortcut, this is set even if the number is larger than 9."""
-    isHotkeyWindow = "window.isHotkeyWindow"
-    """A boolean indicating if this is a hotkey window."""
+    id = "tab.id"
+    """The unique identifier for this tab."""
+    titleOverrideFormat = "tab.titleOverrideFormat"
+    """An interpolated string giving the title to use for the tab. If not set, the session's title will be used. Note the session's title is configurable in Prefs > Profiles > General > Title and is not necessarily equal to the autoName, but may be derived from it (or not)."""
+    titleOverride = "tab.titleOverride"
+    """The value of titleOverrideFormat after evaluating it as an interpolated string."""
+    tmuxWindow = "tab.tmuxWindow"
+    """In tmux integration, this is the tmux window number this tab represents."""
+    tmuxWindowTitle = "tab.tmuxWindowTitle"
+    """In tmux integration, this is the tmux window title. It will only be set if the tmux option set-title is on. It comes from evaluating the tmux set-titles-strings option."""
+    tmuxWindowName = "tab.tmuxWindowName"
+    """In tmux integration, this is the tmux window name."""
+    tabTitle = "tab.title"
+    """The fully formatted title as it appears in the tab bar."""
 
-    iterm2 = nonmember(PrefixedEnum(GlobalVar, "window.iterm2"))
+    iterm2 = nonmember(PrefixedEnum(GlobalVar, "tab.iterm2"))
     """A reference to the variables belonging to the application (i.e., the global context)."""
+    window = nonmember(PrefixedEnum(WindowEnum, "tab.window"))
+    """A reference to the context of the enclosing window."""
 
 
 class _TabAtCurrentTab(StrEnum):
@@ -1413,6 +1400,28 @@ class _TabAtCurrentTab(StrEnum):
     currentSession = nonmember(_SessionAtCurrentTabCurrentSession)
     """Defined in the context of the tab's current session"""
     iterm2 = nonmember(PrefixedEnum(GlobalVar, "currentTab.iterm2"))
+    """A reference to the variables belonging to the application (i.e., the global context)."""
+
+
+class _WindowAtWindow(StrEnum):
+    """Reference view: window (the window enclosing this tab)."""
+
+    titleOverride = "window.titleOverride"
+    """The value from evaluating the interpeted string in titleOverrideFormat, if set."""
+    titleOverrideFormat = "window.titleOverrideFormat"
+    """The window's interpolated string title. If not set, the current tab's title is used."""
+    id = "window.id"
+    """The window ID."""
+    frame = "window.frame"
+    """An array of integers giving the x origin, y origin, width, and height."""
+    style = "window.style"
+    """The window style. Takes one of these values: normal, non-native full screen, native full screen, full-width top, full-width bottom, full-height left, full-height right, bottom, top, left, right, no-title-bar, compact, accessory."""
+    number = "window.number"
+    """The window number. Corresponds to the keyboard shortcut that switches to the window. Begins at 1. Unlike the keyboard shortcut, this is set even if the number is larger than 9."""
+    isHotkeyWindow = "window.isHotkeyWindow"
+    """A boolean indicating if this is a hotkey window."""
+
+    iterm2 = nonmember(PrefixedEnum(GlobalVar, "window.iterm2"))
     """A reference to the variables belonging to the application (i.e., the global context)."""
 
 
