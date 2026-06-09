@@ -5,7 +5,8 @@ import inspect
 import json
 import re
 import shlex
-from collections.abc import Awaitable
+from collections.abc import AsyncGenerator, Awaitable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
@@ -35,7 +36,7 @@ from iterm2_api_wrapper.api.it2variable import (  # isort: skip
 
 
 from iterm2_api_wrapper.connection import Connection
-from iterm2_api_wrapper.typings import CommandStatus, HexCode
+from iterm2_api_wrapper.typings import CommandStatus, HexCode, HexCodeEnum
 
 
 log = PrettyLog.get_logger(__name__)
@@ -229,7 +230,7 @@ class iTermState:
     """Enum class :class:`TabVar` for type-hinted :class:`~iterm2.Tab` variable options. Use for :meth:`~iTermState.get_variable` methods"""
     WINDOW_VAR: ClassVar[type[WindowVarEnum]] = WindowVarEnum
     """Enum class :class:`WindowVar` for type-hinted :class:`~iterm2.Window` variable options. Use for the :meth:`~iTermState.get_variable` method."""
-    HEX: ClassVar[type[HexCode]] = HexCode
+    HEX: ClassVar[type[HexCodeEnum]] = HexCodeEnum
     """Enum class :class:`HexCode` for type-hinted hex codes to use with :meth:`~iTermState.send_escape_sequence`."""
 
     # refresh_callback and _event_loop are set in client.py after initialization
@@ -477,7 +478,7 @@ class iTermState:
     async def get_session_var(self, name: Literal["*", SessionVarEnum.all]) -> dict[SessionVarKey, str]: ...
     @overload
     async def get_session_var(self, name: SessionVariable) -> str: ...
-    async def get_session_var(self, name: str) -> str | dict[SessionVarKey, str]:
+    async def get_session_var(self, name: SessionVariable) -> str | dict[SessionVarKey, str]:
         """Get a session variable."""
         ctx = "session" if not (len(parts := name.split(".")) >= 2 and parts[-2] == "user") else "user"
         return await self.get_variable(ctx=ctx, variable=name)
@@ -486,7 +487,7 @@ class iTermState:
     async def get_window_var(self, name: Literal["*", WindowVarEnum.all]) -> dict[WindowVarKey, str]: ...
     @overload
     async def get_window_var(self, name: WindowVariable) -> str: ...
-    async def get_window_var(self, name: str) -> str | dict[WindowVarKey, str]:
+    async def get_window_var(self, name: WindowVariable) -> str | dict[WindowVarKey, str]:
         """Get a window variable."""
         return await self.get_variable(ctx="window", variable=name)
 
@@ -494,7 +495,7 @@ class iTermState:
     async def get_tab_var(self, name: Literal["*", TabVarEnum.all]) -> dict[TabVarKey, str]: ...
     @overload
     async def get_tab_var(self, name: TabVariable) -> str: ...
-    async def get_tab_var(self, name: str) -> str | dict[TabVarKey, str]:
+    async def get_tab_var(self, name: TabVariable) -> str | dict[TabVarKey, str]:
         """Get a tab variable."""
         return await self.get_variable(ctx="tab", variable=name)
 
@@ -502,7 +503,7 @@ class iTermState:
     async def get_global_var(self, name: Literal["*", AppVarEnum.all]) -> dict[AppVarKey, str]: ...
     @overload
     async def get_global_var(self, name: AppVariable) -> str: ...
-    async def get_global_var(self, name: str) -> str | dict[AppVarKey, str]:
+    async def get_global_var(self, name: AppVariable) -> str | dict[AppVarKey, str]:
         """Get a global variable."""
         return await self.get_variable(ctx="iterm2", variable=name)
 
@@ -580,11 +581,11 @@ class iTermState:
             raise ValueError("send_escape_sequence requires at least one sequence")
 
         def _resolve(seq: HexCode | str) -> HexCode | str:
-            if isinstance(seq, HexCode):
+            if isinstance(seq, HexCodeEnum):
                 return str(seq)
 
             # Resolve a HexCode member name (including aliases) to its bytes.
-            member = HexCode.__members__.get(seq)
+            member = HexCodeEnum.__members__.get(seq)
             return str(member) if member is not None else seq
 
         payload = "".join(_resolve(seq) for seq in sequences)
@@ -605,11 +606,15 @@ class iTermState:
             shell_integration_enabled = await self._shell_integration_enabled()
             if not shell_integration_enabled:
                 initial_snapshot = await self._get_terminal_snapshot()
-                return await self._run_command_without_shell_integration(initial_snapshot, command=command)
+                return await self._run_command_without_shell_integration(
+                    initial_snapshot, command=command, suppress_broadcast=suppress
+                )
 
             log.debug("Shell integration enabled.")
 
-            send_cmd_task = asyncio.create_task(self.session.async_send_text(command + "\r", suppress_broadcast=suppress))
+            send_cmd_task = asyncio.create_task(
+                self.session.async_send_text(command + "\r", suppress_broadcast=suppress)
+            )
             result, initial_snapshot = await self._wait_for_prompt(send_cmd_task, timeout=timeout)
             content = await self._get_prompt_output(result.prompt_id or initial_snapshot)
             return content
@@ -631,7 +636,9 @@ class iTermState:
         last_prompt: None | Prompt = await prompt_obj(**call_args)
         return last_prompt
 
-    async def _wait_for_prompt(self, coro: Awaitable[None, None], *, timeout: float = 30.0) -> tuple[CommandStatus, list[str]]:
+    async def _wait_for_prompt(
+        self, coro: Awaitable[None], *, timeout: float = 30.0
+    ) -> tuple[CommandStatus, list[str]]:
         """Block until the running command terminates. Returns string if command ended, None on timeout."""
         ModeFactory = PromptMonitor.Mode
         modes = [ModeFactory.COMMAND_START, ModeFactory.COMMAND_END, ModeFactory.PROMPT]
@@ -643,6 +650,7 @@ class iTermState:
             return initial_snapshot != new_snapshot
 
         async with PromptMonitor(self.connection, self.session.session_id, modes) as monitor:
+
             async def _internal(_timeout: float = timeout):
                 active_prompt_id: str | None = None
                 active_command: str | None = None
@@ -689,7 +697,7 @@ class iTermState:
     async def _get_prompt_output(self, promptId_or_snapshot: str | list[str]) -> str:
         """Returns a string with the content in a range of lines."""
         if isinstance(promptId_or_snapshot, list):
-            new_snapshot = self._get_terminal_snapshot()
+            new_snapshot = await self._get_terminal_snapshot()
             start_line = len(promptId_or_snapshot)
             return "\n".join(new_snapshot[start_line:])
 
@@ -735,7 +743,9 @@ class iTermState:
         has_integration_settings = bool(shell_integration_property)
         has_prompt_capabilities = prompt_found
         log.debug(
-            ("{} => {}\n{} => {}").format("has_integration_settings", has_integration_settings, "prompt_found", prompt_found)
+            ("{} => {}\n{} => {}").format(
+                "has_integration_settings", has_integration_settings, "prompt_found", prompt_found
+            )
         )
 
         if has_integration_settings and not has_prompt_capabilities:
@@ -743,11 +753,17 @@ class iTermState:
 
         return has_prompt_capabilities
 
+    @asynccontextmanager
     async def _run_with_transaction[T, **P](
-        self, coro: Callable[Concatenate[P], Coroutine[Any, Any, T]], *args: P.args, **kwargs: P.kwargs
-    ) -> T:
-        async with transaction.Transaction(self.connection):
-            return await coro(*args, **kwargs)
+        self, coro: Callable[P, Coroutine[Any, Any, T]], *args: P.args, **kwargs: P.kwargs
+    ) -> AsyncGenerator[Coroutine[Any, Any, T]]:
+        try:
+            async with transaction.Transaction(self.connection):
+                # c = await coro(*args, **kwargs)
+                # yield c
+                yield coro(*args, **kwargs)
+        finally:
+            pass
 
     # --------------------------------------------------
     # ! NON-Shell-Integration-Related Helpers
@@ -773,15 +789,15 @@ class iTermState:
 
             if not saw_change and end_lines != start_lines:
                 saw_change = True
-                per_update_timeout = timeout
+                timeout = per_change_timeout
                 start_lines = end_lines
                 continue
 
             if saw_change and end_lines == start_lines:
                 saw_change = False
 
-            await asyncio.sleep(per_update_timeout)
-            per_update_timeout -= 1
+            await asyncio.sleep(timeout)
+            timeout -= 1
 
         changed = end_lines[starting_line_number:]
         output = "\n".join(changed)

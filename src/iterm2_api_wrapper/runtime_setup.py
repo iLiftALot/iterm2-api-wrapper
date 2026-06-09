@@ -10,10 +10,10 @@ from iterm2.capabilities import (
 )
 
 from iterm2_api_wrapper._logging import PrettyLog
+from iterm2_api_wrapper.api.it2types import check_supports_prompt_monitor_modes
 from iterm2_api_wrapper.connection import Connection
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.typings import iTermSetupKwargs
-from iterm2_api_wrapper.api.it2types import check_supports_prompt_monitor_modes
 
 
 log = PrettyLog.get_logger(__name__)

@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from iterm2_api_wrapper.api import it2api as api_module
 from iterm2_api_wrapper import runtime_setup
+from iterm2_api_wrapper.api import it2api as api_module
 
 
 class FakeProfile:

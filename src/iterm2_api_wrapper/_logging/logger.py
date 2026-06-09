@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import datetime
 import os
 import threading
 import time
@@ -617,8 +618,8 @@ class PrettyLog:
         """Build the time column using the active Rich Console log settings."""
         log_render = console._log_render
         log_time = console.get_datetime()
-        time_format = log_render.time_format
-        if callable(time_format):
+        time_format: Callable[[datetime.datetime], Text] | str = log_render.time_format
+        if not isinstance(time_format, str):
             log_time_display = time_format(log_time)
         else:
             log_time_display = Text(log_time.strftime(time_format))

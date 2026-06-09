@@ -15,8 +15,8 @@ load_dotenv()
 log = PrettyLog(__package__, mode="all", level="DEBUG", pretty_config=get_default_log_config())
 
 
+from .api import create_iterm_state, iTermAPI
 from .client import ITermClient, create_iterm_client, get_shared_client
-from .api import iTermAPI, create_iterm_state
 from .state import iTermState
 from .typings import CommandExitCode, CommandStatus
 

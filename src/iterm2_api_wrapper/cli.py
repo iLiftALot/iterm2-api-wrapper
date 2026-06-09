@@ -161,7 +161,7 @@ async def send_command(
     default_command = "echo 'Hello from iTerm2 API Wrapper!'"
     output = await state.run_command(
         command or default_command,
-        path=str(Path(path).expanduser().resolve()) if bool(literal_eval(str(path))) else None,
+        path=str(Path(path).expanduser().resolve()) if bool(literal_eval(str(path))) else None, # type: ignore
         broadcast=False,
         timeout=float(timeout),
     )
