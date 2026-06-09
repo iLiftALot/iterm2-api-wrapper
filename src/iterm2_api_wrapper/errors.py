@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.typings import PartialProfile, Profile
+    from iterm2_api_wrapper.api.it2api import PartialProfile, Profile
 
 
 class ErrorMeta(type(BaseException)):

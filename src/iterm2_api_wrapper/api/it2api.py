@@ -6,16 +6,12 @@ import os
 import re
 import subprocess
 from collections.abc import AsyncGenerator
-from typing import Literal, Unpack, cast, overload
+from typing import TYPE_CHECKING, Literal, Unpack, cast, overload
 
 from iterm2.lifecycle import NewSessionMonitor
 
 from iterm2_api_wrapper._logging import PrettyLog
-from iterm2_api_wrapper.connection import Connection
-from iterm2_api_wrapper.errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
-from iterm2_api_wrapper.mac.platform_macos import activate_iterm_app
-from iterm2_api_wrapper.state import iTermState
-from iterm2_api_wrapper.typings import (
+from iterm2_api_wrapper.api.it2types import (
     App,
     PartialProfile,
     Profile,
@@ -24,8 +20,15 @@ from iterm2_api_wrapper.typings import (
     Tab,
     Window,
     async_get_app,
-    iTermSetupKwargs,
 )
+from iterm2_api_wrapper.connection import Connection
+from iterm2_api_wrapper.errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
+from iterm2_api_wrapper.mac import activate_iterm_app
+from iterm2_api_wrapper.typings import iTermSetupKwargs
+
+
+if TYPE_CHECKING:
+    from iterm2_api_wrapper.state import iTermState
 
 
 log = PrettyLog.get_logger(__name__)
@@ -851,6 +854,9 @@ async def create_iterm_state(
         debug=kwargs.get("debug", None),
         activate=activate,
     )
+
+    from iterm2_api_wrapper.state import iTermState
+
     state = iTermState(
         connection=await api.get_connection(),
         app=await api.get_app(),

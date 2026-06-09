@@ -1,8 +1,8 @@
 import sys
 from typing import Unpack
 
-from iterm2_api_wrapper.api import create_iterm_state
-from iterm2_api_wrapper.connection import run_until_complete  # , pp
+from iterm2_api_wrapper.api.it2api import create_iterm_state
+from iterm2_api_wrapper.connection import run_until_complete
 from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.typings import iTermSetupKwargs
 

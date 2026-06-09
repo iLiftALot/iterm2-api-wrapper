@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from ast import literal_eval
 from collections.abc import Callable
 from pathlib import Path
 from types import FunctionType
@@ -160,7 +161,7 @@ async def send_command(
     default_command = "echo 'Hello from iTerm2 API Wrapper!'"
     output = await state.run_command(
         command or default_command,
-        path=str(Path(path).expanduser().resolve()) if path else None,
+        path=str(Path(path).expanduser().resolve()) if bool(literal_eval(str(path))) else None,
         broadcast=False,
         timeout=float(timeout),
     )
@@ -259,7 +260,7 @@ def main(
 
     with create_iterm_client(timeout=None, debug=debug, new_tab=new_tab, dedicated_profile_name=profile_name) as client:
         state = client.get_state()
-        event_loop = client.loop
+        event_loop = state.loop_manager.require_loop()
         output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)
         log.info(output)
 

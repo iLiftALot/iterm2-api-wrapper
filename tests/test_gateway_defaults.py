@@ -79,7 +79,7 @@ def test_default_gateway_creates_state_with_lazy_runtime_dependencies(monkeypatc
 
     import iterm2_api_wrapper.connection as connection_module
     import iterm2_api_wrapper.mac.platform_macos as platform_macos
-    import iterm2_api_wrapper.api as api_module
+    import iterm2_api_wrapper.api.it2api as api_module
 
     monkeypatch.setattr(
         platform_macos, "activate_iterm_app", lambda app_path=None: calls.append(("activate", app_path))

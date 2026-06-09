@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from iterm2_api_wrapper import api as api_module
-from iterm2_api_wrapper.api import iTermAPI, create_iterm_state
+from iterm2_api_wrapper.api import it2api as api_module
+from iterm2_api_wrapper.api.it2api import iTermAPI, create_iterm_state
 
 
 @dataclass

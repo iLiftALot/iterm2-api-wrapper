@@ -12,7 +12,8 @@ from iterm2.capabilities import (
 from iterm2_api_wrapper._logging import PrettyLog
 from iterm2_api_wrapper.connection import Connection
 from iterm2_api_wrapper.state import iTermState
-from iterm2_api_wrapper.typings import iTermSetupKwargs, check_supports_prompt_monitor_modes
+from iterm2_api_wrapper.typings import iTermSetupKwargs
+from iterm2_api_wrapper.api.it2types import check_supports_prompt_monitor_modes
 
 
 log = PrettyLog.get_logger(__name__)
@@ -31,7 +32,7 @@ def _validate_app_version(connection: Connection) -> None:
 
 async def _setup_iterm(connection: Connection, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
     """Compatibility wrapper for the enhanced class-based iTerm API setup."""
-    from iterm2_api_wrapper.api import create_iterm_state
+    from iterm2_api_wrapper.api.it2api import create_iterm_state
 
     return await create_iterm_state(
         connection,
