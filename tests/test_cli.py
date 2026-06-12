@@ -120,7 +120,9 @@ def test_alert_cli_helpers_delegate_to_alert_handlers(monkeypatch: pytest.Monkey
     async def scenario() -> None:
         state = as_state(
             SimpleNamespace(
-            connection="connection", window=SimpleNamespace(window_id="window"), profile=SimpleNamespace(name="Default")
+                connection="connection",
+                window=SimpleNamespace(window_id="window"),
+                profile=SimpleNamespace(name="Default"),
             )
         )
 

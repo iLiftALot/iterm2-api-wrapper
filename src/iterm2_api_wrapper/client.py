@@ -233,9 +233,7 @@ class iTermClient[StateT: RefreshableState[Any]]:
 
 
 if TYPE_CHECKING:
-    from typing import TypeAlias
-
-    ITermClient: TypeAlias = iTermClient[iTermState]
+    type ITermClient = iTermClient[iTermState]
 else:
     ITermClient = iTermClient
 

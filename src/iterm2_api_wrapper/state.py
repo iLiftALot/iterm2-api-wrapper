@@ -16,7 +16,7 @@ from websockets import ConcurrencyError, ConnectionClosed
 from ._logging import PrettyLog
 from .alert import poly_modal_alert_handler
 from .api.it2app import async_get_app
-from .api.it2prompt import PromptMonitor, async_get_last_prompt, async_get_prompt_by_id
+from .api.it2prompt import PromptMonitor, async_get_last_prompt, async_get_prompt_by_id, prompt
 from .api.it2transaction import Transaction
 from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
 from .typings import CommandStatus, HexCodeEnum
@@ -370,8 +370,14 @@ class iTermState:
     )
     _event_loop: asyncio.AbstractEventLoop | None = field(default=None, init=False, repr=False)
     _loop_manager: LoopManager | None = field(default=None, init=False, repr=False)
+
     # One lock per instance
     _run_command_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+
+    # Shell integration constants
+    SI_DEAD_RECHECK_SECONDS: ClassVar[float] = 60.0
+    SI_PROBE_TIMEOUT: ClassVar[float] = 1.5
+    _si_live_cache: dict[str, tuple[bool, float]] = field(default_factory=dict, init=False, repr=False)
 
     # --------------------------------------------------
     # Validation Helpers
@@ -707,14 +713,50 @@ class iTermState:
 
             initial_snapshot, _ = await self._get_prompt_candidate(suppress_broadcast=suppress)
             send_cmd_task = self.session.async_send_text(command + "\r", suppress_broadcast=suppress)
-            result = await self._wait_for_prompt(send_cmd_task, timeout=timeout)
+            result = await self._wait_for_prompt(send_cmd_task, timeout=timeout, expected_command=command)
+            if result.timed_out:
+                self._si_live_cache[self.session.session_id] = (False, (self.loop or asyncio.get_running_loop()).time())
             if result.prompt_id is not None:
                 content = await self._get_prompt_output(result.prompt_id)
             else:
                 content = await self._wait_for_prompt_reappearance_from_snapshot(
                     initial_snapshot, command=command, timeout=timeout
                 )
+
             return content
+
+    @_validate_state
+    async def shell_integration_status(self) -> Literal["absent", "active", "busy", "stale", "legacy"]:
+        """
+        Classify shell-integration state from iTerm2's own per-session evidence.
+
+        Prompt records are created exclusively by the integration's OSC 133/1337
+        marks, so they are the only API-visible ground truth:
+        - absent: no marks ever seen in this session -> not loaded
+        - active: at a live, integration-tracked prompt right now
+        - busy:   marks exist; a command is genuinely in flight
+        - stale:  marks exist but foreground job is the shell itself
+                    (`exec zsh`, or ssh'd somewhere without integration)
+        - legacy: iTerm2 too old to report prompt state; marks exist
+        """
+        last_prompt = await self._get_prompt()
+        if last_prompt is None:
+            return "absent"
+
+        state = last_prompt.state
+        if state == prompt.PromptState.EDITING:
+            return "active"
+
+        if state == prompt.PromptState.UNKNOWN:
+            return "legacy"
+
+        # RUNNING / FINISHED: real foreground command vs stale marks.
+        job = await self.get_session_var("jobName")
+        shell = await self.get_session_var("shell")
+        if job and shell and job == Path(str(shell)).name:
+            return "stale"
+
+        return "busy"
 
     # --------------------------------------------------
     # Shell-Integration-Related Helpers
@@ -733,7 +775,9 @@ class iTermState:
         last_prompt: None | Prompt = await prompt_obj(**call_args)
         return last_prompt
 
-    async def _wait_for_prompt(self, coro: Awaitable[None], *, timeout: float = 30.0) -> CommandStatus:
+    async def _wait_for_prompt(
+        self, coro: Awaitable[None], *, timeout: float = 30.0, expected_command: str | None = None
+    ) -> CommandStatus:
         """Wait for shell-integration prompt events for a command."""
         ModeFactory = PromptMonitor.Mode
         modes = [ModeFactory.COMMAND_START, ModeFactory.COMMAND_END, ModeFactory.PROMPT]
@@ -741,6 +785,7 @@ class iTermState:
         log.debug("Command monitor initialized", {"session_id": self.session.session_id, "timeout": timeout})
 
         async with PromptMonitor(self.connection, self.session.session_id, modes) as monitor:
+            saw_expected_start = expected_command is None
             active_prompt_id: str | None = None
             active_command: str | None = None
             await coro
@@ -777,11 +822,18 @@ class iTermState:
                     if event[0] == ModeFactory.COMMAND_START:
                         command = event[1]
                         prompt_id = event[2]
+                        if expected_command is not None and command.strip() != expected_command.strip():
+                            log.debug("Ignoring foreign COMMAND_START (initial text / leftover)", {"command": command})
+                            continue
+                        saw_expected_start = True
                         active_command = command
                         active_prompt_id = prompt_id or active_prompt_id
                         log.debug("COMMAND STARTED: ", {"mode": event[0], "command": active_command})
                         continue
                     if event[0] == ModeFactory.COMMAND_END:
+                        if not saw_expected_start:
+                            log.debug("Ignoring COMMAND_END preceding our COMMAND_START (initial text / leftover)")
+                            continue
                         raw_exit_code = event[1]
                         exit_code = CommandStatus.ExitCode.coerce(raw_exit_code)
                         prompt_id = event[2] or active_prompt_id
@@ -832,28 +884,57 @@ class iTermState:
 
         return result
 
-    async def _shell_integration_enabled(self) -> bool:
+    async def _shell_integration_enabled(self, allow_autoload: bool = True) -> bool:
+        """True only for *verified-live* shell integration.
+
+        Mark presence is necessary but NOT sufficient: iTerm2 persists marks
+        (and their prompt state) through arrangement/session restore, so a
+        dead session can carry another shell's marks. The only currency proof
+        is minting a fresh mark, so unverified sessions get one bounded CR
+        probe; the verdict is cached per session id. Live verdicts persist
+        (flipped by run_command on prompt-path timeout); dead verdicts expire
+        after SI_DEAD_RECHECK_SECONDS so late-loaded integration is found.
         """
-        Check if shell integration is enabled via profile settings and prompt
-        retrieval capabilities.
+        sid = self.session.session_id
+        loop = self.loop or asyncio.get_running_loop()
+
+        if (cached := self._si_live_cache.get(sid)) is not None:
+            live, checked_at = cached
+            if live or (loop.time() - checked_at) < self.SI_DEAD_RECHECK_SECONDS:
+                return live
+
+        if await self._get_prompt() is None:
+            # No marks at all (restore would have carried them over):
+            # integration has never spoken here. Offer auto-load if configured.
+            auto_load: Literal[0, 1] = self.profile.all_properties.get("Load Shell Integration Automatically", 0)
+            live = allow_autoload and bool(auto_load) and await self.maybe_load_shell_integration()
+        else:
+            live = await self._probe_shell_integration_live()
+
+        self._si_live_cache[sid] = (live, loop.time())
+        return live
+
+    async def _probe_shell_integration_live(self, timeout: float | None = None) -> bool:
+        """Ground truth: a bare CR at an idle prompt must mint a fresh PROMPT
+        mark. Restored/stale marks cannot pass this; only a live precmd hook
+        can. Refuses to probe when the foreground job is not the shell (the CR
+        would feed a running program's stdin) and reports not-live — which is
+        the correct routing decision for that moment anyway.
         """
+        job, shell = await self.get_session_var("jobName"), await self.get_session_var("shell")
+        if not job or not shell or job != Path(str(shell)).name:
+            log.debug("Skipping CR probe: foreground job is not the shell", {"job": job, "shell": shell})
+            return False
 
-        shell_integration_property: Literal[0, 1] = self.profile.all_properties.get(
-            "Load Shell Integration Automatically", 0
-        )
-        prompt_found = await self._get_prompt() is not None
-        has_integration_settings = bool(shell_integration_property)
-        has_prompt_capabilities = prompt_found
-        log.debug(
-            ("{} => {}\n{} => {}").format(
-                "has_integration_settings", has_integration_settings, "prompt_found", prompt_found
-            )
-        )
-
-        if has_integration_settings and not has_prompt_capabilities:
-            await self.maybe_load_shell_integration()
-
-        return has_prompt_capabilities and has_integration_settings
+        async with PromptMonitor(self.connection, self.session.session_id) as monitor:
+            await self.session.async_send_text("\r", suppress_broadcast=True)
+            try:
+                await asyncio.wait_for(
+                    monitor.async_get(mode=PromptMonitor.Mode.PROMPT), timeout or self.SI_PROBE_TIMEOUT
+                )
+            except TimeoutError:
+                return False
+            return True
 
     async def maybe_load_shell_integration(self, path: str | None = None, skip_confirm: bool = False) -> bool:
         user_shell = await self.get_session_var("shell")
@@ -887,7 +968,7 @@ class iTermState:
                     "Shell integration loaded with output:",
                     await self._get_prompt_output(f"{si_load_output.prompt_id}"),
                 )
-                return await self._shell_integration_enabled()
+                return await self._shell_integration_enabled(allow_autoload=False)
 
             log.warning(f"Unknown shell integration file - '{si_path!s}' does not exist.")
 

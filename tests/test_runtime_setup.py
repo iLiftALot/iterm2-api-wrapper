@@ -22,7 +22,9 @@ def test_bootstrap_and_validate_runtime_can_be_called_sequentially(monkeypatch) 
     calls: list[object] = []
 
     monkeypatch.setattr(it2runtime, "bootstrap_iterm2_runtime", lambda: calls.append("bootstrap"))
-    monkeypatch.setattr(it2runtime, "validate_iterm2_runtime", lambda connection: calls.append(("validate", connection)))
+    monkeypatch.setattr(
+        it2runtime, "validate_iterm2_runtime", lambda connection: calls.append(("validate", connection))
+    )
 
     bootstrap = it2runtime.bootstrap_iterm2_runtime()
     validate = it2runtime.validate_iterm2_runtime("connection")  # pyright: ignore[reportArgumentType]

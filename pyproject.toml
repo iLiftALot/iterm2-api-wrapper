@@ -54,7 +54,8 @@ requires = ["uv_build >= 0.11.14, <0.12.0"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
-addopts = "-v -l -s"
+addopts = "-v -l -rA --debug=trace"
+console_output_style = "progress"
 filterwarnings = [
   "ignore:websockets.legacy is deprecated:DeprecationWarning",
   "ignore:In 3.13 classes created inside an enum will not become a member:DeprecationWarning",
@@ -72,6 +73,7 @@ python_classes = ["Test*", "*Test"]
 python_files = ["test_*.py", "*_test.py"]
 python_functions = ["test_*"]
 testpaths = ["tests"]
+
 # * Pytest Command Line Options Documentation
 # usage: pytest [options] [file_or_dir] [file_or_dir] [...]
 # to see available markers type: pytest --markers

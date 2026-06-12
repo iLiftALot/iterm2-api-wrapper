@@ -576,15 +576,37 @@ class iTermAPI:
                     )
 
         async def wait_for_tab_loaded(session_id: str) -> None:
+            """Wait until the session is settled: past the first prompt AND past
+            any profile "Initial Text" command, so its COMMAND_START/END events
+            can't bleed into the first run_command's monitor."""
             Mode = PromptMonitor.Mode
             modes = [Mode.PROMPT, Mode.COMMAND_START, Mode.COMMAND_END]
+            quiescence = 0.6
 
             async with PromptMonitor(connection, session_id, modes) as monitor:
-                event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
+                try:
+                    event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
+                except TimeoutError:
+                    # No marks: profile without working shell integration. The tab
+                    # exists; snapshot-based fallback owns it from here.
+                    log.debug("New tab produced no prompt marks; treating as loaded", {"session_id": session_id})
+                    return
+
                 log.debug(
                     "New iTerm2 tab session is prompt-ready",
                     {"session_id": session_id, "mode": event[0], "exit_code": event[1], "prompt_id": event[2]},
                 )
+
+                if not str(profile.all_properties.get("Initial Text") or "").strip():
+                    return
+
+                # Drain Initial Text / startup activity until quiet.
+                while True:
+                    try:
+                        event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=quiescence)
+                        log.debug("Draining session-start event", {"mode": event[0], "prompt_id": event[2]})
+                    except TimeoutError:
+                        return
 
         async with NewSessionMonitor(connection) as monitor:
             created_tab = await window.async_create_tab(profile=profile.name)
