@@ -802,7 +802,7 @@ class iTermAPI:
             return None
 
         if isinstance(profile, dict):
-            return profile.get("original_guid") or profile.get("guid")
+            return profile.get("original_guid", None) or profile.get("guid")
 
         return (
             getattr(profile, "original_guid", None)

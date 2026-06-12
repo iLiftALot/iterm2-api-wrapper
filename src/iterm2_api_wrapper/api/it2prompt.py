@@ -87,7 +87,7 @@ async def async_get_last_prompt(connection: Connection, session_id: str) -> Prom
 
     :raises: :class:`iterm2.rpc.RPCException` if something goes wrong.
     """
-    return cast(Prompt | None, await prompt.async_get_last_prompt(cast(IT2Connection, connection), session_id))
+    return cast(Prompt | None, await prompt.async_get_last_prompt(cast("IT2Connection", connection), session_id))
 
 
 async def async_get_prompt_by_id(connection: Connection, session_id: str, prompt_unique_id: str) -> Prompt | None:
@@ -106,7 +106,7 @@ async def async_get_prompt_by_id(connection: Connection, session_id: str, prompt
     """
     return cast(
         Prompt | None,
-        await prompt.async_get_prompt_by_id(cast(IT2Connection, connection), session_id, prompt_unique_id),
+        await prompt.async_get_prompt_by_id(cast("IT2Connection", connection), session_id, prompt_unique_id),
     )
 
 

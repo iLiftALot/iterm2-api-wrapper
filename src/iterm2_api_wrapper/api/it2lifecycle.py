@@ -12,4 +12,4 @@ if TYPE_CHECKING:
 
 class NewSessionMonitor(lifecycle.NewSessionMonitor):
     def __init__(self, connection: Connection):
-        super().__init__(cast(IT2Connection, connection))
+        super().__init__(cast("IT2Connection", connection))

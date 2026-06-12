@@ -9,8 +9,6 @@ from collections.abc import Callable, Coroutine
 from typing import Any, ClassVar, Concatenate, overload
 
 from iterm2 import _version, api_pb2, auth  # , connection
-
-# from websockets import ClientConnection, connect, exceptions, typing,
 from websockets.asyncio.client import ClientConnection, unix_connect
 from websockets.asyncio.client import connect as WebSocketConnect
 from websockets.exceptions import InvalidMessage, InvalidStatus
@@ -62,6 +60,9 @@ def _uri() -> str:
 
 def _subprotocols() -> list[Subprotocol]:
     return [Subprotocol("api.iterm2.com")]
+
+
+_RETRIES = 0
 
 
 class Connection:
@@ -131,6 +132,15 @@ class Connection:
                 conn.websocket = await conn._get_connect_coro()
                 conn.__dispatch_forever_future = asyncio.ensure_future(conn._async_dispatch_forever(conn, loop))
                 return conn
+            # except (ConnectionRefusedError, FileNotFoundError, InvalidProxyMessage):
+            except ConnectionRefusedError:
+                # ! NOTE: App might not be open
+                from ..mac.platform_macos import activate_iterm_app
+                global _RETRIES
+                _RETRIES += 1
+                log.warning(f"Connection was refused. App might not be open. Retry # {_RETRIES}")
+                activate_iterm_app()
+                return await conn.async_create()
             except InvalidStatus as status_code_exception:
                 if status_code_exception.response.status_code == 401:
                     if have_fresh_cookie:
@@ -185,7 +195,7 @@ class Connection:
 
     def _unix_domain_socket_path(self) -> str:
         suite = os.environ.get("IT2_SUITE", "iTerm2")
-        application_support = os.path.expanduser(f"~/Library/Application Support/{suite}")
+        application_support = os.path.expanduser("~/Library/Application Support/" + suite)
         return os.path.join(application_support, "private", "socket")
 
     def _get_connect_coro(self) -> WebSocketConnect:

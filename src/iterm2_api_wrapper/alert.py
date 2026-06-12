@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from functools import partial
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from .api.it2alert import Alert, PolyModalAlert, TextInputAlert
 from .api.it2app import async_get_app
@@ -152,6 +152,7 @@ poly_modal_alert = await poly_modal_alert_handler(
 
 _app: App | None = None
 _conn: Connection | None = None
+run_until_complete: Any
 
 
 async def main():

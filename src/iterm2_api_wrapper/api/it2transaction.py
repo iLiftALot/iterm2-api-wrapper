@@ -13,4 +13,4 @@ if TYPE_CHECKING:
 
 class Transaction(transaction.Transaction):
     def __init__(self, connection: Connection):
-        super().__init__(cast(IT2Connection, connection))
+        super().__init__(cast("IT2Connection", connection))

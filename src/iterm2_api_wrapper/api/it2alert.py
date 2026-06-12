@@ -14,14 +14,14 @@ if TYPE_CHECKING:
 
 class Alert(alert.Alert):
     async def async_run(self, connection: Connection) -> int:  # pyright: ignore[reportIncompatibleMethodOverride]
-        return await super().async_run(cast(IT2Connection, connection))
+        return await super().async_run(cast("IT2Connection", connection))
 
 
 class TextInputAlert(alert.TextInputAlert):
     async def async_run(self, connection: Connection) -> str | None:
-        return await super().async_run(cast(IT2Connection, connection))
+        return await super().async_run(cast("IT2Connection", connection))
 
 
 class PolyModalAlert(alert.PolyModalAlert):
     async def async_run(self, connection: Connection) -> alert.PolyModalResult:
-        return await super().async_run(cast(IT2Connection, connection))
+        return await super().async_run(cast("IT2Connection", connection))
