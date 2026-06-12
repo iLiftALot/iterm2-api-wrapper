@@ -171,8 +171,8 @@ class SetupCoroGateway[StateT: RefreshableState[Any]](ITermGateway[StateT]):
 
     async def create_state(self, **kwargs: Any) -> StateT:
         from .api.it2connection import Connection
-        from .mac.platform_macos import activate_iterm_app
         from .api.it2runtime import bootstrap_iterm2_runtime
+        from .mac.platform_macos import activate_iterm_app
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)

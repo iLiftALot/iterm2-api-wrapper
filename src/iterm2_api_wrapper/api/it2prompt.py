@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, Tuple, cast, overload
+from typing import TYPE_CHECKING, Literal, cast, overload
 
 from iterm2 import capabilities, prompt
 
@@ -16,14 +16,14 @@ class Prompt(prompt.Prompt):
     _Prompt__proto: GetPromptResponse
 
 
-type PromptEvent = Tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None]
-type PromptEventWithId = Tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None, str | None]
+type PromptEvent = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None]
+type PromptEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None, str | None]
 
-type CommandStartEvent = Tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_START], str]
-type CommandStartEventWithId = Tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_START], str, str | None]
+type CommandStartEvent = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_START], str]
+type CommandStartEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_START], str, str | None]
 
-type CommandEndEvent = Tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_END], int]
-type CommandEndEventWithId = Tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_END], int, str | None]
+type CommandEndEvent = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_END], int]
+type CommandEndEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_END], int, str | None]
 
 type PromptMonitorEvent = PromptEvent | CommandStartEvent | CommandEndEvent
 type PromptMonitorEventWithId = PromptEventWithId | CommandStartEventWithId | CommandEndEventWithId

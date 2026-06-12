@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, TypedDict
 
 if TYPE_CHECKING:
     from .api.it2app import App
+    from .api.it2connection import Connection
     from .api.it2profile import Profile
     from .api.it2session import Session
     from .api.it2tab import Tab
     from .api.it2window import Window
-    from .api.it2connection import Connection
 
 
 class iTermSetupKwargs(TypedDict, total=False):

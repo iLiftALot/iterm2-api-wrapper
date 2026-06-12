@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from typing import cast, TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
 from iterm2 import tab
+
 
 if TYPE_CHECKING:
     from .it2session import Session

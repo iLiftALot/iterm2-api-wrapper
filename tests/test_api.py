@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Protocol, TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 import pytest
 
 from iterm2_api_wrapper.api import it2api as api_module
 from iterm2_api_wrapper.api.it2api import create_iterm_state, iTermAPI
 from iterm2_api_wrapper.errors import TabNotFoundError
+
 
 if TYPE_CHECKING:
     from iterm2_api_wrapper.api.it2app import App

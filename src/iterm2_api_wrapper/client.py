@@ -4,9 +4,10 @@ import asyncio
 import concurrent.futures
 import inspect
 import threading
+from collections.abc import Awaitable, Callable, Coroutine
 from threading import Thread
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Unpack, cast
+from typing import TYPE_CHECKING, Any, Unpack, cast
 
 from .gateway import DefaultITermGateway, ITermGateway, SetupCoroGateway
 

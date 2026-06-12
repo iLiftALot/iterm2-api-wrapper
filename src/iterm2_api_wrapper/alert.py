@@ -4,10 +4,12 @@ import asyncio
 from functools import partial
 from typing import TYPE_CHECKING, Literal
 
-from iterm2 import alert, app
+from .api.it2alert import Alert, PolyModalAlert, TextInputAlert
+from .api.it2app import async_get_app
 
 
 if TYPE_CHECKING:
+    from .api.it2app import App
     from .api.it2connection import Connection
 
 
@@ -24,7 +26,7 @@ async def alert_handler(
     :raises iterm2.rpc.RPCException: if the alert could not be shown.
     """
 
-    alert_instance = alert.Alert(title=title, subtitle=subtitle, window_id=window_id)
+    alert_instance = Alert(title=title, subtitle=subtitle, window_id=window_id)
     for btn in button_names or []:
         alert_instance.add_button(btn)
     response = await alert_instance.async_run(connection)
@@ -47,7 +49,7 @@ async def text_input_alert_handler(
     :raises iterm2.rpc.RPCException: if something goes wrong.
     """
 
-    alert_instance = alert.TextInputAlert(
+    alert_instance = TextInputAlert(
         title=title, subtitle=subtitle, placeholder=placeholder, default_value=default_value, window_id=window_id
     )
     response = await alert_instance.async_run(connection)
@@ -81,7 +83,7 @@ async def poly_modal_alert_handler(
     :raises iterm2.rpc.RPCException: if something goes wrong.
     """
 
-    alert_instance = alert.PolyModalAlert(title=title, subtitle=subtitle, window_id=window_id)
+    alert_instance = PolyModalAlert(title=title, subtitle=subtitle, window_id=window_id)
 
     for btn in button_names or []:
         alert_instance.add_button(btn)
@@ -112,7 +114,8 @@ async def poly_modal_alert_handler(
 """
 simple_alert = await alert_handler(
     title="iTerm2 Scripts",
-    subtitle=f"iTerm2 script is running in session {global_state.session.session_id} in window {global_state.window.window_id}!",
+    subtitle=f"iTerm2 script is running in session {global_state.session.session_id} \
+        in window {global_state.window.window_id}!",
     window_id=global_state.window.window_id,
     connection=global_state.connection,
 )
@@ -145,7 +148,7 @@ poly_modal_alert = await poly_modal_alert_handler(
 ############################################################
 
 
-_app: app.App | None = None
+_app: App | None = None
 _conn: Connection | None = None
 
 
@@ -160,7 +163,7 @@ async def main():
         print(f"\nConnection created with protocol version {protocol_version[0]}.{protocol_version[1]}")
 
     if _app is None:
-        _app = await app.async_get_app(_conn)
+        _app = await async_get_app(_conn, True)
 
     print("Use the `run_until_complete` function.")
 

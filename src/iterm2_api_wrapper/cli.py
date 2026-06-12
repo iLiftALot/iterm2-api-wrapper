@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from types import FunctionType
-from typing import TYPE_CHECKING, Annotated, Any, Concatenate, Coroutine
+from typing import TYPE_CHECKING, Annotated, Any, Concatenate
 
 import typer
 from iterm2 import alert, profile
 
 from ._logging import PrettyLog
 from .alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
-from .client import create_iterm_client
 from .api.it2connection import run_until_complete
+from .client import create_iterm_client
 
 
 if TYPE_CHECKING:

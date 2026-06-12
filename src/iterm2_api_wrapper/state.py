@@ -5,31 +5,31 @@ import inspect
 import json
 import re
 import shlex
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Concatenate, Coroutine, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Concatenate, Literal, cast, overload
 
-from iterm2 import transaction
 from websockets import ConcurrencyError, ConnectionClosed
 
 from ._logging import PrettyLog
 from .alert import poly_modal_alert_handler
 from .api.it2app import async_get_app
 from .api.it2prompt import PromptMonitor, async_get_last_prompt, async_get_prompt_by_id
+from .api.it2transaction import Transaction
 from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
 from .typings import CommandStatus, HexCodeEnum
 
 
 if TYPE_CHECKING:
     from .api.it2app import App
+    from .api.it2connection import Connection
     from .api.it2profile import PartialProfile, Profile
     from .api.it2prompt import Prompt
     from .api.it2session import Session
     from .api.it2tab import Tab
     from .api.it2window import Window
-    from .api.it2connection import Connection
     from .typings import HexCode
 
     # fmt: off
@@ -822,7 +822,7 @@ class iTermState:
         if end_y < start_y:
             return no_output_message
 
-        async with transaction.Transaction(self.connection):
+        async with Transaction(self.connection):
             contents = await self.session.async_get_contents(start_y, max(1, end_y - start_y))
 
         result = "\n".join(line.string for line in contents).strip()
@@ -996,7 +996,7 @@ class iTermState:
 
     async def _get_terminal_snapshot(self, *, trim_end: bool = True, filter_all_empty: bool = False) -> list[str]:
         """Get a transactionally consistent snapshot of the terminal screen contents."""
-        async with transaction.Transaction(self.connection):
+        async with Transaction(self.connection):
             line_info = await self.session.async_get_line_info()
             start = line_info.overflow
             total_lines = line_info.scrollback_buffer_height + line_info.mutable_area_height

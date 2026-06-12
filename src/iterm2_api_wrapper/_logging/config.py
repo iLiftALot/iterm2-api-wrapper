@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from enum import IntEnum, StrEnum
-from typing import IO, Callable, Literal, TypedDict
+from typing import IO, Literal, TypedDict
 
 from rich.console import HighlighterType, JustifyMethod, OverflowMethod
 from rich.emoji import EmojiVariant

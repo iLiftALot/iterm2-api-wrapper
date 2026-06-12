@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import ClassVar, Literal, NamedTuple, Sequence
+from typing import ClassVar, Literal, NamedTuple
 
 from rich.color import Color
 from rich.color_triplet import ColorTriplet
@@ -498,7 +499,7 @@ class GradientHighlighter(Highlighter):
 
 class LogRegexHighlighter(RegexHighlighter):
     base_style = "log."
-    highlights: ClassVar[list[str]] = [
+    highlights: ClassVar[Sequence[str]] = [
         r"(?P<number>\b\d+(\.\d+)?\b)",
         r"(?P<hex>0x[0-9a-fA-F]+)",
         r"(?P<uuid>\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b)",
