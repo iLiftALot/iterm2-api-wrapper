@@ -179,7 +179,7 @@ def get_default_log_config() -> AllLogConfig:
             soft_wrap=None,
             new_line_start=True,
         ),
-        file_manager_config=FileManagerConfig(clear_file_on_init=True),
+        file_manager_config=FileManagerConfig(clear_file_on_init=False),
         terminal_console_config=ConsoleConfig(
             color_system="auto",
             force_terminal=True,
