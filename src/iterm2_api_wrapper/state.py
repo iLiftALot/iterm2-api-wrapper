@@ -715,10 +715,13 @@ class iTermState:
             send_cmd_task = self.session.async_send_text(command + "\r", suppress_broadcast=suppress)
             result = await self._wait_for_prompt(send_cmd_task, timeout=timeout, expected_command=command)
             if result.timed_out:
+                log.warning("Command timed out...")
                 self._si_live_cache[self.session.session_id] = (False, (self.loop or asyncio.get_running_loop()).time())
             if result.prompt_id is not None:
+                log.debug(f"Prompt ID was retrieved normally: {result.prompt_id}")
                 content = await self._get_prompt_output(result.prompt_id)
             else:
+                log.warning("Prompt ID came back as None. Trying another method...")
                 content = await self._wait_for_prompt_reappearance_from_snapshot(
                     initial_snapshot, command=command, timeout=timeout
                 )

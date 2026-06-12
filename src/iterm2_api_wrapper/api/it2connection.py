@@ -133,13 +133,14 @@ class Connection:
                 conn.__dispatch_forever_future = asyncio.ensure_future(conn._async_dispatch_forever(conn, loop))
                 return conn
             # except (ConnectionRefusedError, FileNotFoundError, InvalidProxyMessage):
-            except ConnectionRefusedError:
+            except ConnectionRefusedError as e:
                 # ! NOTE: App might not be open
                 from ..mac.platform_macos import activate_iterm_app
                 global _RETRIES
                 _RETRIES += 1
                 log.warning(f"Connection was refused. App might not be open. Retry # {_RETRIES}")
-                activate_iterm_app()
+                iterm_is_closed = activate_iterm_app(None, comfirm_close=True)
+
                 return await conn.async_create()
             except InvalidStatus as status_code_exception:
                 if status_code_exception.response.status_code == 401:
