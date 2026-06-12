@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -14,6 +14,17 @@ from iterm2_api_wrapper.state import (
     iTermState,
     last_nonempty_line,
 )
+
+
+if TYPE_CHECKING:
+    from iterm2_api_wrapper.api.it2app import App
+    from iterm2_api_wrapper.api.it2connection import Connection
+    from iterm2_api_wrapper.api.it2profile import PartialProfile, Profile
+    from iterm2_api_wrapper.api.it2session import Session
+    from iterm2_api_wrapper.api.it2tab import Tab
+    from iterm2_api_wrapper.api.it2window import Window
+else:
+    App = Connection = PartialProfile = Profile = Session = Tab = Window = object
 
 
 class FakeConnection:
@@ -77,15 +88,56 @@ class FakeTab(FakeTarget):
         self.variables["title"] = title
 
 
+def as_connection(connection: object) -> Connection:
+    return cast(Connection, connection)
+
+
+def as_app(app: object) -> App:
+    return cast(App, app)
+
+
+def as_window(window: object) -> Window:
+    return cast(Window, window)
+
+
+def as_tab(tab: object) -> Tab:
+    return cast(Tab, tab)
+
+
+def as_session(session: object) -> Session:
+    return cast(Session, session)
+
+
+def as_profile(profile: object) -> Profile | PartialProfile:
+    return cast(Profile | PartialProfile, profile)
+
+
+def as_fake_connection(connection: Connection) -> FakeConnection:
+    return cast(FakeConnection, connection)
+
+
+def as_fake_session(session: Session) -> FakeSession:
+    return cast(FakeSession, session)
+
+
+def patch_attr(target: object, name: str, value: object) -> None:
+    setattr(target, name, value)
+
+
+def call_untyped(func: object, /, *args: object, **kwargs: object) -> Any:
+    return cast(Any, func)(*args, **kwargs)
+
+
 def make_state(loop: asyncio.AbstractEventLoop) -> iTermState:
     session = FakeSession(path="/current", username="user", hostname="host")
+    profile = SimpleNamespace(name="Default", all_properties={})
     return iTermState(
-        connection=FakeConnection(loop=loop),
-        app=FakeTarget(global_var="global"),
-        window=FakeTarget(window_var="window"),
-        tab=FakeTab(session, tab_var="tab", title="prompt$"),
-        session=session,
-        profile=SimpleNamespace(name="Default"),
+        connection=as_connection(FakeConnection(loop=loop)),
+        app=as_app(FakeTarget(global_var="global")),
+        window=as_window(FakeTarget(window_var="window")),
+        tab=as_tab(FakeTab(session, tab_var="tab", title="prompt$")),
+        session=as_session(session),
+        profile=as_profile(profile),
     )
 
 
@@ -94,7 +146,7 @@ def test_validate_state_rejects_sync_functions() -> None:
         return None
 
     with pytest.raises(TypeError, match="can only be applied to async methods"):
-        _validate_state(sync_method)
+        _validate_state(cast(Any, sync_method))
 
 
 def test_refresh_from_requires_iterm_state() -> None:
@@ -102,7 +154,7 @@ def test_refresh_from_requires_iterm_state() -> None:
         state = make_state(asyncio.get_running_loop())
 
         with pytest.raises(TypeError, match="refresh_from expects an iTermState"):
-            state.refresh_from(object())  # type: ignore[arg-type]
+            call_untyped(state.refresh_from, object())
 
     asyncio.run(scenario())
 
@@ -120,7 +172,7 @@ def test_ensure_state_refreshes_from_callback_when_invalid() -> None:
         async def callback() -> iTermState:
             return refreshed
 
-        state.validated_state = invalid  # type: ignore[method-assign]
+        patch_attr(state, "validated_state", invalid)
 
         await state.ensure_state(callback)
 
@@ -138,7 +190,7 @@ def test_ensure_state_requires_refresh_callback_when_invalid() -> None:
         async def invalid() -> bool:
             return False
 
-        state.validated_state = invalid  # type: ignore[method-assign]
+        patch_attr(state, "validated_state", invalid)
 
         with pytest.raises(RuntimeError, match="No refresh callback"):
             await state.ensure_state()
@@ -173,7 +225,7 @@ def test_validated_state_updates_current_iterm_objects(monkeypatch: pytest.Monke
             return True
 
         monkeypatch.setattr(state_module, "async_get_app", fake_get_app)
-        state.online = online  # type: ignore[method-assign]
+        patch_attr(state, "online", online)
 
         assert await state.validated_state() is True
         assert state.session is new_session
@@ -188,7 +240,7 @@ def test_online_uses_passive_websocket_state() -> None:
         loop = asyncio.get_running_loop()
         websocket = FakeWebsocket(state="OPEN")
         state = make_state(loop)
-        state.connection.websocket = websocket
+        as_fake_connection(state.connection).websocket = websocket
 
         assert await state.online() is True
         assert websocket.recv_calls == 0
@@ -267,15 +319,16 @@ def test_variable_helpers_dispatch_to_expected_targets() -> None:
         async def ensure_state(refresh_callback: Any = None) -> None:
             return None
 
-        state.ensure_state = ensure_state  # type: ignore[method-assign]
+        patch_attr(state, "ensure_state", ensure_state)
+        get_variable = cast(Any, state.get_variable)
 
-        assert await state.get_variable("session", "path") == "/current"
-        assert await state.get_variable("user", "custom") == "custom-value"
-        assert await state.get_variable("tab", "tab_var") == "tab"
-        assert await state.get_variable("window", "window_var") == "window"
-        assert await state.get_variable("iterm2", "global_var") == "global"
+        assert await get_variable("session", "path") == "/current"
+        assert await get_variable("user", "custom") == "custom-value"
+        assert await get_variable("tab", "tab_var") == "tab"
+        assert await get_variable("window", "window_var") == "window"
+        assert await get_variable("iterm2", "global_var") == "global"
         with pytest.raises(ValueError, match="Invalid context"):
-            await state.get_variable("bad", "value")  # type: ignore[arg-type]
+            await get_variable("bad", "value")
 
     asyncio.run(scenario())
 
@@ -301,14 +354,14 @@ def test_get_prompt_candidate_nudges_empty_terminal(monkeypatch: pytest.MonkeyPa
         async def no_sleep(delay: float) -> None:
             return None
 
-        state._get_terminal_snapshot = get_contents  # type: ignore[method-assign]
+        patch_attr(state, "_get_terminal_snapshot", get_contents)
         monkeypatch.setattr(state_module.asyncio, "sleep", no_sleep)
 
         lines, prompt_line = await state._get_prompt_candidate(suppress_broadcast=True)
 
         assert lines == ["prompt$"]
         assert prompt_line == "prompt$"
-        assert state.session.sent == [("\r", True)]
+        assert as_fake_session(state.session).sent == [("\r", True)]
 
     asyncio.run(scenario())
 
@@ -331,7 +384,7 @@ def test_run_command_without_shell_integration_uses_snapshot_diff(monkeypatch: p
         async def no_sleep(delay: float) -> None:
             return None
 
-        state._get_terminal_snapshot = get_contents  # type: ignore[method-assign]
+        patch_attr(state, "_get_terminal_snapshot", get_contents)
         monkeypatch.setattr(state_module.asyncio, "sleep", no_sleep)
 
         result = await state._run_command_without_shell_integration(
@@ -339,7 +392,7 @@ def test_run_command_without_shell_integration_uses_snapshot_diff(monkeypatch: p
         )
 
         assert result == "hi"
-        assert state.session.sent == [("echo hi\r", False)]
+        assert as_fake_session(state.session).sent == [("echo hi\r", False)]
 
     asyncio.run(scenario())
 
@@ -362,15 +415,15 @@ def test_run_command_changes_directory_before_fallback() -> None:
             assert kwargs == {"command": "pwd", "suppress_broadcast": True, "timeout": 4.0}
             return "fallback-output"
 
-        state.ensure_state = ensure_state  # type: ignore[method-assign]
-        state.get_session_var = get_session_var  # type: ignore[method-assign]
-        state._shell_integration_enabled = shell_integration_enabled  # type: ignore[method-assign]
-        state._run_command_without_shell_integration = fallback  # type: ignore[method-assign]
+        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "get_session_var", get_session_var)
+        patch_attr(state, "_shell_integration_enabled", shell_integration_enabled)
+        patch_attr(state, "_run_command_without_shell_integration", fallback)
 
         result = await state.run_command("pwd", path="/new", broadcast=False, timeout=4.0)
 
         assert result == "fallback-output"
-        assert state.session.sent == [("cd -- /new\r", True)]
+        assert as_fake_session(state.session).sent == [("cd -- /new\r", True)]
 
     asyncio.run(scenario())
 
@@ -382,7 +435,7 @@ def test_string_in_lines_uses_command_range_when_output_range_is_empty(monkeypat
             output_range=SimpleNamespace(start=SimpleNamespace(y=0), end=SimpleNamespace(y=0)),
             command_range=SimpleNamespace(start=SimpleNamespace(y=2), end=SimpleNamespace(y=4)),
         )
-        state.session.contents = [
+        as_fake_session(state.session).contents = [
             SimpleNamespace(string="ignored", hard_eol=True),
             SimpleNamespace(string="ignored", hard_eol=True),
             SimpleNamespace(string="", hard_eol=True),
@@ -404,8 +457,8 @@ def test_string_in_lines_uses_command_range_when_output_range_is_empty(monkeypat
             async def __aexit__(self, *args: object) -> None:
                 return None
 
-        state._get_prompt = get_prompt  # type: ignore[method-assign]
-        monkeypatch.setattr(state_module.transaction, "Transaction", NoopTransaction)
+        patch_attr(state, "_get_prompt", get_prompt)
+        monkeypatch.setattr(state_module, "Transaction", NoopTransaction)
 
         result = await state._get_prompt_output("prompt-1")
 
@@ -423,7 +476,7 @@ def test_validate_state_cancels_cross_loop_future_when_outer_task_is_cancelled()
         async def ensure_state(refresh_callback: Any = None) -> None:
             return None
 
-        state.ensure_state = ensure_state  # type: ignore[method-assign]
+        patch_attr(state, "ensure_state", ensure_state)
 
         started = asyncio.Event()
         cancelled_on_target = asyncio.Event()

@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import pytest
 
 from iterm2_api_wrapper import alert as alert_module
+
+
+if TYPE_CHECKING:
+    from iterm2_api_wrapper.api.it2connection import Connection
+else:
+    Connection = object
+
+
+def as_connection(connection: object) -> Connection:
+    return cast(Connection, connection)
 
 
 class FakeAlert:
@@ -21,7 +31,7 @@ class FakeAlert:
     def add_button(self, name: str) -> None:
         self.buttons.append(name)
 
-    async def async_run(self, *args: Any, **kwargs: Any) -> str:
+    async def async_run(self, *args: Any, **kwargs: Any) -> Any:
         self.run_args = args
         self.run_kwargs = kwargs
         return "alert-result"
@@ -35,14 +45,14 @@ class FakeTextInputAlert(FakeAlert):
 
 
 class FakePolyModalAlert(FakeAlert):
-    instances: ClassVar[list[FakePolyModalAlert]] = []
+    poly_instances: ClassVar[list[FakePolyModalAlert]] = []
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.checkboxes: list[tuple[str, int]] = []
         self.comboboxes: list[dict[str, Any]] = []
         self.text_fields: list[tuple[str, str]] = []
-        FakePolyModalAlert.instances.append(self)
+        FakePolyModalAlert.poly_instances.append(self)
 
     def add_checkbox_item(self, label: str, default: int) -> None:
         self.checkboxes.append((label, default))
@@ -61,14 +71,14 @@ class FakePolyModalAlert(FakeAlert):
 
 def test_alert_handler_wires_buttons_and_connection(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeAlert.instances.clear()
-    monkeypatch.setattr(alert_module.alert, "Alert", FakeAlert)
+    monkeypatch.setattr(alert_module, "Alert", FakeAlert)
 
     result = asyncio.run(
         alert_module.alert_handler(
             title="Title",
             subtitle="Subtitle",
             window_id="window-1",
-            connection="connection",
+            connection=as_connection("connection"),
             button_names=["OK", "Cancel"],
         )
     )
@@ -82,7 +92,7 @@ def test_alert_handler_wires_buttons_and_connection(monkeypatch: pytest.MonkeyPa
 
 def test_text_input_alert_handler_wires_constructor(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeAlert.instances.clear()
-    monkeypatch.setattr(alert_module.alert, "TextInputAlert", FakeTextInputAlert)
+    monkeypatch.setattr(alert_module, "TextInputAlert", FakeTextInputAlert)
 
     result = asyncio.run(
         alert_module.text_input_alert_handler(
@@ -90,7 +100,7 @@ def test_text_input_alert_handler_wires_constructor(monkeypatch: pytest.MonkeyPa
             subtitle="Subtitle",
             placeholder="Name",
             default_value="Alice",
-            connection="connection",
+            connection=as_connection("connection"),
             window_id="window-1",
         )
     )
@@ -109,14 +119,14 @@ def test_text_input_alert_handler_wires_constructor(monkeypatch: pytest.MonkeyPa
 
 def test_poly_modal_alert_handler_wires_all_optional_controls(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeAlert.instances.clear()
-    FakePolyModalAlert.instances.clear()
-    monkeypatch.setattr(alert_module.alert, "PolyModalAlert", FakePolyModalAlert)
+    FakePolyModalAlert.poly_instances.clear()
+    monkeypatch.setattr(alert_module, "PolyModalAlert", FakePolyModalAlert)
 
     result = asyncio.run(
         alert_module.poly_modal_alert_handler(
             title="Title",
             subtitle="Subtitle",
-            connection="connection",
+            connection=as_connection("connection"),
             window_id="window-1",
             button_names=["OK"],
             checkboxes=[("Remember", 1)],
@@ -125,7 +135,7 @@ def test_poly_modal_alert_handler_wires_all_optional_controls(monkeypatch: pytes
         )
     )
 
-    instance = FakePolyModalAlert.instances[-1]
+    instance = FakePolyModalAlert.poly_instances[-1]
     assert result == {"button": "OK"}
     assert instance.buttons == ["OK"]
     assert instance.checkboxes == [("Remember", 1)]
@@ -135,12 +145,15 @@ def test_poly_modal_alert_handler_wires_all_optional_controls(monkeypatch: pytes
 
 
 def test_poly_modal_alert_handler_rejects_mismatched_text_fields(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakePolyModalAlert.instances.clear()
-    monkeypatch.setattr(alert_module.alert, "PolyModalAlert", FakePolyModalAlert)
+    FakePolyModalAlert.poly_instances.clear()
+    monkeypatch.setattr(alert_module, "PolyModalAlert", FakePolyModalAlert)
 
     with pytest.raises(ValueError):
         asyncio.run(
             alert_module.poly_modal_alert_handler(
-                title="Title", subtitle="Subtitle", connection="connection", text_fields=(["Only one"], ["one", "two"])
+                title="Title",
+                subtitle="Subtitle",
+                connection=as_connection("connection"),
+                text_fields=(["Only one"], ["one", "two"]),
             )
         )

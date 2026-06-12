@@ -151,7 +151,8 @@ class Connection:
                     sys.exit(1)
                 else:
                     log.error(
-                        f"Failed to connect to iTerm2 with unexpected status code: {status_code_exception.response.status_code}"
+                        "Failed to connect to iTerm2 with unexpected status code: "
+                        f"{status_code_exception.response.status_code}"
                     )
                     raise
 
@@ -286,8 +287,11 @@ class Connection:
 
         ---
 
-        Updates parameter types along with the updated websocket error handling
-        (``InvalidStatusCode`` -> ``InvalidStatus`` and ``exception.status_code`` -> ``exception.response.status_code``).
+        Updates parameter types along with the updated websocket error handling (
+            ``InvalidStatusCode`` -> ``InvalidStatus``
+                and...
+            ``exception.status_code`` -> ``exception.response.status_code``
+        ).
 
         ---
 
@@ -388,7 +392,8 @@ class Connection:
                     exists = os.path.exists(path)
                     if exists:
                         log.error(
-                            f"If you have downgraded from iTerm2 3.3.12+ to an older version, you must manually delete the file at {path}.\n"
+                            "If you have downgraded from iTerm2 3.3.12+ to an older version, "
+                            f"you must manually delete the file at {path}.\n"
                         )
 
                     done = True

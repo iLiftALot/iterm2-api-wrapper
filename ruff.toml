@@ -39,28 +39,29 @@ force-exclude = true
 
 [lint]
 extend-select = [
-  "A",  # prevent using keywords that clobber python builtins
-  "B",  # bugbear: security warnings
-  "E",  # pycodestyle
-  "F",  # pyflakes
-  "ISC",  # implicit string concatenation
-  "UP",  # alert you when better syntax is available in your python version
-  "RUF",  # the ruff developer's own rules
+  "A",      # prevent using keywords that clobber python builtins
+  "B",      # bugbear: security warnings
+  "E",      # pycodestyle
+  "F",      # pyflakes
+  "I",      # isort: import formatting
+  "ISC",    # implicit string concatenation
+  "UP",     # alert you when better syntax is available in your python version
+  "RUF",    # the ruff developer's own rules
 ]
 ignore = [
-  "D",  # ignore missing docs
-  "TC",  # false positives for local imports
-  "E501",  # line too long
-  "I001",  # unsorted imports
-  "TRY003",  # external messages in exceptions are too verbose
+  "D",      # ignore missing docs
+  "TC",     # false positives for local imports
+  "E501",   # line too long
+  #"I001",   # unsorted imports
+  "TRY003", # external messages in exceptions are too verbose
   "UP035",  # Checks for uses of deprecated imports based on the minimum supported Python version.
   "UP006",  # Checks for the use of generics that can be replaced with standard library variants based on PEP 585.
   "UP007",  # Check for type annotations that can be rewritten based on PEP 604 syntax.
   "UP015",  # Checks for redundant open mode arguments.
   "UP040",  # Checks for use of TypeAlias annotations and TypeAliasType assignments for declaring type aliases.
   "UP045",  # Check for typing.Optional annotations that can be rewritten based on PEP 604 syntax.
-  "A002",  # Checks for function arguments that use the same names as builtins
-  "B905",  # `zip()` without an explicit `strict=` parameter
+  "A002",   # Checks for function arguments that use the same names as builtins
+  "B905",   # `zip()` without an explicit `strict=` parameter
 ]
 
 [lint.isort]
@@ -76,7 +77,7 @@ docstring-code-line-length = 90
 docstring-code-format = true
 quote-style = "double"
 indent-style = "space"
-skip-magic-trailing-comma = true
+skip-magic-trailing-comma = false
 exclude = ["**/api/__init__.py"]
 
 [analyze]

@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Unpack
 
 import iterm2
 from iterm2.capabilities import check_supports_get_default_profile, check_supports_prompt_id
@@ -12,10 +11,6 @@ from iterm2.capabilities import check_supports_get_default_profile, check_suppor
 from .._logging import PrettyLog
 from .it2connection import Connection, add_disconnect_callback, run_forever, run_until_complete
 from .it2prompt import check_supports_prompt_monitor_modes
-
-
-if TYPE_CHECKING:
-    from ..client import iTermSetupKwargs
 
 
 log = PrettyLog.get_logger(__name__)
@@ -94,9 +89,3 @@ def _validate_app_version(connection: Connection) -> None:
 
     major_version, minor_version = connection.iterm2_protocol_version
     log.debug(f"iTerm version >= minimum required version: {major_version}.{minor_version}")
-
-
-async def run_iterm_validator(connection: Connection, **kwargs: Unpack[iTermSetupKwargs]) -> None:
-    """Run iTerm2 setup. This can also be called directly."""
-    bootstrap_iterm2_runtime()
-    validate_iterm2_runtime(connection)

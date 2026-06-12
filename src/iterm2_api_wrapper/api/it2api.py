@@ -234,11 +234,11 @@ class iTermAPI:
         profile = await self.get_profile(target_profile_name=profile_name)
         window: Window | None = None
 
-        async def from_window_id(id: str) -> Window | None:
-            if self.window and self.window.window_id == id:
+        async def from_window_id(_window_id: str) -> Window | None:
+            if self.window and self.window.window_id == _window_id:
                 return self.window
 
-            _window = app.get_window_by_id(id) or await app.tab_delegate_get_window_by_id(id)
+            _window = app.get_window_by_id(_window_id) or await app.tab_delegate_get_window_by_id(_window_id)
             return _window
 
         async def from_profile() -> Window | None:
@@ -267,14 +267,14 @@ class iTermAPI:
             log.debug(f"No existing window has a session for profile '{profile.name}' ({profile_guid}).")
             return None
 
-        async def from_tab_id(id: str) -> Window | None:
-            _window = app.get_window_for_tab(id)
+        async def from_tab_id(_tab_id: str) -> Window | None:
+            _window = app.get_window_for_tab(_tab_id)
             if _window is not None:
                 return _window
 
             for window_obj in app.windows:
                 for tab in window_obj.tabs:
-                    if id == tab.tab_id:
+                    if _tab_id == tab.tab_id:
                         return window_obj
 
             return None
@@ -321,10 +321,10 @@ class iTermAPI:
         window = await self.get_window(**{"window_id": window_id, "profile_name": profile_name, "tab_id": tab_id})
         tab: Tab | None = None
 
-        async def from_tab_id(id: str) -> Tab | None:
-            if self.tab and self.tab.tab_id == id:
+        async def from_tab_id(_tab_id: str) -> Tab | None:
+            if self.tab and self.tab.tab_id == _tab_id:
                 return self.tab
-            _tab = app.get_tab_by_id(id) or await app.window_delegate_get_tab_by_id(id)
+            _tab = app.get_tab_by_id(_tab_id) or await app.window_delegate_get_tab_by_id(_tab_id)
             return _tab
 
         async def from_profile() -> Tab | None:
@@ -357,8 +357,8 @@ class iTermAPI:
             tagged_ctx = await self._find_tagged_context(profile, window)
             return tagged_ctx[1] if tagged_ctx else None
 
-        async def from_session_id(id: str) -> Tab | None:
-            session = await self.get_session(session_id=id)
+        async def from_session_id(_tab_id: str) -> Tab | None:
+            session = await self.get_session(session_id=_tab_id)
             _tab = session.tab or app.session_delegate_get_tab(session)
             return _tab
 
@@ -414,11 +414,11 @@ class iTermAPI:
         window = await self.get_window(window_id=window_id)
         session: Session | None = None
 
-        async def from_session_id(id: str) -> Session | None:
-            if self.session and self.session.session_id == id:
+        async def from_session_id(_tab_id: str) -> Session | None:
+            if self.session and self.session.session_id == _tab_id:
                 return self.session
 
-            _session = app.get_session_by_id(id)
+            _session = app.get_session_by_id(_tab_id)
             return _session
 
         async def from_profile() -> Session | None:

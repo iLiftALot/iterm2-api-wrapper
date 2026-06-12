@@ -114,8 +114,10 @@ async def poly_modal_alert_handler(
 """
 simple_alert = await alert_handler(
     title="iTerm2 Scripts",
-    subtitle=f"iTerm2 script is running in session {global_state.session.session_id} \
-        in window {global_state.window.window_id}!",
+    subtitle=(
+        f"iTerm2 script is running in session {global_state.session.session_id} "
+        f"in window {global_state.window.window_id}!"
+    ),
     window_id=global_state.window.window_id,
     connection=global_state.connection,
 )

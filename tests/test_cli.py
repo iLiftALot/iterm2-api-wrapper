@@ -5,12 +5,28 @@ import sys
 import threading
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 import typer
 
 from iterm2_api_wrapper import cli
+
+
+if TYPE_CHECKING:
+    from typer import Context
+
+    from iterm2_api_wrapper.state import iTermState
+else:
+    Context = iTermState = object
+
+
+def as_ctx(ctx: object) -> Context:
+    return cast(Context, ctx)
+
+
+def as_state(state: object) -> iTermState:
+    return cast(iTermState, state)
 
 
 def test_kwarg_conversion_splits_args_and_key_value_pairs() -> None:
@@ -21,16 +37,16 @@ def test_kwarg_conversion_splits_args_and_key_value_pairs() -> None:
 
 
 def test_func_to_args_completion_returns_remaining_function_parameters() -> None:
-    ctx = SimpleNamespace(params={"func_name": "send_command", "args": ("command='",)})
+    ctx = as_ctx(SimpleNamespace(params={"func_name": "send_command", "args": ("command='",)}))
 
     completions = cli.func_to_args_completion("pa", ctx)
 
     assert ("path='", "path: 'str | None' = None (positional or keyword)") in completions
-    assert cli.func_to_args_completion("", SimpleNamespace(params={"func_name": "missing"})) == []
+    assert cli.func_to_args_completion("", as_ctx(SimpleNamespace(params={"func_name": "missing"}))) == []
 
 
 def test_run_coro_executes_on_supplied_loop() -> None:
-    async def scenario() -> None:
+    async def scenario() -> str:
         return "done"
 
     loop = asyncio.new_event_loop()
@@ -48,7 +64,7 @@ def test_profiles_completion_filters_profile_names(monkeypatch: pytest.MonkeyPat
     profiles = [SimpleNamespace(name="Default", guid="1"), SimpleNamespace(name="Dev", guid="2")]
     monkeypatch.setattr(cli, "run_until_complete", lambda fn: profiles)
 
-    assert cli.profiles_completion("De", SimpleNamespace()) == [
+    assert cli.profiles_completion("De", as_ctx(SimpleNamespace())) == [
         ("Default", "Profile: Default (1)"),
         ("Dev", "Profile: Dev (2)"),
     ]
@@ -65,7 +81,7 @@ def test_send_command_uses_default_command_and_resolves_path() -> None:
 
     async def scenario() -> None:
         state = FakeState()
-        result = await cli.send_command(state, command=None, path=".", timeout=2)
+        result = await cli.send_command(as_state(state), command=None, path=".", timeout=2)
 
         assert result == "output"
         assert state.calls == [
@@ -93,7 +109,7 @@ def test_show_capabilities_collects_support_functions(monkeypatch: pytest.Monkey
         monkeypatch.setattr(iterm2, "capabilities", fake_capabilities, raising=False)
         monkeypatch.setattr(cli.log, "info", lambda *args, **kwargs: None)
 
-        result = await cli.show_capabilities(SimpleNamespace(connection="connection"))
+        result = await cli.show_capabilities(as_state(SimpleNamespace(connection="connection")))
 
         assert result == {"supports_bar": False, "supports_foo": True}
 
@@ -102,8 +118,10 @@ def test_show_capabilities_collects_support_functions(monkeypatch: pytest.Monkey
 
 def test_alert_cli_helpers_delegate_to_alert_handlers(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
-        state = SimpleNamespace(
+        state = as_state(
+            SimpleNamespace(
             connection="connection", window=SimpleNamespace(window_id="window"), profile=SimpleNamespace(name="Default")
+            )
         )
 
         async def fake_alert_handler(**kwargs: Any) -> int:
