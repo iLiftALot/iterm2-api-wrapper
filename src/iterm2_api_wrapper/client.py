@@ -8,18 +8,13 @@ from threading import Thread
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Unpack, cast
 
-from iterm2_api_wrapper.gateway import (
-    DefaultITermGateway,
-    ITermGateway,
-    RefreshableState,
-    SetupCoroGateway,
-    _Connection,
-)
+from .gateway import DefaultITermGateway, ITermGateway, SetupCoroGateway
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.state import iTermState
-    from iterm2_api_wrapper.typings import iTermSetupKwargs
+    from .gateway import RefreshableState, _Connection
+    from .state import iTermState
+    from .typings import iTermSetupKwargs
 
 
 class iTermClient[StateT: RefreshableState[Any]]:

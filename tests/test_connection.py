@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from iterm2_api_wrapper import connection as connection_module
-from iterm2_api_wrapper.connection import Connection
+from iterm2_api_wrapper.api import it2connection as connection_module
+from iterm2_api_wrapper.api.it2connection import Connection
 
 
 def test_iterm2_protocol_version_handles_missing_or_malformed_header() -> None:

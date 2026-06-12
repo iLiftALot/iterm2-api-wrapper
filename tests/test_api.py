@@ -3,11 +3,33 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Protocol, TYPE_CHECKING, TypeVar, cast
 
 import pytest
 
 from iterm2_api_wrapper.api import it2api as api_module
 from iterm2_api_wrapper.api.it2api import create_iterm_state, iTermAPI
+from iterm2_api_wrapper.errors import TabNotFoundError
+
+if TYPE_CHECKING:
+    from iterm2_api_wrapper.api.it2app import App
+    from iterm2_api_wrapper.api.it2connection import Connection
+    from iterm2_api_wrapper.api.it2profile import PartialProfile, Profile
+    from iterm2_api_wrapper.api.it2session import Session
+    from iterm2_api_wrapper.api.it2tab import Tab
+    from iterm2_api_wrapper.api.it2window import Window
+else:
+    App = Connection = PartialProfile = Profile = Session = Tab = Window = object
+
+
+TProfile = TypeVar("TProfile", bound=Profile, covariant=True)
+TApp = TypeVar("TApp", bound=App, covariant=True)
+
+
+class _FakeProfile(Protocol[TProfile]):
+    name: str
+    guid: str
+    original_guid: str | None = None
 
 
 @dataclass
@@ -35,6 +57,9 @@ class FakeSession:
 
     async def async_set_name(self, name: str) -> None:
         self.name = name
+
+    async def async_set_buried(self, buried: bool) -> None:
+        self.buried = buried
 
     async def async_activate(self, select_tab: bool, order_window_front: bool) -> None:
         self.activation_args = (select_tab, order_window_front)
@@ -85,7 +110,10 @@ class FakeWindow:
         return None
 
 
-class FakeApp:
+class _FakeApp(Protocol[TApp]): ...
+
+
+class FakeApp(_FakeApp):
     def __init__(self, windows: list[FakeWindow]) -> None:
         self.windows = windows
         self.current_window = windows[0] if windows else None
@@ -126,28 +154,53 @@ class FakeApp:
         return self.get_tab_by_id(tab_id)
 
 
+def as_connection(connection: object) -> Connection:
+    return cast(Connection, connection)
+
+
+def as_app(app: FakeApp) -> App:
+    return cast(App, app)
+
+
+def as_profile(profile: FakeProfile) -> Profile | PartialProfile:
+    return cast(Profile | PartialProfile, profile)
+
+
+def as_window(window: FakeWindow | None) -> Window | None:
+    return cast(Window | None, window)
+
+
+def as_tab(tab: FakeTab | None) -> Tab | None:
+    return cast(Tab | None, tab)
+
+
+def as_session(session: FakeSession | None) -> Session | None:
+    return cast(Session | None, session)
+
+
 def make_api(profile: FakeProfile, windows: list[FakeWindow]) -> iTermAPI:
+    typed_profile = as_profile(profile)
     api = object.__new__(iTermAPI)
-    api.loop = None
+    api.loop = None  # type: ignore[assignment]
     api.new_tab = False
-    api.debug = None
+    api.debug = False
     api.profile_name = profile.name
-    api.conn = None
-    api.app = FakeApp(windows)
-    api.profile = profile
-    api.state = None
+    api._connection = None
+    api._app = as_app(FakeApp(windows))
+    api.profile = typed_profile
     api.window = None
     api.tab = None
     api.session = None
-    api._profile_cache = {profile.name: profile}
-    api._context_profile = profile
+    api._profile_cache = {profile.name: typed_profile}
+    api.service_name = "iterm-api"
+    api.activate = False
     return api
 
 
 def test_profile_guid_prefers_session_original_guid() -> None:
     session_local = FakeProfile(name="pyterm-mcp", guid="SESSION-LOCAL-GUID", original_guid="CONFIGURED-GUID")
 
-    assert iTermAPI._profile_guid(session_local) == "CONFIGURED-GUID"
+    assert iTermAPI._profile_guid(as_profile(session_local)) == "CONFIGURED-GUID"
 
 
 def test_sync_constructor_rejects_running_event_loop() -> None:
@@ -172,13 +225,13 @@ def test_async_create_initializes_on_running_event_loop(monkeypatch: pytest.Monk
         assert initialized == [api]
         assert api.profile_name == "pyterm-mcp"
         assert api.loop is asyncio.get_running_loop()
-        assert api._owns_loop is False
+        assert api.activate is True
 
     asyncio.run(scenario())
 
 
-def test_sync_create_populates_from_api_owned_setup(monkeypatch: pytest.MonkeyPatch) -> None:
-    conn = SimpleNamespace(loop=None)
+def test_sync_constructor_populates_from_api_owned_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    conn = as_connection(SimpleNamespace(loop=None, iterm2_protocol_version=(1, 14)))
     profile = FakeProfile(name="pyterm-mcp", guid="CONFIGURED-GUID")
     session = FakeSession("target", "session-1", profile)
     tab = FakeTab("tab-1", [session], title="tab-1")
@@ -208,63 +261,84 @@ def test_sync_create_populates_from_api_owned_setup(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(iTermAPI, "get_app", get_app)
     monkeypatch.setattr(iTermAPI, "get_profile", get_profile)
 
-    api = iTermAPI.create(profile_name="pyterm-mcp", connection_instance=conn, new_tab=True, debug=True)
+    async def create_tab(
+        api: iTermAPI,
+        target_window: FakeWindow | None = None,
+        target_profile: FakeProfile | None = None,
+        *,
+        with_session: bool = False,
+        timeout: float = 30.0,
+    ) -> FakeTab | tuple[FakeTab, FakeSession]:
+        del timeout
+        assert target_window is not None
+        assert target_profile is not None
+        created_tab = await target_window.async_create_tab(profile=target_profile.name)
+        if with_session:
+            assert created_tab.current_session is not None
+            return created_tab, created_tab.current_session
+        return created_tab
+
+    monkeypatch.setattr(iTermAPI, "create_tab", create_tab)
+    # monkeypatch.setattr(conn, "iterm2_protocol_version=(1, 15)", property(fget=lambda _self: (1, 15)))
+
+    api = iTermAPI(profile_name="pyterm-mcp", connection_instance=conn, new_tab=True, debug=True)
 
     assert not hasattr(api_module, "run_iterm_setup")
     assert activated == [True]
     assert configured == [("pyterm-mcp", True, True)]
     assert get_profile_calls == [None]
     assert get_app_calls >= 1
-    assert api.state is not None
-    assert api.conn is conn
+    assert api.connection is conn
     assert api.app is app
     assert api.profile is profile
     assert api.window is window
     assert api.tab is window.tabs[-1]
+    assert api.tab is not None
     assert api.session is api.tab.current_session
     assert api.profile_name == "pyterm-mcp"
-    assert api._context_profile is profile
-    assert api.state.connection is conn
-    assert api.state.app is app
-    assert api.state.profile is profile
-    assert api.state.window is window
-    assert api.state.tab is api.tab
-    assert api.state.session is api.session
-    assert api.state.is_hotkey_window is False
     assert window.created_profiles == ["pyterm-mcp"]
-    assert api.tab.title == "pyterm-session:pyterm-mcp"
+    assert window.tabs[-1].title == "iterm-api:pyterm-mcp"
     assert api.session is not None
-    assert api.session.name == "pyterm-session:pyterm-mcp"
+    assert api.session.name == "iterm-api:pyterm-mcp"
 
 
-def test_create_iterm_state_unwraps_api_owned_state(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_iterm_state_builds_state_from_api_context(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
-        state = object()
         calls: list[dict[str, object]] = []
+        conn = as_connection(SimpleNamespace(loop=None))
+        profile = FakeProfile(name="pyterm-mcp", guid="CONFIGURED-GUID")
+        session = FakeSession("target", "session-1", profile)
+        tab = FakeTab("tab-1", [session], title="tab-1")
+        window = FakeWindow("window-1", [tab])
+        app = FakeApp([window])
 
-        async def async_create(**kwargs: object) -> SimpleNamespace:
+        async def async_create(**kwargs: object) -> iTermAPI:
             calls.append(kwargs)
-            return SimpleNamespace(state=state)
+            api = make_api(profile, [window])
+            api._connection = conn
+            api._app = as_app(app)
+            api.window = as_window(window)
+            api.tab = as_tab(tab)
+            api.session = as_session(session)
+            return api
 
         monkeypatch.setattr(iTermAPI, "async_create", staticmethod(async_create))
 
-        conn = SimpleNamespace(loop=None)
-        assert (
-            await create_iterm_state(
-                conn,
-                profile_name="pyterm-mcp",
-                dedicated_profile_name="fallback-profile",
-                new_tab=True,
-                debug=True,
-                activate=False,
-            )
-            is state
+        state = await create_iterm_state(
+            conn, dedicated_profile_name="fallback-profile", new_tab=True, debug=True, activate=False
         )
+        assert state.connection is conn
+        assert state.app is app
+        assert state.window is window
+        assert state.tab is tab
+        assert state.session is session
+        assert state.profile is profile
         assert calls == [
             {
                 "connection_instance": conn,
-                "profile_name": "pyterm-mcp",
-                "dedicated_profile_name": "fallback-profile",
+                "profile_name": "fallback-profile",
+                "service_name": None,
+                "extra_id": None,
                 "new_tab": True,
                 "debug": True,
                 "activate": False,
@@ -284,8 +358,9 @@ def test_get_window_matches_session_local_profile_original_guid() -> None:
         api = make_api(target, [window])
 
         assert await api.get_window() is window
-        assert api.tab is tab
-        assert api.session is session
+        assert api.window is None
+        assert api.tab is None
+        assert api.session is None
 
     asyncio.run(scenario())
 
@@ -304,25 +379,24 @@ def test_get_window_local_profile_override_does_not_reuse_stale_context() -> Non
         work_window = FakeWindow("work-window", [work_tab])
 
         api = make_api(default_profile, [default_window, work_window])
-        api.window = default_window
-        api.tab = default_tab
-        api.session = default_session
-        api._profile_cache[work_profile.name] = work_profile
+        api.window = as_window(default_window)
+        api.tab = as_tab(default_tab)
+        api.session = as_session(default_session)
+        api._profile_cache[work_profile.name] = as_profile(work_profile)
 
         selected_window = await api.get_window(profile_name="Work")
 
         assert selected_window is work_window
-        assert api.window is work_window
-        assert api.tab is work_tab
-        assert api.session is work_session
-        assert api.profile is work_profile
-        assert api.profile_name == "Work"
-        assert api._context_profile is work_profile
+        assert api.window is default_window
+        assert api.tab is default_tab
+        assert api.session is default_session
+        assert api.profile is default_profile
+        assert api.profile_name == "Default"
 
     asyncio.run(scenario())
 
 
-def test_get_tab_uses_live_session_profile_identity_before_profile_name_cache() -> None:
+def test_get_tab_uses_live_session_profile_identity_without_creating() -> None:
     async def scenario() -> None:
         target = FakeProfile(name="pyterm-mcp", guid="CONFIGURED-GUID")
         unrelated_same_name = FakeProfile(name="pyterm-mcp", guid="OTHER-GUID")
@@ -330,18 +404,19 @@ def test_get_tab_uses_live_session_profile_identity_before_profile_name_cache() 
         wrong_tab = FakeTab("tab-1", [unrelated_session])
         window = FakeWindow("window-1", [wrong_tab])
         api = make_api(target, [window])
-        api.window = window
+        api.window = as_window(window)
 
-        selected_tab = await api.get_tab()
+        with pytest.raises(TabNotFoundError):
+            await api.get_tab()
 
-        assert selected_tab is not wrong_tab
-        assert selected_tab is window.tabs[-1]
-        assert window.created_profiles == ["pyterm-mcp"]
+        assert window.created_profiles == []
+        assert api.tab is None
+        assert api.session is None
 
     asyncio.run(scenario())
 
 
-def test_get_session_by_id_updates_context_and_disinters() -> None:
+def test_get_session_by_id_disinters_without_updating_context() -> None:
     async def scenario() -> None:
         target = FakeProfile(name="pyterm-mcp", guid="CONFIGURED-GUID")
         session = FakeSession("target", "session-1", target, buried=True)
@@ -350,9 +425,9 @@ def test_get_session_by_id_updates_context_and_disinters() -> None:
         api = make_api(target, [window])
 
         assert await api.get_session(session_id="session-1") is session
-        assert session.activation_args == (False, False)
-        assert api.window is window
-        assert api.tab is tab
-        assert api.session is session
+        assert session.buried is False
+        assert api.window is None
+        assert api.tab is None
+        assert api.session is None
 
     asyncio.run(scenario())

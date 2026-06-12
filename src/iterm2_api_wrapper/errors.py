@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.api.it2api import PartialProfile, Profile
+    from .api.it2profile import PartialProfile, Profile
 
 
 class ErrorMeta(type(BaseException)):

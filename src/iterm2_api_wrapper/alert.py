@@ -1,10 +1,14 @@
+from __future__ import annotations
+
 import asyncio
 from functools import partial
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from iterm2 import alert, app
 
-from iterm2_api_wrapper.connection import Connection
+
+if TYPE_CHECKING:
+    from .api.it2connection import Connection
 
 
 async def alert_handler(
@@ -147,7 +151,7 @@ _conn: Connection | None = None
 
 async def main():
     global _conn, _app, run_until_complete
-    from iterm2_api_wrapper.connection import Connection, run_until_complete
+    from .api.it2connection import Connection, run_until_complete
 
     if _conn is None:
         _conn = await Connection.async_create()

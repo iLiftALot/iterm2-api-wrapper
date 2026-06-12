@@ -7,7 +7,13 @@ from typing import Any
 import pytest
 
 from iterm2_api_wrapper import state as state_module
-from iterm2_api_wrapper.state import _validate_state, iTermState
+from iterm2_api_wrapper.state import (
+    _validate_state,
+    changed_slice,
+    extract_output_from_changed_block,
+    iTermState,
+    last_nonempty_line,
+)
 
 
 class FakeConnection:
@@ -275,13 +281,13 @@ def test_variable_helpers_dispatch_to_expected_targets() -> None:
 
 
 def test_terminal_diff_helpers_extract_command_output() -> None:
-    assert iTermState._last_nonempty_line(["", "  ", " prompt$ "]) == "prompt$"
-    assert iTermState._last_nonempty_line(["", "  "]) is None
+    assert last_nonempty_line(["", "  ", " prompt$ "]) == "prompt$"
+    assert last_nonempty_line(["", "  "]) is None
 
-    changed = iTermState._changed_slice(["prompt$"], ["prompt$", "prompt$ echo hi", "hi", "prompt$"])
+    changed = changed_slice(["prompt$"], ["prompt$", "prompt$ echo hi", "hi", "prompt$"])
     assert changed == ["prompt$ echo hi", "hi", "prompt$"]
-    assert iTermState._extract_output_from_changed_block(changed, prompt_line="prompt$", command="echo hi") == "hi"
-    assert iTermState._extract_output_from_changed_block([], prompt_line="prompt$", command="echo hi") == ""
+    assert extract_output_from_changed_block(changed, prompt_line="prompt$", command="echo hi") == "hi"
+    assert extract_output_from_changed_block([], prompt_line="prompt$", command="echo hi") == ""
 
 
 def test_get_prompt_candidate_nudges_empty_terminal(monkeypatch: pytest.MonkeyPatch) -> None:

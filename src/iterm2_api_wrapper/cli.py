@@ -4,20 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from ast import literal_eval
 from collections.abc import Callable
 from pathlib import Path
 from types import FunctionType
-from typing import Annotated, Any, Concatenate, Coroutine
+from typing import TYPE_CHECKING, Annotated, Any, Concatenate, Coroutine
 
 import typer
 from iterm2 import alert, profile
 
-from iterm2_api_wrapper._logging import PrettyLog
-from iterm2_api_wrapper.alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
-from iterm2_api_wrapper.client import create_iterm_client
-from iterm2_api_wrapper.connection import run_until_complete
-from iterm2_api_wrapper.state import iTermState
+from ._logging import PrettyLog
+from .alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
+from .client import create_iterm_client
+from .api.it2connection import run_until_complete
+
+
+if TYPE_CHECKING:
+    from .state import iTermState
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
@@ -159,11 +161,13 @@ async def send_command(
     """Send a command to the iTerm2 session."""
 
     default_command = "echo 'Hello from iTerm2 API Wrapper!'"
+    resolved_path = (
+        None
+        if path is None or str(path).strip().lower() in {"", "none", "null"}
+        else str(Path(path).expanduser().resolve())
+    )
     output = await state.run_command(
-        command or default_command,
-        path=str(Path(path).expanduser().resolve()) if bool(literal_eval(str(path))) else None, # type: ignore
-        broadcast=False,
-        timeout=float(timeout),
+        command or default_command, path=resolved_path, broadcast=False, timeout=float(timeout)
     )
     return output
 
@@ -260,7 +264,7 @@ def main(
 
     with create_iterm_client(timeout=None, debug=debug, new_tab=new_tab, dedicated_profile_name=profile_name) as client:
         state = client.get_state()
-        event_loop = state.loop_manager.require_loop()
+        event_loop = client.loop
         output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)
         log.info(output)
 

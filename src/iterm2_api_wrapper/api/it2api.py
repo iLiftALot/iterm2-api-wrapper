@@ -8,27 +8,25 @@ import subprocess
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Literal, Unpack, cast, overload
 
-from iterm2.lifecycle import NewSessionMonitor
-
-from iterm2_api_wrapper._logging import PrettyLog
-from iterm2_api_wrapper.api.it2types import (
-    App,
-    PartialProfile,
-    Profile,
-    PromptMonitor,
-    Session,
-    Tab,
-    Window,
-    async_get_app,
-)
-from iterm2_api_wrapper.connection import Connection
-from iterm2_api_wrapper.errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
-from iterm2_api_wrapper.mac import activate_iterm_app
-from iterm2_api_wrapper.typings import iTermSetupKwargs
+from .._logging import PrettyLog
+from ..errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
+from ..mac import activate_iterm_app
+from .it2app import App, async_get_app
+from .it2connection import Connection
+from .it2lifecycle import NewSessionMonitor
+from .it2profile import Profile
+from .it2prompt import PromptMonitor
+from .it2runtime import bootstrap_iterm2_runtime, validate_iterm2_runtime
+from .it2window import Window
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.state import iTermState
+    from ..state import iTermState
+    from ..typings import iTermSetupKwargs
+    from .it2lifecycle import NewSessionMonitor
+    from .it2profile import PartialProfile
+    from .it2session import Session
+    from .it2tab import Tab
 
 
 log = PrettyLog.get_logger(__name__)
@@ -46,7 +44,8 @@ class iTermAPI:
     def __init__(
         self,
         profile_name: str | None = None,
-        service_name: str = "iterm-api",
+        service_name: str | None = None,
+        extra_id: str | None = None,
         *,
         connection_instance: Connection | None = None,
         auto_initialize: bool = True,
@@ -59,7 +58,8 @@ class iTermAPI:
         self._profile_cache: dict[str, Profile | PartialProfile] = {}
 
         self.profile_name = profile_name or os.getenv("ITERM_DEDICATED_PROFILE", None)
-        self.service_name = service_name
+        self.service_name = service_name or "iterm-api"
+        self.extra_id = extra_id
         self.new_tab = new_tab
         self.debug = debug or os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true"}
         self.activate = activate
@@ -100,7 +100,7 @@ class iTermAPI:
     def connection(self) -> Connection:
         if not self._connection:
             if not self.__connection:
-                raise RuntimeError("iTermAPI._app not set.")
+                raise RuntimeError("iTermAPI._connection not set.")
             self._connection = self.__connection
         return self._connection
 
@@ -108,6 +108,8 @@ class iTermAPI:
     async def async_create(
         cls,
         profile_name: str | None = None,
+        service_name: str | None = None,
+        extra_id: str | None = None,
         *,
         connection_instance: Connection | None = None,
         new_tab: bool = False,
@@ -116,6 +118,8 @@ class iTermAPI:
     ) -> iTermAPI:
         api = cls(
             profile_name=profile_name,
+            service_name=service_name,
+            extra_id=extra_id,
             connection_instance=connection_instance,
             auto_initialize=False,
             new_tab=new_tab,
@@ -128,6 +132,7 @@ class iTermAPI:
 
     async def _initialize(self) -> None:
         self._configure_logging()
+        bootstrap_iterm2_runtime()
 
         if self.activate:
             activate_iterm_app()
@@ -136,6 +141,8 @@ class iTermAPI:
             raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
 
         self._connection = await self.get_connection()
+        validate_iterm2_runtime(self._connection)
+
         self._app = await self.get_app()
         self.profile = await self.get_profile()
         self.profile_name = self.profile_name or self.profile.name
@@ -153,27 +160,38 @@ class iTermAPI:
         if tagged_context is not None:
             selected_window, selected_tab, selected_session = tagged_context
         else:
-            selected_window = await self.get_window()
+            if self.new_tab:
+                selected_window = (
+                    self.app.current_window
+                    or self.app.windows[0]
+                    or await self.create_window(profile_name=self.profile.name)
+                )
+                if selected_window is None:
+                    raise WindowNotFoundError(f"{self.profile.name} ({self._profile_guid(self.profile)})")
+            else:
+                selected_window = await self.get_window()
             selected_tab, selected_session = await self._get_tagged_tab_with_session(
                 selected_window, self.profile, new_tab=self.new_tab
             )
 
         self.window, self.tab, self.session = selected_window, selected_tab, selected_session
 
-    @classmethod
-    async def get_connection(cls) -> Connection:
-        if cls.__connection is None:
-            cls.__connection = await Connection.async_create()
-        return cls.__connection
+    async def get_connection(self) -> Connection:
+        if self._connection is None:
+            if type(self).__connection is None:
+                type(self).__connection = await Connection.async_create()
+            self._connection = type(self).__connection
+        return cast(Connection, self._connection)
 
-    @classmethod
-    async def get_app(cls) -> App:
-        if cls.__app is None:
-            conn = await cls.get_connection()
-            cls.__app = await async_get_app(conn, create_if_needed=True)
-        return cls.__app
+    async def get_app(self) -> App:
+        if self._app is None:
+            if type(self).__app is None:
+                conn = await self.get_connection()
+                type(self).__app = await async_get_app(conn, create_if_needed=True)
+            self._app = type(self).__app
+        return cast(App, self._app)
 
-    async def get_profile(self, target_profile_name: str | None = None) -> Profile | PartialProfile:
+    async def get_profile(self, *, target_profile_name: str | None = None) -> Profile | PartialProfile:
         target_profile_name = target_profile_name or self.profile_name or self._profile_name(self.profile)
         target_is_current = (self.profile is not None) and (
             target_profile_name is None or target_profile_name == self.profile.name
@@ -213,7 +231,7 @@ class iTermAPI:
         self, *, window_id: str | None = None, profile_name: str | None = None, tab_id: str | None = None
     ) -> Window:
         app = await self.get_app()
-        profile = await self.get_profile(profile_name)
+        profile = await self.get_profile(target_profile_name=profile_name)
         window: Window | None = None
 
         async def from_window_id(id: str) -> Window | None:
@@ -298,7 +316,7 @@ class iTermAPI:
         session_id: str | None = None,
     ) -> Tab:
         app = await self.get_app()
-        profile = await self.get_profile(profile_name)
+        profile = await self.get_profile(target_profile_name=profile_name)
         # TODO: update this if get_window gets updated
         window = await self.get_window(**{"window_id": window_id, "profile_name": profile_name, "tab_id": tab_id})
         tab: Tab | None = None
@@ -345,10 +363,16 @@ class iTermAPI:
             return _tab
 
         async def from_none() -> Tab | None:
-            if self.tab and (self.profile_name or self.profile):
+            if self.profile_name or self.profile:
                 _tab = await from_profile()
             else:
-                _tab = window.current_tab or window.tabs[0] or await self.create_tab(window, profile)
+                candidate_tab = window.current_tab or (window.tabs[0] if window.tabs else None)
+                if candidate_tab is not None and candidate_tab.current_session is not None:
+                    candidate_profile = await candidate_tab.current_session.async_get_profile()
+                    if self._profiles_match(candidate_profile, profile):
+                        return candidate_tab
+
+                _tab = candidate_tab
 
             return _tab
 
@@ -385,7 +409,7 @@ class iTermAPI:
         window_id: str | None = None,
     ) -> Session:
         app = await self.get_app()
-        profile = await self.get_profile(profile_name)
+        profile = await self.get_profile(target_profile_name=profile_name)
         tab = await self.get_tab(tab_id=tab_id)
         window = await self.get_window(window_id=window_id)
         session: Session | None = None
@@ -455,6 +479,7 @@ class iTermAPI:
 
         if session.buried:
             await session.async_set_buried(False)
+            await session.async_activate(select_tab=False, order_window_front=False)
 
         return session
 
@@ -563,7 +588,6 @@ class iTermAPI:
 
         async with NewSessionMonitor(connection) as monitor:
             created_tab = await window.async_create_tab(profile=profile.name)
-
             if created_tab is None:
                 raise RuntimeError(f"Unable to create a new tab with profile '{profile.name}'.")
 
@@ -585,9 +609,6 @@ class iTermAPI:
     @staticmethod
     def _check_api_enabled() -> bool:
         """Check if the Python API is enabled in iTerm2 preferences."""
-        if os.getenv("IT2_APP_PATH") or os.getenv("IT2_SUITE"):
-            return True
-
         try:
             result = subprocess.run(
                 ["defaults", "read", "com.googlecode.iterm2", "EnableAPIServer"], capture_output=True, text=True
@@ -609,24 +630,18 @@ class iTermAPI:
         except Exception:
             return False
 
-    @staticmethod
-    def _build_tag_regex(
-        service_name: str, profile: Profile | PartialProfile, extra_id: str | None = None
-    ) -> re.Pattern[str]:
-        tag_regex = re.compile(
-            rf"{re.escape(service_name)}:{re.escape(profile.name)}{f':{re.escape(extra_id)}' if extra_id else ''}"
-        )
+    def _build_tag_regex(self, profile: Profile | PartialProfile) -> re.Pattern[str]:
+        tag_regex = re.compile(re.escape(self._build_tag_name(profile)))
         return tag_regex
 
-    @staticmethod
-    def _build_tag_name(service_name: str, profile: Profile | PartialProfile, extra_id: str | None = None) -> str:
-        tag = f"{service_name}:{profile.name}{f':{extra_id}' if extra_id else ''}"
+    def _build_tag_name(self, profile: Profile | PartialProfile) -> str:
+        tag = f"{self.service_name}:{profile.name}{f':{self.extra_id}' if self.extra_id else ''}"
         return tag
 
     async def _find_tagged_context(
         self, profile: Profile | PartialProfile, window: Window | None = None
     ) -> tuple[Window, Tab, Session] | None:
-        tag_regex = self._build_tag_regex(self.service_name, profile)
+        tag_regex = self._build_tag_regex(profile)
 
         log.add_context(status=f"Searching for tagged context for {profile.name}")
         async for window_obj, tab_obj, session_obj in self._iter_sessions(window):
@@ -657,8 +672,8 @@ class iTermAPI:
         self, window: Window, profile: Profile | PartialProfile, new_tab: bool = False
     ) -> tuple[Tab, Session]:
         """Select or create a tagged tab/session for this API context."""
-        tag_regex = self._build_tag_regex(self.service_name, profile)
-        new_tag = self._build_tag_name(self.service_name, profile)
+        tag_regex = self._build_tag_regex(profile)
+        new_tag = self._build_tag_name(profile)
 
         async def default_tab_with_session(override_new_tab: bool = False) -> tuple[Tab, Session]:
             selected_tab: Tab | None = None
@@ -784,7 +799,10 @@ class iTermAPI:
         if profile is None:
             return None
 
-        return profile.name if isinstance(profile, (PartialProfile, Profile)) else profile.get("name")
+        if isinstance(profile, dict):
+            return profile.get("name")
+
+        return getattr(profile, "name", None)
 
     @classmethod
     def _profiles_match(
@@ -797,8 +815,6 @@ class iTermAPI:
     @property
     def version(self) -> str:
         connection = self.connection
-        if connection is None:
-            return "0.0"
         return ".".join(str(v) for v in connection.iterm2_protocol_version)
 
     def json(self) -> str:
@@ -835,11 +851,7 @@ class iTermAPI:
 
 
 async def create_iterm_state(
-    connection_instance: Connection | None = None,
-    *,
-    profile_name: str | None = None,
-    activate: bool = True,
-    **kwargs: Unpack[iTermSetupKwargs],
+    connection_instance: Connection | None = None, *, activate: bool = True, **kwargs: Unpack[iTermSetupKwargs]
 ) -> iTermState:
     """Create and return a fully populated :class:`iTermState` using :class:`iTermAPI`.
 
@@ -849,9 +861,11 @@ async def create_iterm_state(
     """
     api = await iTermAPI.async_create(
         connection_instance=connection_instance,
-        profile_name=kwargs.get("dedicated_profile_name", profile_name),
+        profile_name=kwargs.get("dedicated_profile_name"),
+        service_name=kwargs.get("service_name"),
+        extra_id=kwargs.get("extra_id"),
         new_tab=kwargs.get("new_tab", False),
-        debug=kwargs.get("debug", None),
+        debug=kwargs.get("debug"),
         activate=activate,
     )
 
@@ -864,6 +878,7 @@ async def create_iterm_state(
         tab=await api.get_tab(),
         session=await api.get_session(),
         profile=await api.get_profile(),
+        is_hotkey_window=bool(await (await api.get_window()).async_get_variable("isHotkeyWindow")),
     )
 
     return state

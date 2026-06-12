@@ -1,7 +1,19 @@
-from .it2types import (  # isort: skip
-    App, PartialProfile, Profile, Prompt, PromptMonitor, Session, Tab, Window,
-    async_get_app, async_get_last_prompt, async_get_prompt_by_id, check_supports_prompt_monitor_modes
+from .it2app import App, async_get_app
+from .it2connection import Connection, run_forever, run_until_complete
+from .it2lifecycle import NewSessionMonitor
+from .it2profile import PartialProfile, Profile, ProfileProperties
+from .it2prompt import (
+    Prompt,
+    PromptMonitor,
+    async_get_last_prompt,
+    async_get_prompt_by_id,
+    check_supports_prompt_monitor_modes,
 )
+from .it2session import Session
+from .it2tab import Tab
+from .it2window import Window
+
+
 from .it2variable import (  # isort: skip
     UserVarEnum, UserVarKey, UserVariable, UserScope,
     SessionVarEnum, SessionVarKey, SessionVariable, SessionScope,
@@ -10,18 +22,22 @@ from .it2variable import (  # isort: skip
     WindowVarEnum, WindowVarKey, WindowVariable, WindowScope,
     Variable, VariableScope
 )
-from .it2api import create_iterm_state, iTermAPI  # isort: skip
+
+from .it2api import create_iterm_state, iTermAPI
 
 
-__all__ = [ # noqa: RUF022
+__all__ = [
     "App", "AppScope", "AppVarEnum", "AppVarKey", "AppVariable",
-    "PartialProfile", "Profile", "Prompt", "PromptMonitor",
+    "Connection", "NewSessionMonitor",
+    "PartialProfile", "Profile", "ProfileProperties", "Prompt", "PromptMonitor",
     "Session", "SessionScope", "SessionVarEnum", "SessionVarKey", "SessionVariable",
     "Tab", "TabScope", "TabVarEnum", "TabVarKey", "TabVariable",
     "UserScope", "UserVarEnum", "UserVarKey", "UserVariable",
-    "Window", "WindowScope", "WindowVarEnum", "WindowVarKey", "WindowVariable",
     "Variable", "VariableScope",
+    "Window", "WindowScope", "WindowVarEnum", "WindowVarKey", "WindowVariable",
     "async_get_app", "async_get_last_prompt", "async_get_prompt_by_id",
-    "check_supports_prompt_monitor_modes", "create_iterm_state",
-    "iTermAPI"
+    "check_supports_prompt_monitor_modes",
+    "create_iterm_state",
+    "iTermAPI", "it2app", "it2prompt",
+    "run_forever", "run_until_complete"
 ]

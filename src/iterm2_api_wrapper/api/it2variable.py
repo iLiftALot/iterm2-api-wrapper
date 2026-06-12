@@ -103,10 +103,6 @@ class _WindowReference(StrEnum):
     isHotkeyWindow = "isHotkeyWindow"
 
 
-class _UserReference(StrEnum):
-    all = "*"
-
-
 class AppVarEnum(StrEnum):
     """Defined in the global context"""
 
@@ -123,7 +119,7 @@ class AppVarEnum(StrEnum):
 
 
 class UserVarEnum(StrEnum):
-    all = _UserReference.all
+    all = "*"
 
 
 # ---------------------------------------------------------------------------

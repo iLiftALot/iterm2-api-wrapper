@@ -6,8 +6,12 @@ from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, TypedDict
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.api.it2types import App, Profile, Session, Tab, Window
-    from iterm2_api_wrapper.connection import Connection
+    from .api.it2app import App
+    from .api.it2profile import Profile
+    from .api.it2session import Session
+    from .api.it2tab import Tab
+    from .api.it2window import Window
+    from .api.it2connection import Connection
 
 
 class iTermSetupKwargs(TypedDict, total=False):
@@ -16,6 +20,8 @@ class iTermSetupKwargs(TypedDict, total=False):
     dedicated_profile_name: str | None
     """If provided, the name of the profile to use for the session.
         If not provided, the current profile will be used."""
+    service_name: str | None
+    extra_id: str | None
     debug: bool
     """Whether to enable debug logging."""
 

@@ -6,19 +6,74 @@ import os
 import sys
 import traceback
 from collections.abc import Callable, Coroutine
-from typing import Any, Concatenate, cast, overload
+from typing import Any, ClassVar, Concatenate, overload
 
-from iterm2 import api_pb2, connection
-from websockets import ClientConnection, connect, exceptions, typing, unix_connect
+from iterm2 import _version, api_pb2, auth  # , connection
 
-from iterm2_api_wrapper._logging import PrettyLog
+# from websockets import ClientConnection, connect, exceptions, typing,
+from websockets.asyncio.client import ClientConnection, unix_connect
+from websockets.asyncio.client import connect as WebSocketConnect
+from websockets.exceptions import InvalidMessage, InvalidStatus
+from websockets.typing import Subprotocol
+
+from .._logging import PrettyLog
 
 
 log = PrettyLog.get_logger(__name__)
 
 
-class Connection(connection.Connection):
-    """Subclass of iTerm2's `Connection` which implements updated websocket connection logic."""
+DisconnectCallback = Callable[[], None]
+MessageMatcher = Callable[[api_pb2.ServerOriginatedMessage], bool]
+NotificationHelper = Callable[["Connection", api_pb2.ServerOriginatedMessage], Coroutine[Any, Any, bool | None]]
+gDisconnectCallbacks: list[DisconnectCallback] = []
+
+
+def _getenv(key: str) -> str | None:
+    return os.environ.get(key)
+
+
+def _cookie_and_key() -> tuple[str | None, str | None]:
+    cookie = _getenv("ITERM2_COOKIE")
+    key = _getenv("ITERM2_KEY")
+    return cookie, key
+
+
+def _headers() -> dict[str, str]:
+    cookie, key = _cookie_and_key()
+    headers = {
+        "origin": "ws://localhost/",
+        "x-iterm2-library-version": f"python {_version.__version__}",
+        "x-iterm2-disable-auth-ui": "true",
+        "x-iterm2-advisory-name": auth.get_script_name(),
+    }
+
+    if cookie is not None:
+        headers["x-iterm2-cookie"] = cookie
+
+    if key is not None:
+        headers["x-iterm2-key"] = key
+
+    return headers
+
+
+def _uri() -> str:
+    return "ws://localhost:1912"
+
+
+def _subprotocols() -> list[Subprotocol]:
+    return [Subprotocol("api.iterm2.com")]
+
+
+class Connection:
+    """Modern iTerm2 API websocket connection. Remaster of iTerm2's :class:`~iterm2.Connection`.
+
+    This owns the connection/dispatch behavior instead of inheriting from
+    upstream ``iterm2.connection.Connection``.
+
+    Implements updated websocket connection logic and improved typing.
+    """
+
+    helpers: ClassVar[list[NotificationHelper]] = []
 
     def __init__(self) -> None:
         """Initialize the Connection instance.
@@ -33,10 +88,18 @@ class Connection(connection.Connection):
         # one that returns true gets its future's result set with that message.
         # If none returns True it is dispatched through the helpers. Typically
         # that would be a notification.
-        self.__receivers: list[tuple[Callable[[api_pb2.ServerOriginatedMessage], bool], asyncio.Future]] = []
+        self.__receivers: list[tuple[MessageMatcher, asyncio.Future[api_pb2.ServerOriginatedMessage]]] = []
         self.__dispatch_forever_future: asyncio.Future | None = None
         self.__tasks: list[asyncio.Task] = []
         self.loop: asyncio.AbstractEventLoop | None = None
+
+    @classmethod
+    def register_helper(cls, helper: NotificationHelper) -> None:
+        """Register a notification helper for unclaimed server messages."""
+        if helper is None:
+            raise AssertionError("helper must not be None")
+
+        cls.helpers.append(helper)
 
     @staticmethod
     async def async_create() -> Connection:
@@ -55,11 +118,10 @@ class Connection(connection.Connection):
         :returns: A new connection to iTerm2.
         :rtype: Connection
 
-        .. seealso:: Running in a REPL at https://iterm2.com/python-api/usage.html#running-in-a-repl
+        .. seealso:: [Running in a REPL](https://iterm2.com/python-api/usage.html#running-in-a-repl)
         """
         conn = Connection()
-        # Set ITERM2_COOKIE and ITERM2_KEY if needed by making an Applescript
-        # request.
+        # Set ITERM2_COOKIE and ITERM2_KEY if needed by making an Applescript request.
         have_fresh_cookie: bool = conn.authenticate(False)
 
         while True:
@@ -69,7 +131,7 @@ class Connection(connection.Connection):
                 conn.websocket = await conn._get_connect_coro()
                 conn.__dispatch_forever_future = asyncio.ensure_future(conn._async_dispatch_forever(conn, loop))
                 return conn
-            except exceptions.InvalidStatus as status_code_exception:
+            except InvalidStatus as status_code_exception:
                 if status_code_exception.response.status_code == 401:
                     if have_fresh_cookie:
                         log.error("Authentication failed with a cookie. Cannot connect to iTerm2.")
@@ -120,7 +182,12 @@ class Connection(connection.Connection):
             return (0, 0)
         return (int(parts[0]), int(parts[1]))
 
-    def _get_connect_coro(self) -> connect:
+    def _unix_domain_socket_path(self) -> str:
+        suite = os.environ.get("IT2_SUITE", "iTerm2")
+        application_support = os.path.expanduser(f"~/Library/Application Support/{suite}")
+        return os.path.join(application_support, "private", "socket")
+
+    def _get_connect_coro(self) -> WebSocketConnect:
         """Get the appropriate connect coroutine based on whether the Unix domain socket path exists.
 
         ---
@@ -134,13 +201,12 @@ class Connection(connection.Connection):
         """
 
         path: str = self._unix_domain_socket_path()
-        exists: bool = os.path.exists(path)
 
-        if exists:
+        if os.path.exists(path):
             return self._get_unix_connect_coro()
         return self._get_tcp_connect_coro()
 
-    def _get_unix_connect_coro(self) -> connect:
+    def _get_unix_connect_coro(self) -> WebSocketConnect:
         """Experimental: connect with unix domain socket.
 
         ---
@@ -160,12 +226,12 @@ class Connection(connection.Connection):
             uri="ws://localhost",
             ping_interval=None,
             close_timeout=0,
-            additional_headers=connection._headers(),
-            subprotocols=connection._subprotocols(),
+            additional_headers=_headers(),
+            subprotocols=_subprotocols(),
             max_size=None,
         )
 
-    def _get_tcp_connect_coro(self) -> connect:
+    def _get_tcp_connect_coro(self) -> WebSocketConnect:
         """Connect with TCP socket.
 
         ---
@@ -178,12 +244,12 @@ class Connection(connection.Connection):
         :returns: A coroutine that can be awaited to establish a websocket connection using a TCP socket.
         :rtype: connect
         """
-        return connect(
-            uri=connection._uri(),
+        return WebSocketConnect(
+            uri=_uri(),
             ping_interval=None,
             close_timeout=0,
-            additional_headers=connection._headers(),
-            subprotocols=[typing.Subprotocol(subproto) for subproto in connection._subprotocols()],
+            additional_headers=_headers(),
+            subprotocols=_subprotocols(),
             max_size=None,
         )
 
@@ -192,15 +258,19 @@ class Connection(connection.Connection):
         dispatch_future = self.__dispatch_forever_future
         if dispatch_future is not None and not dispatch_future.done():
             dispatch_future.cancel()
+
             with contextlib.suppress(asyncio.CancelledError):
                 await dispatch_future
+
         self.__dispatch_forever_future = None
 
         pending_tasks = [task for task in self.__tasks if not task.done()]
         for task in pending_tasks:
             task.cancel()
+
         if pending_tasks:
             await asyncio.gather(*pending_tasks, return_exceptions=True)
+
         self.__tasks = []
 
         websocket = self.websocket
@@ -242,9 +312,8 @@ class Connection(connection.Connection):
         """
         done = False
         while not done:
-            # Set ITERM2_COOKIE and ITERM2_KEY if needed by making an
-            # Applescript request. This cookie might be stale, but we'll try it
-            # optimstically.
+            # Set ITERM2_COOKIE and ITERM2_KEY if needed by making an Applescript request.
+            # This cookie might be stale, but we'll try it optimstically.
             have_fresh_cookie: bool = self.authenticate(False)
 
             try:
@@ -252,13 +321,14 @@ class Connection(connection.Connection):
                     done = True
                     self.websocket = websocket
                     try:
-                        result = await coro(self)
-                        return result
+                        return await coro(self)
                     except Exception:
                         traceback.print_exc()
                         sys.exit(1)
-            except exceptions.InvalidStatus as exception:
-                if exception.response.status_code == 401:
+            except InvalidStatus as exception:
+                status_code = exception.response.status_code
+
+                if status_code == 401:
                     # Auth failure.
                     if retry:
                         # Sleep and try to authenticate until successful.
@@ -277,7 +347,7 @@ class Connection(connection.Connection):
                         if not have_fresh_cookie:
                             # Failed to get a cookie. Give up.
                             raise
-                elif exception.response.status_code == 406:
+                elif status_code == 406:
                     log.error(
                         "This version of the iterm2 module is too old "
                         "for the current version of iTerm2. Please upgrade."
@@ -286,7 +356,7 @@ class Connection(connection.Connection):
                     raise
                 else:
                     raise
-            except exceptions.InvalidMessage:
+            except InvalidMessage:
                 # This is a temporary workaround for this issue:
                 #
                 # https://gitlab.com/gnachman/iterm2/issues/7681#note_163548399
@@ -320,16 +390,172 @@ class Connection(connection.Connection):
                         log.error(
                             f"If you have downgraded from iTerm2 3.3.12+ to an older version, you must manually delete the file at {path}.\n"
                         )
+
                     done = True
                     raise ConnectionRefusedError("Problem connecting to iTerm2.") from exception
             finally:
                 self._remove_auth()
+
         raise RuntimeError("Unreachable code reached in async_connect.")
 
     def run[T](
         self, forever: bool, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool, debug: bool = False
     ) -> T:
-        return cast(T, super().run(forever, coro, retry, debug))
+        if self.loop is not None and not self.loop.is_closed():
+            self.loop.close()
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def async_main(connection: Connection) -> T:
+            self.__tasks = []
+            dispatch_forever_task = asyncio.ensure_future(self._async_dispatch_forever(connection, loop))
+
+            try:
+                result = await coro(connection)
+
+                if forever:
+                    await dispatch_forever_task
+
+                return result
+
+            finally:
+                dispatch_forever_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await dispatch_forever_task
+
+                for task in self.__tasks:
+                    task.cancel()
+
+                if self.__tasks:
+                    await asyncio.gather(*self.__tasks, return_exceptions=True)
+
+        loop.set_debug(debug)
+        self.loop = loop
+
+        try:
+            result = loop.run_until_complete(self.async_connect(async_main, retry))
+        finally:
+            global gDisconnectCallbacks
+            callbacks = list(gDisconnectCallbacks)
+            gDisconnectCallbacks.clear()
+            for callback in callbacks:
+                callback()
+
+        return result
+
+    async def async_send_message(self, message: api_pb2.ClientOriginatedMessage) -> None:
+        if self.websocket is None:
+            raise ConnectionError("Cannot send message before websocket is connected.")
+
+        await self.websocket.send(message.SerializeToString())
+
+    def _get_receiver_future(
+        self, message: api_pb2.ServerOriginatedMessage
+    ) -> asyncio.Future[api_pb2.ServerOriginatedMessage] | None:
+        """Remove and return the receiver future matching ``message``."""
+        index = self._receiver_index(message)
+        if index is None:
+            return None
+
+        _match_func, future = self.__receivers[index]
+        del self.__receivers[index]
+        return future
+
+    def _receiver_index(self, message: api_pb2.ServerOriginatedMessage) -> int | None:
+        """Find the receiver that should handle ``message``."""
+        for index, receiver in enumerate(self.__receivers):
+            match_func = receiver[0]
+            if match_func and match_func(message):
+                return index
+
+        return None
+
+    async def async_dispatch_until_id(self, reqid: str) -> api_pb2.ServerOriginatedMessage:
+        """Dispatch incoming messages until the response with ``reqid`` arrives."""
+        future: asyncio.Future[api_pb2.ServerOriginatedMessage] = asyncio.Future()
+
+        def match_func(incoming_message: api_pb2.ServerOriginatedMessage) -> bool:
+            return incoming_message.id == reqid
+
+        self.__receivers.append((match_func, future))
+        return await future
+
+    async def _async_dispatch_to_helper(self, message: api_pb2.ServerOriginatedMessage) -> None:
+        """Dispatch an unclaimed message to registered notification helpers."""
+        for helper in type(self).helpers:
+            if helper is None:
+                raise AssertionError("helper must not be None")
+
+            if await helper(self, message):
+                break
+
+    def _remove_auth(self) -> None:
+        for var in ("ITERM2_COOKIE", "ITERM2_KEY"):
+            os.environ.pop(var, None)
+
+    def authenticate(self, force: bool) -> bool:
+        """Request an iTerm2 auth cookie through AppleScript."""
+        if force:
+            self._remove_auth()
+
+        try:
+            return auth.authenticate()
+        except auth.AuthenticationException:
+            return False
+
+    def _collect_garbage(self) -> None:
+        """Keep pending task references only while they are still active."""
+        self.__tasks = [task for task in self.__tasks if not task.done()]
+
+    async def _async_dispatch_forever(self, connection: Connection, loop: asyncio.AbstractEventLoop) -> None:
+        """Read websocket messages and dispatch them to receivers or helpers."""
+        self.__tasks = []
+
+        if self.websocket is None:
+            raise ConnectionError("Cannot dispatch messages before websocket is connected.")
+
+        try:
+            while True:
+                data = await self.websocket.recv(decode=False)
+                self._collect_garbage()
+
+                message = api_pb2.ServerOriginatedMessage()
+                message.ParseFromString(data)
+
+                future = self._get_receiver_future(message)
+                # Note that however we decide to handle this message,
+                # it must be done *after* we await on the websocket.
+                # Otherwise we might never get the chance.
+                if future is None:
+                    # May be a notification.
+                    self.__tasks.append(asyncio.ensure_future(self._async_dispatch_to_helper(message)))
+                else:
+                    self.set_message_in_future(loop, message, future)
+
+        except asyncio.CancelledError:
+            # Presumably a run_until_complete script
+            pass
+
+        except Exception:
+            # I'm not quite sure why this is necessary, but if we don't
+            # catch and re-raise the exception it gets swallowed.
+            traceback.print_exc()
+            raise
+
+    def set_message_in_future(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        message: api_pb2.ServerOriginatedMessage,
+        future: asyncio.Future[api_pb2.ServerOriginatedMessage],
+    ) -> None:
+        """Schedule an RPC response message into its waiting future."""
+
+        def set_result() -> None:
+            if not future.done():
+                future.set_result(message)
+
+        loop.call_soon(set_result)
 
 
 @overload
@@ -447,3 +673,8 @@ def run_forever(
     except ConnectionRefusedError as exc:
         log.error("Failed to connect to iTerm2:", exc, sep="\n")
         raise ConnectionRefusedError from exc
+
+
+def add_disconnect_callback(callback: DisconnectCallback) -> None:
+    """Run ``callback`` on the next disconnection."""
+    gDisconnectCallbacks.append(callback)

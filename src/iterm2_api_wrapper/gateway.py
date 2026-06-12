@@ -8,11 +8,10 @@ from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol
 
-from iterm2_api_wrapper.connection import Connection
-
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.state import iTermState
+    from .api.it2connection import Connection
+    from .state import iTermState
 
 
 class _Connection(Protocol):
@@ -41,7 +40,7 @@ class RefreshableState[StateT](Protocol):
     def refresh_from(self, new_state: StateT) -> None: ...
 
 
-_ENV_CONNECT_TIMEOUT = "ITERM2_CONNECT_TIMEOUT"
+_ENV_CONNECT_TIMEOUT = "ITERM_CONNECT_TIMEOUT"
 _DEFAULT_CONNECT_TIMEOUT_S = 10.0
 
 # Transient errors while iTerm2 is launching and its API socket isn't ready yet.
@@ -54,7 +53,7 @@ def _get_connect_timeout_s() -> float:
     This is intentionally *separate* from `iTermClient(timeout=...)` so we don't
     hang forever when iTerm2 isn't installed or its Python API is disabled.
 
-    Override via the `ITERM2_CONNECT_TIMEOUT` environment variable.
+    Override via the `ITERM_CONNECT_TIMEOUT` environment variable.
     """
     raw = os.getenv(_ENV_CONNECT_TIMEOUT)
 
@@ -134,13 +133,16 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
     """
 
     async def create_state(self, **kwargs: Any) -> iTermState:
-        from iterm2_api_wrapper.api.it2api import create_iterm_state
-        from iterm2_api_wrapper.mac import activate_iterm_app
+        from .api.it2api import create_iterm_state
+        from .api.it2connection import Connection
+        from .api.it2runtime import bootstrap_iterm2_runtime
+        from .mac.platform_macos import activate_iterm_app
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
 
         with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
+            bootstrap_iterm2_runtime()
             activate_iterm_app(app_path=it2_app_path)
 
             connect_timeout_s = _get_connect_timeout_s()
@@ -168,12 +170,15 @@ class SetupCoroGateway[StateT: RefreshableState[Any]](ITermGateway[StateT]):
         self._setup_coro: Callable[..., Awaitable[StateT]] = setup_coro
 
     async def create_state(self, **kwargs: Any) -> StateT:
-        from iterm2_api_wrapper.mac import activate_iterm_app
+        from .api.it2connection import Connection
+        from .mac.platform_macos import activate_iterm_app
+        from .api.it2runtime import bootstrap_iterm2_runtime
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
 
         with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
+            bootstrap_iterm2_runtime()
             activate_iterm_app(app_path=it2_app_path)
 
             connect_timeout_s = _get_connect_timeout_s()

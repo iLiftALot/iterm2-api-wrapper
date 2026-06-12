@@ -8,7 +8,7 @@ from typing import Any, cast
 import pytest
 
 from iterm2_api_wrapper import gateway as gateway_module
-from iterm2_api_wrapper.connection import Connection
+from iterm2_api_wrapper.api.it2connection import Connection
 from iterm2_api_wrapper.gateway import DefaultITermGateway, SetupCoroGateway, _get_connect_timeout_s
 
 
@@ -31,15 +31,15 @@ class FakeState:
 
 
 def test_get_connect_timeout_uses_default_for_missing_or_invalid_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ITERM2_CONNECT_TIMEOUT", raising=False)
+    monkeypatch.delenv("ITERM_CONNECT_TIMEOUT", raising=False)
     assert _get_connect_timeout_s() == 10.0
 
-    monkeypatch.setenv("ITERM2_CONNECT_TIMEOUT", "not-a-number")
+    monkeypatch.setenv("ITERM_CONNECT_TIMEOUT", "not-a-number")
     assert _get_connect_timeout_s() == 10.0
 
 
 def test_get_connect_timeout_clamps_negative_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ITERM2_CONNECT_TIMEOUT", "-4.5")
+    monkeypatch.setenv("ITERM_CONNECT_TIMEOUT", "-4.5")
 
     assert _get_connect_timeout_s() == 0.0
 
@@ -49,6 +49,7 @@ def test_async_create_connection_with_retry_retries_reset_errors() -> None:
 
     class ResetThenSucceeds:
         attempts = 0
+        loop: asyncio.AbstractEventLoop | None = None
 
         @classmethod
         async def async_create(cls) -> Connection:
@@ -78,7 +79,7 @@ def test_default_gateway_creates_state_with_lazy_runtime_dependencies(monkeypatc
         return FakeState(connection=connection, kwargs={**kwargs, "activate": activate})
 
     import iterm2_api_wrapper.api.it2api as api_module
-    import iterm2_api_wrapper.connection as connection_module
+    import iterm2_api_wrapper.api.it2connection as connection_module
     import iterm2_api_wrapper.mac.platform_macos as platform_macos
 
     monkeypatch.setattr(
