@@ -237,16 +237,16 @@ __marimo__/
 
 # TEMPORARY FILES FOR RELEASE PACKAGE ONLY - TO BE REMOVED LATER
 # docs/
-iterm2_api_wrapper-0.1.0.tar.gz
-iterm2_api_wrapper-0.1.0-py3-none-any.whl
-assets/iterm2-pyobjc-automation-cookbook.md
-assets/pyobj_cheatsheet_general.md
-# tests/__init__.py
-# tests/test_client_integration.py
-# tests/test_client.py
+iterm2_api_wrapper-*.tar.gz
+iterm2_api_wrapper-*.whl
+assets/*
 # README.md
 AGENTS.md
 CLAUDE.md
-tests/_dev.py
+.agents/
+**/_*.py
+**/\**.py
 src/iterm2_api_wrapper/triggers.py
 .super-agents/
+.codex/tools/
+.codex/bin/

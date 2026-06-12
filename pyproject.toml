@@ -22,8 +22,8 @@ dependencies = [
   "iterm2==2.20",
   "pyobjc==12.2",
   "python-dotenv==1.2.2",
-  "typer==0.26.7",
-  "rich==15.0.0"
+  "rich==15.0.0",
+  "typer==0.26.7"
 ]
 optional-dependencies = { "applescript" = ["py-applescript"] }
 
@@ -39,8 +39,8 @@ iterm2_api_wrapper = "iterm2_api_wrapper.cli:app"
 [dependency-groups]
 dev = [
   "alabaster==1.0.0",
-  "cookiecutter==2.7.1",
   "furo==2025.12.19",
+  "ipython>=9.14.1",
   "myst-parser==5.1.0",
   "pytest==9.0.3",
   "pytest-cov==7.1.0",
@@ -55,6 +55,10 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 addopts = "-v -l -s"
+filterwarnings = [
+  "ignore:websockets.legacy is deprecated:DeprecationWarning",
+  "ignore:In 3.13 classes created inside an enum will not become a member:DeprecationWarning",
+]
 log_cli = true
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 log_cli_format = "%(asctime)s [%(levelname)s] %(message)s"
