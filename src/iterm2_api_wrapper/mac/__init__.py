@@ -1,4 +1,4 @@
-from .platform_macos import activate_iterm_app
+from .platform_macos import maybe_reveal_hotkey_window
 
 
-__all__ = ["activate_iterm_app"]
+__all__ = ["maybe_reveal_hotkey_window"]

@@ -47,6 +47,12 @@ _DEFAULT_CONNECT_TIMEOUT_S = 10.0
 _TRANSIENT_CONNECT_ERRNOS = {errno.ENOENT, errno.ECONNREFUSED, errno.ECONNRESET}
 
 
+async def _ensure_iterm_app_ready(*, activate: bool) -> None:
+    from .pyobjc_adapter import async_ensure_iterm_app_running
+
+    await async_ensure_iterm_app_running(activate=activate)
+
+
 def _get_connect_timeout_s() -> float:
     """Connection timeout (seconds) for initial iTerm2 API handshake.
 
@@ -136,14 +142,14 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
         from .api.it2api import create_iterm_state
         from .api.it2connection import Connection
         from .api.it2runtime import bootstrap_iterm2_runtime
-        from .mac.platform_macos import activate_iterm_app
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
+        activate = bool(kwargs.pop("activate", True))
 
         with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
-            bootstrap_iterm2_runtime()
-            activate_iterm_app(app_path=it2_app_path)
+            await bootstrap_iterm2_runtime()
+            await _ensure_iterm_app_ready(activate=activate)
 
             connect_timeout_s = _get_connect_timeout_s()
             try:
@@ -172,14 +178,14 @@ class SetupCoroGateway[StateT: RefreshableState[Any]](ITermGateway[StateT]):
     async def create_state(self, **kwargs: Any) -> StateT:
         from .api.it2connection import Connection
         from .api.it2runtime import bootstrap_iterm2_runtime
-        from .mac.platform_macos import activate_iterm_app
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
+        activate = bool(kwargs.pop("activate", True))
 
         with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
-            bootstrap_iterm2_runtime()
-            activate_iterm_app(app_path=it2_app_path)
+            await bootstrap_iterm2_runtime()
+            await _ensure_iterm_app_ready(activate=activate)
 
             connect_timeout_s = _get_connect_timeout_s()
             try:

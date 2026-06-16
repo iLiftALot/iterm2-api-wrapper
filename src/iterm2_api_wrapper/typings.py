@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .api.it2window import Window
 
 
-class iTermSetupKwargs(TypedDict, total=False):
+class iTermStateSetupKwargs(TypedDict, total=False):
     new_tab: bool
     """Whether to open a new tab for the session."""
     dedicated_profile_name: str | None
@@ -24,6 +24,11 @@ class iTermSetupKwargs(TypedDict, total=False):
     extra_id: str | None
     debug: bool
     """Whether to enable debug logging."""
+
+
+class iTermSetupKwargs(iTermStateSetupKwargs, total=False):
+    activate: bool
+    """Whether to bring iTerm2 to the foreground during setup."""
 
 
 class iTermStateKwargs(TypedDict, total=True):

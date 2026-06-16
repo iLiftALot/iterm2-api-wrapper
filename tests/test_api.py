@@ -252,9 +252,16 @@ def test_sync_constructor_populates_from_api_owned_setup(monkeypatch: pytest.Mon
         get_profile_calls.append(profile_name)
         return profile
 
+    async def bootstrap_runtime() -> None:
+        return None
+
+    async def ensure_app_running(*, activate: bool) -> None:
+        activated.append(activate)
+
     monkeypatch.setattr(iTermAPI, "_iTermAPI__connection", None)
     monkeypatch.setattr(iTermAPI, "_iTermAPI__app", None)
-    monkeypatch.setattr(api_module, "activate_iterm_app", lambda: activated.append(True))
+    monkeypatch.setattr(api_module, "bootstrap_iterm2_runtime", bootstrap_runtime)
+    monkeypatch.setattr("iterm2_api_wrapper.pyobjc_adapter.async_ensure_iterm_app_running", ensure_app_running)
     monkeypatch.setattr(iTermAPI, "_check_api_enabled", staticmethod(lambda: True))
     monkeypatch.setattr(
         iTermAPI, "_configure_logging", lambda api: configured.append((api.profile_name, api.new_tab, api.debug))

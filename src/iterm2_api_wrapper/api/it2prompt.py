@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Literal, cast, overload
 
 from iterm2 import capabilities, prompt
@@ -29,15 +30,47 @@ type PromptMonitorEvent = PromptEvent | CommandStartEvent | CommandEndEvent
 type PromptMonitorEventWithId = PromptEventWithId | CommandStartEventWithId | CommandEndEventWithId
 
 
-class PromptMonitor(prompt.PromptMonitor):
-    def __init__(self, connection: Connection, session_id: str, modes: list[prompt.PromptMonitor.Mode] | None = None):
+class PromptMonitor[SnapshotT](prompt.PromptMonitor):
+    initial_snapshot: SnapshotT
+    current_snapshot: SnapshotT
+    snapshot_provider: Callable[[], Awaitable[SnapshotT]] | None
+
+    @overload
+    def __init__(
+        self: PromptMonitor[None],
+        connection: Connection,
+        session_id: str,
+        modes: list[prompt.PromptMonitor.Mode] | None = None,
+        *,
+        snapshot_provider: None = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self: PromptMonitor[SnapshotT],  # pyright: ignore[reportInvalidTypeVarUse]
+        connection: Connection,
+        session_id: str,
+        modes: list[prompt.PromptMonitor.Mode] | None = None,
+        *,
+        snapshot_provider: Callable[[], Awaitable[SnapshotT]] = ...,
+    ) -> None: ...
+
+    def __init__(
+        self,
+        connection: Connection,
+        session_id: str,
+        modes: list[prompt.PromptMonitor.Mode] | None = None,
+        *,
+        snapshot_provider: Callable[[], Awaitable[SnapshotT]] | None = None,
+    ):
         super().__init__(cast("IT2Connection", connection), session_id, modes)
+        self.snapshot_provider = snapshot_provider
+        self.initial_snapshot = cast(SnapshotT, None)
+        self.current_snapshot = cast(SnapshotT, None)
 
     @overload
     async def async_get(self, include_id: Literal[False] = False, *, mode: None = None) -> PromptMonitorEvent: ...
     @overload
     async def async_get(self, include_id: Literal[True], *, mode: None = None) -> PromptMonitorEventWithId: ...
-
     @overload
     async def async_get(
         self, include_id: Literal[False] = False, *, mode: Literal[prompt.PromptMonitor.Mode.PROMPT]
@@ -46,7 +79,6 @@ class PromptMonitor(prompt.PromptMonitor):
     async def async_get(
         self, include_id: Literal[True], *, mode: Literal[prompt.PromptMonitor.Mode.PROMPT]
     ) -> PromptEventWithId: ...
-
     @overload
     async def async_get(
         self, include_id: Literal[False] = False, *, mode: Literal[prompt.PromptMonitor.Mode.COMMAND_START]
@@ -55,7 +87,6 @@ class PromptMonitor(prompt.PromptMonitor):
     async def async_get(
         self, include_id: Literal[True], *, mode: Literal[prompt.PromptMonitor.Mode.COMMAND_START]
     ) -> CommandStartEventWithId: ...
-
     @overload
     async def async_get(
         self, include_id: Literal[False] = False, *, mode: Literal[prompt.PromptMonitor.Mode.COMMAND_END]
@@ -72,6 +103,19 @@ class PromptMonitor(prompt.PromptMonitor):
             result = cast(PromptMonitorEvent | PromptMonitorEventWithId, await super().async_get(include_id))
             if mode is None or result[0] == mode:
                 return result
+
+    async def __aenter__(self) -> PromptMonitor[SnapshotT]:
+        if self.snapshot_provider is not None:
+            self.initial_snapshot = self.current_snapshot = await self.snapshot_provider()
+            # self.current_snapshot = self.initial_snapshot
+        return cast(PromptMonitor[SnapshotT], await super().__aenter__())
+
+    async def refresh_snapshot(self) -> SnapshotT:
+        if self.snapshot_provider is None:
+            raise RuntimeError("PromptMonitor.snapshot_provider was not passed during initialization.")
+
+        self.current_snapshot = await self.snapshot_provider()
+        return self.current_snapshot
 
 
 async def async_get_last_prompt(connection: Connection, session_id: str) -> Prompt | None:

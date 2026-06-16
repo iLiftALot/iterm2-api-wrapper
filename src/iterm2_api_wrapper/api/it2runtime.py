@@ -14,14 +14,14 @@ from .it2prompt import check_supports_prompt_monitor_modes
 
 
 log = PrettyLog.get_logger(__name__)
-_BOOTSTRAPPED = False
+_BOOTSTRAPPED: bool = False
 
 
-def bootstrap_iterm2_runtime(*, enhance_imports: bool | None = None) -> None:
+async def bootstrap_iterm2_runtime(*, enhance_imports: bool | None = None) -> None:
     """Install runtime patches that must happen before iTerm2 API setup.
 
-    This should run before app activation, connection creation, and monitor
-    registration. It is intentionally idempotent.
+    This should run before app readiness checks, connection creation, and
+    monitor registration. It is intentionally idempotent.
     """
     global _BOOTSTRAPPED
 
@@ -62,7 +62,7 @@ def _enhance_iterm2_imports() -> None:
 
     package_root_path = Path(iterm2.__file__)
     existing_contents = package_root_path.read_text().rstrip()
-    updated_contents = existing_contents + f"\n\n\n__all__ = {json.dumps(sorted(iterm2_exported_names), indent=4)}\n\n"
+    updated_contents = existing_contents + f"\n\n\n__all__ = {json.dumps(sorted(iterm2_exported_names), indent=4)}\n"
     package_root_path.write_text(updated_contents)
 
 

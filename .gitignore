@@ -244,9 +244,9 @@ assets/*
 AGENTS.md
 CLAUDE.md
 .agents/
-**/_*.py
 **/\**.py
 src/iterm2_api_wrapper/triggers.py
 .super-agents/
 .codex/tools/
 .codex/bin/
+trace

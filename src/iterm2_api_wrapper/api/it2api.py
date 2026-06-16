@@ -6,11 +6,11 @@ import os
 import re
 import subprocess
 from collections.abc import AsyncGenerator
+from types import NoneType
 from typing import TYPE_CHECKING, Literal, Unpack, cast, overload
 
 from .._logging import PrettyLog
 from ..errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
-from ..mac import activate_iterm_app
 from .it2app import App, async_get_app
 from .it2connection import Connection
 from .it2lifecycle import NewSessionMonitor
@@ -22,7 +22,7 @@ from .it2window import Window
 
 if TYPE_CHECKING:
     from ..state import iTermState
-    from ..typings import iTermSetupKwargs
+    from ..typings import iTermStateSetupKwargs
     from .it2lifecycle import NewSessionMonitor
     from .it2profile import PartialProfile
     from .it2session import Session
@@ -132,10 +132,11 @@ class iTermAPI:
 
     async def _initialize(self) -> None:
         self._configure_logging()
-        bootstrap_iterm2_runtime()
+        await bootstrap_iterm2_runtime()
 
-        if self.activate:
-            activate_iterm_app()
+        from ..pyobjc_adapter import async_ensure_iterm_app_running
+
+        await async_ensure_iterm_app_running(activate=self.activate)
 
         if not self._check_api_enabled():
             raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
@@ -581,7 +582,7 @@ class iTermAPI:
             can't bleed into the first run_command's monitor."""
             Mode = PromptMonitor.Mode
             modes = [Mode.PROMPT, Mode.COMMAND_START, Mode.COMMAND_END]
-            quiescence = 0.6
+            quiescence = 0.6  # quiescence == 'inactivity/dormancy' 😂
 
             async with PromptMonitor(connection, session_id, modes) as monitor:
                 try:
@@ -594,19 +595,27 @@ class iTermAPI:
 
                 log.debug(
                     "New iTerm2 tab session is prompt-ready",
-                    {"session_id": session_id, "mode": event[0], "exit_code": event[1], "prompt_id": event[2]},
+                    {
+                        "session_id": session_id,
+                        "mode": event[0],
+                        "working_directory": event[1].working_directory
+                        if not isinstance(event[1], (str, int, NoneType))
+                        else "",
+                        "prompt_id": event[2],
+                    },
                 )
 
                 if not str(profile.all_properties.get("Initial Text") or "").strip():
                     return
 
                 # Drain Initial Text / startup activity until quiet.
-                while True:
-                    try:
-                        event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=quiescence)
-                        log.debug("Draining session-start event", {"mode": event[0], "prompt_id": event[2]})
-                    except TimeoutError:
-                        return
+                with log.scoped_context(start_event_drain="Draining session-start command output..."):
+                    while True:
+                        try:
+                            event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=quiescence)
+                            log.debug({"mode": event[0], "command": event[1], "prompt_id": event[2]})
+                        except TimeoutError:
+                            return
 
         async with NewSessionMonitor(connection) as monitor:
             created_tab = await window.async_create_tab(profile=profile.name)
@@ -753,6 +762,7 @@ class iTermAPI:
 
         if contains_matching_term(tag_regex, tab_title, session_name) is False:
             log.debug(f"Renaming tab and session to '{new_tag}'")
+            # PartialProfile("", self.connection, []) # TODO
             await selected_session.async_set_name(new_tag)
             await selected_tab.async_set_title(new_tag)
 
@@ -873,7 +883,7 @@ class iTermAPI:
 
 
 async def create_iterm_state(
-    connection_instance: Connection | None = None, *, activate: bool = True, **kwargs: Unpack[iTermSetupKwargs]
+    connection_instance: Connection | None = None, *, activate: bool = True, **kwargs: Unpack[iTermStateSetupKwargs]
 ) -> iTermState:
     """Create and return a fully populated :class:`iTermState` using :class:`iTermAPI`.
 

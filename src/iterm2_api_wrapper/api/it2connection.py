@@ -62,9 +62,6 @@ def _subprotocols() -> list[Subprotocol]:
     return [Subprotocol("api.iterm2.com")]
 
 
-_RETRIES = 0
-
-
 class Connection:
     """Modern iTerm2 API websocket connection. Remaster of iTerm2's :class:`~iterm2.Connection`.
 
@@ -132,16 +129,16 @@ class Connection:
                 conn.websocket = await conn._get_connect_coro()
                 conn.__dispatch_forever_future = asyncio.ensure_future(conn._async_dispatch_forever(conn, loop))
                 return conn
-            # except (ConnectionRefusedError, FileNotFoundError, InvalidProxyMessage):
-            except ConnectionRefusedError as e:
+            except ConnectionRefusedError:
                 # ! NOTE: App might not be open
-                from ..mac.platform_macos import activate_iterm_app
-                global _RETRIES
-                _RETRIES += 1
-                log.warning(f"Connection was refused. App might not be open. Retry # {_RETRIES}")
-                iterm_is_closed = activate_iterm_app(None, comfirm_close=True)
+                from ..pyobjc_adapter import async_create_app_with_retry, iterm_not_open
 
-                return await conn.async_create()
+                log.warning("Connection was refused. Checking iTerm2 application state...")
+
+                if iterm_not_open():
+                    return await async_create_app_with_retry(Connection)
+
+                raise
             except InvalidStatus as status_code_exception:
                 if status_code_exception.response.status_code == 401:
                     if have_fresh_cookie:

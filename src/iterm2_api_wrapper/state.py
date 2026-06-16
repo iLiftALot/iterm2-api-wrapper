@@ -715,8 +715,10 @@ class iTermState:
             send_cmd_task = self.session.async_send_text(command + "\r", suppress_broadcast=suppress)
             result = await self._wait_for_prompt(send_cmd_task, timeout=timeout, expected_command=command)
             if result.timed_out:
-                log.warning("Command timed out...")
-                self._si_live_cache[self.session.session_id] = (False, (self.loop or asyncio.get_running_loop()).time())
+                log.warning(
+                    "Command monitor timed out; preserving shell-integration cache because "
+                    "a command timeout is not proof that shell integration is dead."
+                )
             if result.prompt_id is not None:
                 log.debug(f"Prompt ID was retrieved normally: {result.prompt_id}")
                 content = await self._get_prompt_output(result.prompt_id)
@@ -787,74 +789,78 @@ class iTermState:
 
         log.debug("Command monitor initialized", {"session_id": self.session.session_id, "timeout": timeout})
 
-        async with PromptMonitor(self.connection, self.session.session_id, modes) as monitor:
+        async with PromptMonitor(
+            self.connection, self.session.session_id, modes, snapshot_provider=self._get_terminal_snapshot
+        ) as monitor:
+            last_snapshot = monitor.initial_snapshot
             saw_expected_start = expected_command is None
             active_prompt_id: str | None = None
             active_command: str | None = None
+
             await coro
-            loop = self.loop or asyncio.get_running_loop()
-            poll_timeout = min(0.25, max(0.1, timeout))
-            last_activity = loop.time()
-            monitor_task = asyncio.create_task(monitor.async_get(include_id=True))
 
-            try:
-                while True:
-                    done, _ = await asyncio.wait({monitor_task}, timeout=poll_timeout)
-                    if monitor_task not in done:
-                        if loop.time() - last_activity >= timeout:
-                            status = CommandStatus(
-                                prompt_id=None,
-                                command=active_command,
-                                exit_code=CommandStatus.ExitCode.GENERAL_FAILURE,
-                                timed_out=True,
-                            )
-                            break
-
+            while True:
+                try:
+                    event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
+                except TimeoutError:
+                    current_snapshot = await monitor.refresh_snapshot()
+                    if last_snapshot != current_snapshot:
+                        log.debug("Prompt event timed out, but terminal contents changed; continuing wait")
+                        last_snapshot = current_snapshot
                         continue
 
-                    event = monitor_task.result()
-                    monitor_task = asyncio.create_task(monitor.async_get(include_id=True))
-                    last_activity = loop.time()
+                    log.warning(
+                        "Timed out waiting for shell-integration prompt event",
+                        {
+                            "expected_command": expected_command,
+                            "saw_expected_start": saw_expected_start,
+                            "active_command": active_command,
+                            "active_prompt_id": active_prompt_id,
+                        },
+                    )
+                    return CommandStatus(
+                        prompt_id=active_prompt_id,
+                        command=active_command,
+                        exit_code=CommandStatus.ExitCode.GENERAL_FAILURE,
+                        timed_out=True,
+                    )
 
-                    if event[0] == ModeFactory.PROMPT:
-                        prompt = event[1]
-                        prompt_id = event[2]
-                        active_prompt_id = prompt_id or (prompt.unique_id if prompt is not None else None)
-                        log.debug("PROMPT DETECTED: ", {"mode": event[0], "prompt_id": active_prompt_id})
-                        continue
-                    if event[0] == ModeFactory.COMMAND_START:
-                        command = event[1]
-                        prompt_id = event[2]
-                        if expected_command is not None and command.strip() != expected_command.strip():
-                            log.debug("Ignoring foreign COMMAND_START (initial text / leftover)", {"command": command})
-                            continue
-                        saw_expected_start = True
-                        active_command = command
-                        active_prompt_id = prompt_id or active_prompt_id
-                        log.debug("COMMAND STARTED: ", {"mode": event[0], "command": active_command})
-                        continue
-                    if event[0] == ModeFactory.COMMAND_END:
-                        if not saw_expected_start:
-                            log.debug("Ignoring COMMAND_END preceding our COMMAND_START (initial text / leftover)")
-                            continue
-                        raw_exit_code = event[1]
-                        exit_code = CommandStatus.ExitCode.coerce(raw_exit_code)
-                        prompt_id = event[2] or active_prompt_id
-                        log.debug(
-                            "COMMAND FINISHED:",
-                            {"mode": event[0], "exit_code": raw_exit_code, "known_exit_code": exit_code},
-                        )
-                        status = CommandStatus(prompt_id=prompt_id, command=active_command, exit_code=exit_code)
-                        break
-            finally:
-                if not monitor_task.done():
-                    monitor_task.cancel()
-                    try:
-                        await monitor_task
-                    except asyncio.CancelledError:
-                        pass
+                if event[0] == ModeFactory.PROMPT:
+                    prompt_obj = event[1]
+                    prompt_id = event[2]
+                    active_prompt_id = prompt_id or (prompt_obj.unique_id if prompt_obj is not None else None)
+                    log.debug("PROMPT DETECTED: ", {"mode": event[0], "prompt_id": active_prompt_id})
+                    continue
 
-        return status
+                if event[0] == ModeFactory.COMMAND_START:
+                    command = event[1]
+                    prompt_id = event[2]
+
+                    if expected_command is not None and command.strip() != expected_command.strip():
+                        log.debug("Ignoring foreign COMMAND_START (initial text / leftover)", {"command": command})
+                        continue
+
+                    saw_expected_start = True
+                    active_command = command
+                    active_prompt_id = prompt_id or active_prompt_id
+                    log.debug("COMMAND STARTED: ", {"mode": event[0], "command": active_command})
+                    continue
+
+                if event[0] == ModeFactory.COMMAND_END:
+                    if not saw_expected_start:
+                        log.debug("Ignoring COMMAND_END preceding our COMMAND_START (initial text / leftover)")
+                        continue
+
+                    raw_exit_code = event[1]
+                    exit_code = CommandStatus.ExitCode.coerce(raw_exit_code)
+                    prompt_id = event[2] or active_prompt_id
+
+                    log.debug(
+                        "COMMAND FINISHED:",
+                        {"mode": event[0], "exit_code": raw_exit_code, "known_exit_code": exit_code},
+                    )
+
+                    return CommandStatus(prompt_id=prompt_id, command=active_command, exit_code=exit_code)
 
     async def _get_prompt_output(self, prompt_id: str) -> str:
         """Returns a string with the content in a range of lines."""
@@ -906,14 +912,35 @@ class iTermState:
             if live or (loop.time() - checked_at) < self.SI_DEAD_RECHECK_SECONDS:
                 return live
 
-        if await self._get_prompt() is None:
-            # No marks at all (restore would have carried them over):
-            # integration has never spoken here. Offer auto-load if configured.
+        last_prompt = await self._get_prompt()
+
+        if last_prompt is None:
             auto_load: Literal[0, 1] = self.profile.all_properties.get("Load Shell Integration Automatically", 0)
             live = allow_autoload and bool(auto_load) and await self.maybe_load_shell_integration()
-        else:
-            live = await self._probe_shell_integration_live()
+            self._si_live_cache[sid] = (live, loop.time())
+            return live
 
+        if last_prompt.state == prompt.PromptState.EDITING:
+            self._si_live_cache[sid] = (True, loop.time())
+            return True
+
+        if last_prompt.state == prompt.PromptState.UNKNOWN:
+            # Older iTerm2/runtime: marks exist, but state isn't available.
+            # Trust the prompt evidence rather than forcing fallback.
+            self._si_live_cache[sid] = (True, loop.time())
+            return True
+
+        job = await self.get_session_var("jobName")
+        shell = await self.get_session_var("shell")
+
+        if job and shell and job != Path(str(shell)).name:
+            log.debug(
+                "Shell integration marks exist, but foreground job is not the shell", {"job": job, "shell": shell}
+            )
+            self._si_live_cache[sid] = (False, loop.time())
+            return False
+
+        live = await self._probe_shell_integration_live()
         self._si_live_cache[sid] = (live, loop.time())
         return live
 
@@ -924,10 +951,10 @@ class iTermState:
         would feed a running program's stdin) and reports not-live — which is
         the correct routing decision for that moment anyway.
         """
-        job, shell = await self.get_session_var("jobName"), await self.get_session_var("shell")
-        if not job or not shell or job != Path(str(shell)).name:
-            log.debug("Skipping CR probe: foreground job is not the shell", {"job": job, "shell": shell})
-            return False
+        # job, shell = await self.get_session_var("jobName"), await self.get_session_var("shell")
+        # if not job or not shell or job != Path(str(shell)).name:
+        #     log.debug("Skipping CR probe: foreground job is not the shell", {"job": job, "shell": shell})
+        #     return False
 
         async with PromptMonitor(self.connection, self.session.session_id) as monitor:
             await self.session.async_send_text("\r", suppress_broadcast=True)

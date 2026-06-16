@@ -71,6 +71,9 @@ def test_async_create_connection_with_retry_retries_reset_errors() -> None:
 def test_default_gateway_creates_state_with_lazy_runtime_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, Any]] = []
 
+    async def fake_ensure_app_ready(*, activate: bool) -> None:
+        calls.append(("ensure_app", activate))
+
     async def fake_create_connection(connection_cls: object, *, timeout_s: float) -> str:
         calls.append(("connect", timeout_s))
         return "connection"
@@ -80,11 +83,8 @@ def test_default_gateway_creates_state_with_lazy_runtime_dependencies(monkeypatc
 
     import iterm2_api_wrapper.api.it2api as api_module
     import iterm2_api_wrapper.api.it2connection as connection_module
-    import iterm2_api_wrapper.mac.platform_macos as platform_macos
 
-    monkeypatch.setattr(
-        platform_macos, "activate_iterm_app", lambda app_path=None: calls.append(("activate", app_path))
-    )
+    monkeypatch.setattr(gateway_module, "_ensure_iterm_app_ready", fake_ensure_app_ready)
     monkeypatch.setattr(gateway_module, "_get_connect_timeout_s", lambda: 0.25)
     monkeypatch.setattr(gateway_module, "_async_create_connection_with_retry", fake_create_connection)
     monkeypatch.setattr(connection_module, "Connection", object)
@@ -93,16 +93,17 @@ def test_default_gateway_creates_state_with_lazy_runtime_dependencies(monkeypatc
     result = asyncio.run(DefaultITermGateway().create_state(debug=True))
 
     assert result == FakeState(connection="connection", kwargs={"debug": True, "activate": False})
-    assert calls == [("activate", None), ("connect", 0.25)]
+    assert calls == [("ensure_app", True), ("connect", 0.25)]
 
 
 def test_default_gateway_translates_retry_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_ensure_app_ready(*, activate: bool) -> None:
+        return None
+
     async def fake_create_connection(connection_cls: object, *, timeout_s: float) -> str:
         raise TimeoutError("too slow")
 
-    import iterm2_api_wrapper.mac.platform_macos as platform_macos
-
-    monkeypatch.setattr(platform_macos, "activate_iterm_app", lambda app_path=None: None)
+    monkeypatch.setattr(gateway_module, "_ensure_iterm_app_ready", fake_ensure_app_ready)
     monkeypatch.setattr(gateway_module, "_get_connect_timeout_s", lambda: 0.0)
     monkeypatch.setattr(gateway_module, "_async_create_connection_with_retry", fake_create_connection)
 
@@ -111,33 +112,39 @@ def test_default_gateway_translates_retry_timeout(monkeypatch: pytest.MonkeyPatc
 
 
 def test_setup_coro_gateway_invokes_custom_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, Any]] = []
+
+    async def fake_ensure_app_ready(*, activate: bool) -> None:
+        calls.append(("ensure_app", activate))
+
     async def fake_create_connection(connection_cls: object, *, timeout_s: float) -> str:
+        calls.append(("connect", timeout_s))
         return "connection"
 
     async def setup(connection: str, **kwargs: Any) -> FakeState:
         return FakeState(connection=connection, kwargs=kwargs)
 
-    import iterm2_api_wrapper.mac.platform_macos as platform_macos
-
-    monkeypatch.setattr(platform_macos, "activate_iterm_app", lambda app_path=None: None)
+    monkeypatch.setattr(gateway_module, "_ensure_iterm_app_ready", fake_ensure_app_ready)
     monkeypatch.setattr(gateway_module, "_get_connect_timeout_s", lambda: 1.5)
     monkeypatch.setattr(gateway_module, "_async_create_connection_with_retry", fake_create_connection)
 
     result = asyncio.run(SetupCoroGateway[FakeState](setup).create_state(new_tab=True))
 
     assert result == FakeState(connection="connection", kwargs={"new_tab": True})
+    assert calls == [("ensure_app", True), ("connect", 1.5)]
 
 
 def test_setup_coro_gateway_translates_retry_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_ensure_app_ready(*, activate: bool) -> None:
+        return None
+
     async def fake_create_connection(connection_cls: object, *, timeout_s: float) -> str:
         raise TimeoutError("too slow")
 
     async def setup(connection: str, **kwargs: Any) -> FakeState:
         return FakeState(connection=connection, kwargs=kwargs)
 
-    import iterm2_api_wrapper.mac.platform_macos as platform_macos
-
-    monkeypatch.setattr(platform_macos, "activate_iterm_app", lambda app_path=None: None)
+    monkeypatch.setattr(gateway_module, "_ensure_iterm_app_ready", fake_ensure_app_ready)
     monkeypatch.setattr(gateway_module, "_get_connect_timeout_s", lambda: 0.0)
     monkeypatch.setattr(gateway_module, "_async_create_connection_with_retry", fake_create_connection)
 
