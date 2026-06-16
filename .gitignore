@@ -250,3 +250,4 @@ src/iterm2_api_wrapper/triggers.py
 .codex/tools/
 .codex/bin/
 trace
+_dev.py
