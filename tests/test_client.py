@@ -16,7 +16,9 @@ class DummyState:
     marker: str = "initial"
     setup_kwargs: dict[str, Any] | None = None
 
-    refresh_callback: Any = None
+    _refresh_callback: Any = None
+    _event_loop: asyncio.AbstractEventLoop | None = None
+    connection: Any | None = None
     ensure_state_calls: int = 0
     ensure_state_exc: Exception | None = None
 
@@ -28,11 +30,13 @@ class DummyState:
         self.ensure_state_exc = None
         raise exc
 
-    def refresh_from(self, new_state: Any) -> None:
+    def refresh_from(self, new_state: DummyState) -> None:
         assert isinstance(new_state, DummyState)
         self.marker = new_state.marker
         self.setup_kwargs = new_state.setup_kwargs
-        self.refresh_callback = new_state.refresh_callback
+        self._refresh_callback = new_state._refresh_callback
+        self._event_loop = new_state._event_loop
+        self.connection = new_state.connection
 
 
 class FailingRefreshState(DummyState):
@@ -58,13 +62,11 @@ def stop_client(client: iTermClient[Any]) -> None:
 
 def test_client_initializes_state_and_thread() -> None:
     gateway = DummyGateway([DummyState(marker="boot")])
-    client: iTermClient[DummyState] = iTermClient(
-        gateway=gateway, debug=True, new_tab=False, select_tab=True, order_window_front=False
-    )
+    client: iTermClient[DummyState] = iTermClient(gateway=gateway, debug=True, new_tab=False)
     try:
         assert client._thread.is_alive()
         assert client.state.marker == "boot"
-        assert gateway.calls == [{"debug": True, "new_tab": False, "select_tab": True, "order_window_front": False}]
+        assert gateway.calls == [{"debug": True, "new_tab": False}]
     finally:
         stop_client(client)
 
@@ -91,7 +93,7 @@ def test_close_closes_active_connection() -> None:
 
     connection = ClosableConnection()
     state = DummyState(marker="boot")
-    state.connection = connection  # type: ignore[attr-defined]
+    state.connection = connection
     gateway = DummyGateway([state])
     client: iTermClient[DummyState] = iTermClient(gateway=gateway)
 

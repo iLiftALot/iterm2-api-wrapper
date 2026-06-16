@@ -56,10 +56,17 @@ class iTermClient[StateT: RefreshableState[Any]]:
         self._lock = asyncio.Lock()
 
     @classmethod
-    async def create(cls, *, timeout: float | None = None, **kwargs: Unpack[iTermSetupKwargs]) -> iTermClient[StateT]:
+    async def create(
+        cls,
+        coro: Callable[[_Connection], Awaitable[iTermState]] | None = None,
+        *,
+        gateway: ITermGateway[StateT] | None = None,
+        timeout: float | None = None,
+        **kwargs: Unpack[iTermSetupKwargs],
+    ) -> iTermClient[StateT]:
         """Async factory — never blocks the calling event loop."""
         instance = object.__new__(cls)
-        instance._setup(timeout=timeout, **kwargs)
+        instance._setup(coro=coro, gateway=gateway, timeout=timeout, **kwargs)
         future = asyncio.run_coroutine_threadsafe(instance._init_async(), instance._loop)
         instance._state = await asyncio.get_running_loop().run_in_executor(None, lambda: future.result(timeout=timeout))
         return instance

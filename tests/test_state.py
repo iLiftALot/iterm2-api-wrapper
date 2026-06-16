@@ -355,7 +355,7 @@ def test_get_prompt_candidate_nudges_empty_terminal(monkeypatch: pytest.MonkeyPa
             return None
 
         patch_attr(state, "_get_terminal_snapshot", get_contents)
-        monkeypatch.setattr(state_module.asyncio, "sleep", no_sleep)
+        monkeypatch.setattr(asyncio, "sleep", no_sleep)
 
         lines, prompt_line = await state._get_prompt_candidate(suppress_broadcast=True)
 
@@ -385,7 +385,7 @@ def test_run_command_without_shell_integration_uses_snapshot_diff(monkeypatch: p
             return None
 
         patch_attr(state, "_get_terminal_snapshot", get_contents)
-        monkeypatch.setattr(state_module.asyncio, "sleep", no_sleep)
+        monkeypatch.setattr(asyncio, "sleep", no_sleep)
 
         result = await state._run_command_without_shell_integration(
             command="echo hi", suppress_broadcast=False, timeout=1.0

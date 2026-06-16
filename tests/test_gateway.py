@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+from typing import Any
 
 import pytest
 
@@ -12,9 +13,10 @@ class FlakyConnection:
     """Fake Connection that fails a few times before succeeding."""
 
     attempts = 0
+    loop: asyncio.AbstractEventLoop | None = None
 
     @classmethod
-    async def async_create(cls):
+    async def async_create(cls) -> Any:
         cls.attempts += 1
         if cls.attempts < 3:
             raise ConnectionRefusedError(errno.ECONNREFUSED, "connection refused")
@@ -23,18 +25,20 @@ class FlakyConnection:
 
 class AlwaysRefusesConnection:
     attempts = 0
+    loop: asyncio.AbstractEventLoop | None = None
 
     @classmethod
-    async def async_create(cls):
+    async def async_create(cls) -> Any:
         cls.attempts += 1
         raise ConnectionRefusedError(errno.ECONNREFUSED, "connection refused")
 
 
 class FatalConnection:
     attempts = 0
+    loop: asyncio.AbstractEventLoop | None = None
 
     @classmethod
-    async def async_create(cls):
+    async def async_create(cls) -> Any:
         cls.attempts += 1
         raise OSError(errno.EPERM, "nope")
 

@@ -7,6 +7,9 @@ from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.typings import iTermSetupKwargs
 
 
+__all__ = ["create_iterm_state", "init", "run_until_complete"]
+
+
 def init(retry: bool, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
     """Main function to run iTerm2 setup."""
 

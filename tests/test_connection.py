@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -13,16 +14,16 @@ def test_iterm2_protocol_version_handles_missing_or_malformed_header() -> None:
     conn = Connection()
     assert conn.iterm2_protocol_version == (0, 0)
 
-    conn.websocket = SimpleNamespace(response=SimpleNamespace(headers={}))
+    conn.websocket = cast(Any, SimpleNamespace(response=SimpleNamespace(headers={})))
     assert conn.iterm2_protocol_version == (0, 0)
 
-    conn.websocket = SimpleNamespace(response=SimpleNamespace(headers={"X-iTerm2-Protocol-Version": "bad"}))
+    conn.websocket = cast(Any, SimpleNamespace(response=SimpleNamespace(headers={"X-iTerm2-Protocol-Version": "bad"})))
     assert conn.iterm2_protocol_version == (0, 0)
 
 
 def test_iterm2_protocol_version_parses_major_minor_header() -> None:
     conn = Connection()
-    conn.websocket = SimpleNamespace(response=SimpleNamespace(headers={"X-iTerm2-Protocol-Version": "3.5"}))
+    conn.websocket = cast(Any, SimpleNamespace(response=SimpleNamespace(headers={"X-iTerm2-Protocol-Version": "3.5"})))
 
     assert conn.iterm2_protocol_version == (3, 5)
 
@@ -33,10 +34,10 @@ def test_get_connect_coro_selects_unix_or_tcp(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(conn, "_get_unix_connect_coro", lambda: "unix")
     monkeypatch.setattr(conn, "_get_tcp_connect_coro", lambda: "tcp")
 
-    monkeypatch.setattr(connection_module.os.path, "exists", lambda path: True)
+    monkeypatch.setattr(os.path, "exists", lambda path: True)
     assert conn._get_connect_coro() == "unix"
 
-    monkeypatch.setattr(connection_module.os.path, "exists", lambda path: False)
+    monkeypatch.setattr(os.path, "exists", lambda path: False)
     assert conn._get_connect_coro() == "tcp"
 
 
@@ -53,7 +54,7 @@ def test_run_wraps_connection_coro(monkeypatch: pytest.MonkeyPatch) -> None:
                 pass
             return "result"
 
-    async def sample(connection: str, value: str) -> str:
+    async def sample(connection: Any, value: str) -> str:
         return f"{connection}:{value}"
 
     monkeypatch.setattr(connection_module, "Connection", FakeConnection)
@@ -63,7 +64,7 @@ def test_run_wraps_connection_coro(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_run_until_complete_reraises_connection_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def sample(connection: str) -> None:
+    async def sample(connection: Any) -> None:
         return None
 
     def fake_run(*args: Any, **kwargs: Any) -> None:
@@ -77,7 +78,7 @@ def test_run_until_complete_reraises_connection_refused(monkeypatch: pytest.Monk
 
 
 def test_run_forever_wraps_connection_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def sample(connection: str) -> None:
+    async def sample(connection: Any) -> None:
         return None
 
     def fake_run(*args: Any, **kwargs: Any) -> None:

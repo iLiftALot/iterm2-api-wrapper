@@ -6,6 +6,8 @@ from iterm2 import profile, window
 
 
 if TYPE_CHECKING:
+    from iterm2.connection import Connection as IT2Connection
+
     from .it2connection import Connection
     from .it2tab import Tab
 
@@ -35,7 +37,7 @@ class Window(window.Window):
         profile_customizations: profile.LocalWriteOnlyProfile | None = None,
     ) -> Window | None:
         return cast(
-            Window | None, await window.Window.async_create(connection, profile, command, profile_customizations)
+            Window | None, await window.Window.async_create(cast("IT2Connection", connection), profile, command, profile_customizations)
         )
 
     async def async_create_tab(
