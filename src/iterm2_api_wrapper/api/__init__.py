@@ -11,6 +11,7 @@ from .it2prompt import (
 )
 from .it2session import Session
 from .it2tab import Tab
+from .it2transaction import Transaction
 from .it2window import Window
 
 
@@ -31,7 +32,7 @@ __all__ = [
     "Connection", "NewSessionMonitor",
     "PartialProfile", "Profile", "ProfileProperties", "Prompt", "PromptMonitor",
     "Session", "SessionScope", "SessionVarEnum", "SessionVarKey", "SessionVariable",
-    "Tab", "TabScope", "TabVarEnum", "TabVarKey", "TabVariable",
+    "Tab", "TabScope", "TabVarEnum", "TabVarKey", "TabVariable", "Transaction",
     "UserScope", "UserVarEnum", "UserVarKey", "UserVariable",
     "Variable", "VariableScope",
     "Window", "WindowScope", "WindowVarEnum", "WindowVarKey", "WindowVariable",
