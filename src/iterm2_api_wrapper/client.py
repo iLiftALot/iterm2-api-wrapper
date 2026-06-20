@@ -263,8 +263,13 @@ _shared_lock = asyncio.Lock()
 async def get_shared_client(**kwargs: Unpack[iTermSetupKwargs]) -> ITermClient:
     """Async singleton — creates client on first call, returns cached instance thereafter."""
     global _shared_client
+    service_name = kwargs.get("service_name", "iterm-api")
+    profile_name = kwargs.get("dedicated_profile_name", None)
+    extra_id = kwargs.get("extra_id", None)
+
     if _shared_client is not None:
         return _shared_client
+
     async with _shared_lock:
         if _shared_client is not None:
             return _shared_client
