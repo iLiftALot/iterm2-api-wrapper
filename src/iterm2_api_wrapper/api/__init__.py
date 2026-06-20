@@ -1,7 +1,7 @@
 from .it2app import App, async_get_app
 from .it2connection import Connection, run_forever, run_until_complete
 from .it2lifecycle import NewSessionMonitor
-from .it2profile import PartialProfile, Profile, ProfileProperties
+from .it2profile import LocalWriteOnlyProfile, PartialProfile, Profile, ProfileProperties, ProfileProperty
 from .it2prompt import (
     Prompt,
     PromptMonitor,
@@ -28,17 +28,48 @@ from .it2api import create_iterm_state, iTermAPI
 
 
 __all__ = [
-    "App", "AppScope", "AppVarEnum", "AppVarKey", "AppVariable",
-    "Connection", "NewSessionMonitor",
-    "PartialProfile", "Profile", "ProfileProperties", "Prompt", "PromptMonitor",
-    "Session", "SessionScope", "SessionVarEnum", "SessionVarKey", "SessionVariable",
-    "Tab", "TabScope", "TabVarEnum", "TabVarKey", "TabVariable", "Transaction",
-    "UserScope", "UserVarEnum", "UserVarKey", "UserVariable",
-    "Variable", "VariableScope",
-    "Window", "WindowScope", "WindowVarEnum", "WindowVarKey", "WindowVariable",
-    "async_get_app", "async_get_last_prompt", "async_get_prompt_by_id",
+    "App",
+    "AppScope",
+    "AppVarEnum",
+    "AppVarKey",
+    "AppVariable",
+    "Connection",
+    "LocalWriteOnlyProfile",
+    "NewSessionMonitor",
+    "PartialProfile",
+    "Profile",
+    "ProfileProperties",
+    "ProfileProperty",
+    "Prompt",
+    "PromptMonitor",
+    "Session",
+    "SessionScope",
+    "SessionVarEnum",
+    "SessionVarKey",
+    "SessionVariable",
+    "Tab",
+    "TabScope",
+    "TabVarEnum",
+    "TabVarKey",
+    "TabVariable",
+    "Transaction",
+    "UserScope",
+    "UserVarEnum",
+    "UserVarKey",
+    "UserVariable",
+    "Variable",
+    "VariableScope",
+    "Window",
+    "WindowScope",
+    "WindowVarEnum",
+    "WindowVarKey",
+    "WindowVariable",
+    "async_get_app",
+    "async_get_last_prompt",
+    "async_get_prompt_by_id",
     "check_supports_prompt_monitor_modes",
     "create_iterm_state",
-    "iTermAPI", "it2app", "it2prompt",
-    "run_forever", "run_until_complete"
+    "iTermAPI",
+    "run_forever",
+    "run_until_complete"
 ]

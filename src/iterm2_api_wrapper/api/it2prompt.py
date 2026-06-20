@@ -107,7 +107,6 @@ class PromptMonitor[SnapshotT](prompt.PromptMonitor):
     async def __aenter__(self) -> PromptMonitor[SnapshotT]:
         if self.snapshot_provider is not None:
             self.initial_snapshot = self.current_snapshot = await self.snapshot_provider()
-            # self.current_snapshot = self.initial_snapshot
         return cast(PromptMonitor[SnapshotT], await super().__aenter__())
 
     async def refresh_snapshot(self) -> SnapshotT:

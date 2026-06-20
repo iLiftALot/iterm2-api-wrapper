@@ -12,5 +12,5 @@ if TYPE_CHECKING:
 
 
 class Transaction(transaction.Transaction):
-    def __init__(self, connection: Connection):
+    def __init__(self, connection: Connection | IT2Connection):
         super().__init__(cast("IT2Connection", connection))
