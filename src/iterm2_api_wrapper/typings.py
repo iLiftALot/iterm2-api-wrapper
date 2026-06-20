@@ -415,3 +415,12 @@ class CommandStatus:
             return self.code - 128
 
         return None
+
+
+@dataclass
+class CommandExecutionResult:
+    output: str
+    status: CommandStatus | None
+
+    def __str__(self) -> str:
+        return self.output

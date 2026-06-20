@@ -20,6 +20,7 @@ from .client import create_iterm_client
 
 if TYPE_CHECKING:
     from .state import iTermState
+    from .typings import CommandExecutionResult
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
@@ -157,7 +158,7 @@ async def show_capabilities(state: iTermState, capability: str | None = None) ->
 
 async def send_command(
     state: iTermState, command: str | None = None, path: str | None = None, timeout: float = 120.0
-) -> str:
+) -> CommandExecutionResult:
     """Send a command to the iTerm2 session."""
 
     default_command = "echo 'Hello from iTerm2 API Wrapper!'"
@@ -266,7 +267,7 @@ def main(
         state = client.get_state()
         event_loop = client.loop
         output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)
-        log.info(output)
+        log.info(str(output), output)
 
 
 if __name__ == "__main__":

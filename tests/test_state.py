@@ -10,9 +10,7 @@ from iterm2_api_wrapper import state as state_module
 from iterm2_api_wrapper.state import (
     _validate_state,
     changed_slice,
-    extract_output_from_changed_block,
     iTermState,
-    last_nonempty_line,
 )
 
 
@@ -334,19 +332,18 @@ def test_variable_helpers_dispatch_to_expected_targets() -> None:
 
 
 def test_terminal_diff_helpers_extract_command_output() -> None:
-    assert last_nonempty_line(["", "  ", " prompt$ "]) == "prompt$"
-    assert last_nonempty_line(["", "  "]) is None
-
     changed = changed_slice(["prompt$"], ["prompt$", "prompt$ echo hi", "hi", "prompt$"])
     assert changed == ["prompt$ echo hi", "hi", "prompt$"]
-    assert extract_output_from_changed_block(changed, prompt_line="prompt$", command="echo hi") == "hi"
-    assert extract_output_from_changed_block([], prompt_line="prompt$", command="echo hi") == ""
 
 
-def test_get_prompt_candidate_nudges_empty_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_command_without_shell_integration_uses_empty_snapshot_without_prompt_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
-        snapshots = iter([["", " "], ["prompt$"]])
+        marker = "__ITERM_DONE_empty-terminal__"
+        wrapped_echo = f"echo hi; printf '\\n{marker}\\n'"
+        snapshots = iter([["", " "], ["", " ", wrapped_echo, "hi", marker]])
 
         async def get_contents() -> list[str]:
             return next(snapshots)
@@ -354,14 +351,19 @@ def test_get_prompt_candidate_nudges_empty_terminal(monkeypatch: pytest.MonkeyPa
         async def no_sleep(delay: float) -> None:
             return None
 
+        def fixed_uuid4() -> str:
+            return "empty-terminal"
+
         patch_attr(state, "_get_terminal_snapshot", get_contents)
+        monkeypatch.setattr(state_module, "uuid4", fixed_uuid4)
         monkeypatch.setattr(asyncio, "sleep", no_sleep)
 
-        lines, prompt_line = await state._get_prompt_candidate(suppress_broadcast=True)
+        result = await state._run_command_without_shell_integration(
+            command="echo hi", suppress_broadcast=True, timeout=1.0
+        )
 
-        assert lines == ["prompt$"]
-        assert prompt_line == "prompt$"
-        assert as_fake_session(state.session).sent == [("\r", True)]
+        assert result == f"{wrapped_echo}\nhi\n{marker}"
+        assert as_fake_session(state.session).sent == [(f"{wrapped_echo}\r", True)]
 
     asyncio.run(scenario())
 
@@ -369,12 +371,14 @@ def test_get_prompt_candidate_nudges_empty_terminal(monkeypatch: pytest.MonkeyPa
 def test_run_command_without_shell_integration_uses_snapshot_diff(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
+        marker = "__ITERM_DONE_snapshot-diff__"
+        wrapped_echo = f"prompt$ echo hi; printf '\\n{marker}\\n'"
+        sent_command = f"echo hi; printf '\\n{marker}\\n'"
         snapshots = iter(
             [
                 ["prompt$"],
-                ["prompt$", "prompt$ echo hi"],
-                ["prompt$", "prompt$ echo hi", "hi", "prompt$"],
-                ["prompt$", "prompt$ echo hi", "hi", "prompt$"],
+                ["prompt$", wrapped_echo],
+                ["prompt$", wrapped_echo, "hi", marker, "prompt$"],
             ]
         )
 
@@ -384,15 +388,19 @@ def test_run_command_without_shell_integration_uses_snapshot_diff(monkeypatch: p
         async def no_sleep(delay: float) -> None:
             return None
 
+        def fixed_uuid4() -> str:
+            return "snapshot-diff"
+
         patch_attr(state, "_get_terminal_snapshot", get_contents)
+        monkeypatch.setattr(state_module, "uuid4", fixed_uuid4)
         monkeypatch.setattr(asyncio, "sleep", no_sleep)
 
         result = await state._run_command_without_shell_integration(
             command="echo hi", suppress_broadcast=False, timeout=1.0
         )
 
-        assert result == "hi"
-        assert as_fake_session(state.session).sent == [("echo hi\r", False)]
+        assert result == f"{wrapped_echo}\nhi\n{marker}\nprompt$"
+        assert as_fake_session(state.session).sent == [(f"{sent_command}\r", False)]
 
     asyncio.run(scenario())
 
@@ -422,47 +430,8 @@ def test_run_command_changes_directory_before_fallback() -> None:
 
         result = await state.run_command("pwd", path="/new", broadcast=False, timeout=4.0)
 
-        assert result == "fallback-output"
+        assert result.output == "fallback-output"
         assert as_fake_session(state.session).sent == [("cd -- /new\r", True)]
-
-    asyncio.run(scenario())
-
-
-def test_string_in_lines_uses_command_range_when_output_range_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def scenario() -> None:
-        state = make_state(asyncio.get_running_loop())
-        updated_prompt = SimpleNamespace(
-            output_range=SimpleNamespace(start=SimpleNamespace(y=0), end=SimpleNamespace(y=0)),
-            command_range=SimpleNamespace(start=SimpleNamespace(y=2), end=SimpleNamespace(y=4)),
-        )
-        as_fake_session(state.session).contents = [
-            SimpleNamespace(string="ignored", hard_eol=True),
-            SimpleNamespace(string="ignored", hard_eol=True),
-            SimpleNamespace(string="", hard_eol=True),
-            SimpleNamespace(string="line one", hard_eol=True),
-            SimpleNamespace(string="line two", hard_eol=False),
-        ]
-
-        async def get_prompt(unique_id: str | None = None) -> Any:
-            assert unique_id == "prompt-1"
-            return updated_prompt
-
-        class NoopTransaction:
-            def __init__(self, connection: object) -> None:
-                self.connection = connection
-
-            async def __aenter__(self) -> NoopTransaction:
-                return self
-
-            async def __aexit__(self, *args: object) -> None:
-                return None
-
-        patch_attr(state, "_get_prompt", get_prompt)
-        monkeypatch.setattr(state_module, "Transaction", NoopTransaction)
-
-        result = await state._get_prompt_output("prompt-1")
-
-        assert result == "line one\nline two"
 
     asyncio.run(scenario())
 
