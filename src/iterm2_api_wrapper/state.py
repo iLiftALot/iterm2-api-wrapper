@@ -20,7 +20,7 @@ from .api.it2app import async_get_app
 from .api.it2prompt import PromptMonitor, async_get_last_prompt, async_get_prompt_by_id, prompt
 from .api.it2transaction import Transaction
 from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
-from .typings import CommandExecutionResult, CommandStatus, HexCodeEnum
+from .typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
 
 
 if TYPE_CHECKING:
@@ -652,7 +652,7 @@ class iTermState:
 
     async def _wait_for_prompt(
         self, coro: Awaitable[None], *, timeout: float = 30.0, expected_command: str | None = None
-    ) -> CommandStatus:
+    ) -> CommandExecutionStatus:
         """Wait for shell-integration prompt events for a command."""
         Mode = PromptMonitor.Mode
         modes = [Mode.COMMAND_START, Mode.COMMAND_END, Mode.PROMPT]
@@ -689,10 +689,10 @@ class iTermState:
                         },
                     )
 
-                    return CommandStatus(
+                    return CommandExecutionStatus(
                         prompt_id=active_prompt_id,
                         command=active_command,
-                        exit_code=CommandStatus.ExitCode.GENERAL_FAILURE,
+                        exit_code=CommandExecutionStatus.ExitCode.GENERAL_FAILURE,
                         timed_out=True,
                     )
 
@@ -723,7 +723,7 @@ class iTermState:
                         continue
 
                     raw_exit_code = event[1]
-                    exit_code = CommandStatus.ExitCode(raw_exit_code)
+                    exit_code = CommandExecutionStatus.ExitCode(raw_exit_code)
                     prompt_id = event[2] or active_prompt_id
 
                     log.debug(
@@ -731,7 +731,7 @@ class iTermState:
                         {"mode": event[0].value, "raw_exit_code": raw_exit_code, "known_exit_code": exit_code},
                     )
 
-                    return CommandStatus(prompt_id=prompt_id, command=active_command, exit_code=exit_code)
+                    return CommandExecutionStatus(prompt_id=prompt_id, command=active_command, exit_code=exit_code)
 
     async def _get_prompt_output(self, prompt_id: str) -> str | None:
         """Returns a string with the content in a range of lines."""

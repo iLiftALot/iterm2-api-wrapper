@@ -346,7 +346,7 @@ class CommandExitCode(IntEnum):
 
 
 @dataclass
-class CommandStatus:
+class CommandExecutionStatus:
     prompt_id: str | None
     command: str | None
     exit_code: CommandExitCode | int
@@ -420,7 +420,7 @@ class CommandStatus:
 @dataclass
 class CommandExecutionResult:
     output: str
-    status: CommandStatus | None
+    status: CommandExecutionStatus | None
 
     def __str__(self) -> str:
         return self.output
