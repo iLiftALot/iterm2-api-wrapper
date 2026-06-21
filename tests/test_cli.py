@@ -11,6 +11,7 @@ import pytest
 import typer
 
 from iterm2_api_wrapper import cli
+from iterm2_api_wrapper.typings import CommandExecutionResult
 
 
 if TYPE_CHECKING:
@@ -75,15 +76,15 @@ def test_send_command_uses_default_command_and_resolves_path() -> None:
         def __init__(self) -> None:
             self.calls: list[dict[str, Any]] = []
 
-        async def run_command(self, command: str, **kwargs: Any) -> str:
+        async def run_command(self, command: str, **kwargs: Any) -> CommandExecutionResult:
             self.calls.append({"command": command, **kwargs})
-            return "output"
+            return CommandExecutionResult(output="output", status=None)
 
     async def scenario() -> None:
         state = FakeState()
         result = await cli.send_command(as_state(state), command=None, path=".", timeout=2)
 
-        assert result == "output"
+        assert result == CommandExecutionResult(output="output", status=None)
         assert state.calls == [
             {
                 "command": "echo 'Hello from iTerm2 API Wrapper!'",

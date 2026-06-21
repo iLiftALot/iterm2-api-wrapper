@@ -596,11 +596,17 @@ def test_get_profile_fetches_default_when_unset(monkeypatch: pytest.MonkeyPatch)
         api.profile_name = None
         api._profile_cache = {}
 
+        connection = object()
         default_profile = FakeProfile(name="Default", guid="DEF")
 
-        async def async_get_default(connection: object) -> FakeProfile:
+        async def async_get_default(conn: object) -> FakeProfile:
+            assert conn is connection
             return default_profile
 
+        async def get_connection() -> object:
+            return connection
+
+        monkeypatch.setattr(api, "get_connection", get_connection)
         monkeypatch.setattr(api_module.Profile, "async_get_default", staticmethod(async_get_default))
 
         result = await api.get_profile()
@@ -617,9 +623,16 @@ def test_get_profile_raises_when_named_profile_missing(monkeypatch: pytest.Monke
         api.profile_name = None
         api._profile_cache = {}
 
-        async def async_get(connection: object) -> list[FakeProfile]:
+        connection = object()
+
+        async def async_get(conn: object) -> list[FakeProfile]:
+            assert conn is connection
             return [FakeProfile(name="Default", guid="DEF")]
 
+        async def get_connection() -> object:
+            return connection
+
+        monkeypatch.setattr(api, "get_connection", get_connection)
         monkeypatch.setattr(api_module.Profile, "async_get", staticmethod(async_get))
 
         with pytest.raises(ProfileNotFoundError):

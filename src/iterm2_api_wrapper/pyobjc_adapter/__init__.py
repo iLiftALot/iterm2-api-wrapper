@@ -19,8 +19,8 @@ from .pyobjc_typings import (
 
 
 if TYPE_CHECKING:
+    from .. import iTermConnection
     from ..api.it2connection import Connection
-    from ..gateway import _Connection
 
 
 log = PrettyLog.get_logger(__name__)
@@ -221,7 +221,7 @@ async def async_ensure_iterm_app_running(
 
 
 async def async_create_app_with_retry(
-    connection_cls: type[_Connection | Connection],
+    connection_cls: iTermConnection,
     *,
     activate: bool = False,
 ) -> Connection:

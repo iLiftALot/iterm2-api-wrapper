@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Self, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
 import pytest
 
@@ -14,7 +14,7 @@ from iterm2_api_wrapper.state import (
     changed_slice,
     iTermState,
 )
-from iterm2_api_wrapper.typings import HexCodeEnum
+from iterm2_api_wrapper.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
 
 
 if TYPE_CHECKING:
@@ -87,6 +87,53 @@ class FakeTab(FakeTarget):
     async def async_set_title(self, title: str) -> None:
         self.title_set_to = title
         self.variables["title"] = title
+
+
+class FakePromptMonitor:
+    Mode = state_module.PromptMonitor.Mode
+    events: ClassVar[list[Any]] = []
+    snapshots: ClassVar[list[list[str]]] = []
+    instances: ClassVar[list[FakePromptMonitor]] = []
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.args = args
+        self.kwargs = kwargs
+        self.initial_snapshot = self._next_snapshot()
+        FakePromptMonitor.instances.append(self)
+
+    @classmethod
+    def reset(
+        cls,
+        *,
+        events: list[Any] | None = None,
+        snapshots: list[list[str]] | None = None,
+    ) -> None:
+        cls.events = list(events or [])
+        cls.snapshots = list(snapshots or [])
+        cls.instances = []
+
+    @classmethod
+    def _next_snapshot(cls) -> list[str]:
+        if cls.snapshots:
+            return cls.snapshots.pop(0)
+        return []
+
+    async def __aenter__(self) -> FakePromptMonitor:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    async def async_get(self, *args: Any, **kwargs: Any) -> Any:
+        if not FakePromptMonitor.events:
+            raise TimeoutError
+        event = FakePromptMonitor.events.pop(0)
+        if isinstance(event, BaseException):
+            raise event
+        return event
+
+    async def refresh_snapshot(self) -> list[str]:
+        return self._next_snapshot()
 
 
 def as_connection(connection: object) -> Connection:
@@ -435,6 +482,173 @@ def test_run_command_changes_directory_before_fallback() -> None:
 
         assert result.output == "fallback-output"
         assert as_fake_session(state.session).sent == [("cd -- /new\r", True)]
+
+    asyncio.run(scenario())
+
+
+def test_wait_for_prompt_ignores_foreign_events_and_uses_active_prompt_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        Mode = FakePromptMonitor.Mode
+        prompt_obj = SimpleNamespace(unique_id="prompt-fallback")
+        sent: list[bool] = []
+
+        async def send_command() -> None:
+            sent.append(True)
+
+        FakePromptMonitor.reset(
+            snapshots=[["prompt$"]],
+            events=[
+                (Mode.COMMAND_END, 0, "old-prompt"),
+                (Mode.COMMAND_START, "foreign command", "foreign-prompt"),
+                (Mode.PROMPT, prompt_obj, None),
+                (Mode.COMMAND_START, "echo hi", "start-prompt"),
+                (Mode.COMMAND_END, 0, None),
+            ],
+        )
+        monkeypatch.setattr(state_module, "PromptMonitor", FakePromptMonitor)
+
+        result = await state._wait_for_prompt(send_command(), timeout=1.0, expected_command="echo hi")
+
+        assert sent == [True]
+        assert result == CommandExecutionStatus(
+            prompt_id="start-prompt",
+            command="echo hi",
+            exit_code=CommandExecutionStatus.ExitCode.SUCCESS,
+        )
+
+    asyncio.run(scenario())
+
+
+def test_wait_for_prompt_retries_after_changed_snapshot_then_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        async def send_command() -> None:
+            return None
+
+        FakePromptMonitor.reset(
+            snapshots=[["prompt$"], ["prompt$", "partial output"], ["prompt$", "partial output"]],
+            events=[TimeoutError(), TimeoutError()],
+        )
+        monkeypatch.setattr(state_module, "PromptMonitor", FakePromptMonitor)
+
+        result = await state._wait_for_prompt(send_command(), timeout=1.0, expected_command="echo hi")
+
+        assert result.timed_out is True
+        assert result.prompt_id is None
+        assert result.command is None
+        assert result.exit_code is CommandExecutionStatus.ExitCode.GENERAL_FAILURE
+
+    asyncio.run(scenario())
+
+
+def test_run_command_with_shell_integration_returns_prompt_output() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        status = CommandExecutionStatus(
+            prompt_id="prompt-1",
+            command="echo\\nhi",
+            exit_code=CommandExecutionStatus.ExitCode.SUCCESS,
+        )
+
+        async def ensure_state(refresh_callback: Any = None) -> None:
+            return None
+
+        async def shell_integration_enabled() -> bool:
+            return True
+
+        async def get_terminal_snapshot() -> list[str]:
+            return ["prompt$"]
+
+        async def wait_for_prompt(coro: Any, **kwargs: Any) -> CommandExecutionStatus:
+            assert kwargs == {"timeout": 2.0, "expected_command": "echo\\nhi"}
+            await coro
+            return status
+
+        async def get_prompt_output(prompt_id: str) -> str:
+            assert prompt_id == "prompt-1"
+            return "prompt-output"
+
+        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_shell_integration_enabled", shell_integration_enabled)
+        patch_attr(state, "_get_terminal_snapshot", get_terminal_snapshot)
+        patch_attr(state, "_wait_for_prompt", wait_for_prompt)
+        patch_attr(state, "_get_prompt_output", get_prompt_output)
+
+        result = await state.run_command("echo\nhi", broadcast=True, timeout=2.0)
+
+        assert result == CommandExecutionResult(output="prompt-output", status=status)
+        assert as_fake_session(state.session).sent == [("echo\\nhi\r", False)]
+
+    asyncio.run(scenario())
+
+
+def test_run_command_with_shell_integration_falls_back_to_snapshot_diff() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        status = CommandExecutionStatus(
+            prompt_id="prompt-1",
+            command="echo hi",
+            exit_code=CommandExecutionStatus.ExitCode.GENERAL_FAILURE,
+            timed_out=True,
+        )
+        snapshots = iter([["prompt$"], ["prompt$", "echo hi", "fallback", "prompt$"]])
+
+        async def ensure_state(refresh_callback: Any = None) -> None:
+            return None
+
+        async def shell_integration_enabled() -> bool:
+            return True
+
+        async def get_terminal_snapshot() -> list[str]:
+            return next(snapshots)
+
+        async def wait_for_prompt(coro: Any, **kwargs: Any) -> CommandExecutionStatus:
+            await coro
+            return status
+
+        async def get_prompt_output(prompt_id: str) -> None:
+            assert prompt_id == "prompt-1"
+            return None
+
+        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_shell_integration_enabled", shell_integration_enabled)
+        patch_attr(state, "_get_terminal_snapshot", get_terminal_snapshot)
+        patch_attr(state, "_wait_for_prompt", wait_for_prompt)
+        patch_attr(state, "_get_prompt_output", get_prompt_output)
+
+        result = await state.run_command("echo hi", timeout=3.0)
+
+        assert result.output == "echo hi\nfallback\nprompt$"
+        assert result.status is status
+        assert as_fake_session(state.session).sent == [("echo hi\r", True)]
+
+    asyncio.run(scenario())
+
+
+def test_probe_shell_integration_live_sends_bare_return_and_handles_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        Mode = FakePromptMonitor.Mode
+
+        FakePromptMonitor.reset(events=[(Mode.PROMPT, SimpleNamespace(), "prompt-2")])
+        monkeypatch.setattr(state_module, "PromptMonitor", FakePromptMonitor)
+
+        assert await state._probe_shell_integration_live(timeout=1.0) is True
+        assert as_fake_session(state.session).sent == [("\r", True)]
+
+        as_fake_session(state.session).sent.clear()
+        FakePromptMonitor.reset(events=[TimeoutError()])
+
+        assert await state._probe_shell_integration_live(timeout=1.0) is False
+        assert as_fake_session(state.session).sent == [("\r", True)]
 
     asyncio.run(scenario())
 
@@ -828,28 +1042,6 @@ def test_get_prompt_output_reads_session_contents(monkeypatch: pytest.MonkeyPatc
         assert result == "hi\nthere"
 
     asyncio.run(scenario())
-
-
-def _prompt_mode() -> Any:
-    from iterm2 import prompt as iterm_prompt
-
-    return iterm_prompt.PromptMonitor.Mode
-
-
-class FakePromptMonitor:
-    """Minimal stand-in for PromptMonitor used to drive shell-integration probes."""
-
-    Mode = _prompt_mode()
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.args = args
-        self.kwargs = kwargs
-
-    async def __aenter__(self) -> FakePromptMonitor:
-        return self
-
-    async def __aexit__(self, *exc: Any) -> bool:
-        return False
 
 
 def test_shell_integration_enabled_returns_false_without_autoload(monkeypatch: pytest.MonkeyPatch) -> None:

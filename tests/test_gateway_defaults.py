@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import os
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -9,7 +10,12 @@ import pytest
 
 from iterm2_api_wrapper import gateway as gateway_module
 from iterm2_api_wrapper.api.it2connection import Connection
-from iterm2_api_wrapper.gateway import DefaultITermGateway, SetupCoroGateway, _get_connect_timeout_s
+from iterm2_api_wrapper.gateway import (
+    DefaultITermGateway,
+    SetupCoroGateway,
+    _get_connect_timeout_s,
+    _temporary_iterm_env,
+)
 
 
 @dataclass
@@ -42,6 +48,20 @@ def test_get_connect_timeout_clamps_negative_values(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("ITERM_CONNECT_TIMEOUT", "-4.5")
 
     assert _get_connect_timeout_s() == 0.0
+
+
+def test_temporary_iterm_env_sets_values_and_restores_previous_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("IT2_SUITE", "previous-suite")
+    monkeypatch.delenv("IT2_APP_PATH", raising=False)
+
+    with _temporary_iterm_env(it2_suite="override-suite", it2_app_path="/Applications/iTerm.app"):
+        assert os.environ["IT2_SUITE"] == "override-suite"
+        assert os.environ["IT2_APP_PATH"] == "/Applications/iTerm.app"
+
+    assert os.environ["IT2_SUITE"] == "previous-suite"
+    assert "IT2_APP_PATH" not in os.environ
 
 
 def test_async_create_connection_with_retry_retries_reset_errors() -> None:
