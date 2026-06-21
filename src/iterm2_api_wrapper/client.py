@@ -5,7 +5,7 @@ import concurrent.futures
 import inspect
 import threading
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from threading import Thread
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Unpack, cast
