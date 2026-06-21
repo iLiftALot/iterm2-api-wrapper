@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Callable, Coroutine
+from contextlib import redirect_stderr, redirect_stdout
+from enum import StrEnum
+from io import StringIO
 from pathlib import Path
 from types import FunctionType
-from typing import TYPE_CHECKING, Annotated, Any, Concatenate
+from typing import TYPE_CHECKING, Annotated, Any, Concatenate, Literal
 
 import typer
 from iterm2 import alert, profile
@@ -15,10 +18,12 @@ from iterm2 import alert, profile
 from ._logging import PrettyLog
 from .alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
 from .api.it2connection import run_until_complete
+from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
 from .client import create_iterm_client
 
 
 if TYPE_CHECKING:
+    from .api import Variable
     from .state import iTermState
     from .typings import CommandExecutionResult
 
@@ -26,6 +31,100 @@ if TYPE_CHECKING:
 app = typer.Typer(name="iterm2_api_wrapper")
 log = PrettyLog.get_logger(__name__)
 type CoroutineFn[T, R: Any] = Callable[Concatenate[T, ...], Coroutine[Any, Any, R]]
+type VariableScopeName = Literal["iterm2", "window", "tab", "session", "user"]
+VARIABLE_SCOPE_COMPLETIONS: tuple[tuple[VariableScopeName, str], ...] = (
+    ("iterm2", "Global iTerm2 application variables"),
+    ("window", "Variables for the active window"),
+    ("tab", "Variables for the active tab"),
+    ("session", "Variables for the active session"),
+    ("user", "User-defined session variables"),
+)
+VARIABLE_ENUMS_BY_SCOPE: dict[VariableScopeName, type[StrEnum]] = {
+    "iterm2": AppVarEnum,
+    "window": WindowVarEnum,
+    "tab": TabVarEnum,
+    "session": SessionVarEnum,
+    "user": UserVarEnum,
+}
+
+
+def _strip_kwarg_prefix(value: str, name: str) -> str:
+    prefix = f"{name}="
+    return value[len(prefix) :] if value.startswith(prefix) else value
+
+
+def _unquote_completion_value(value: str) -> str:
+    return value.strip("'\"")
+
+
+def _get_arg_value(args: tuple[str, ...] | list[str], name: str, position: int) -> str | None:
+    for arg in args:
+        if arg.startswith(f"{name}="):
+            return _unquote_completion_value(_strip_kwarg_prefix(arg, name))
+
+    if len(args) > position:
+        return _unquote_completion_value(args[position])
+
+    return None
+
+
+_SCOPE_VARIABLE_CACHE: dict[VariableScopeName, list[str]] = {}
+
+
+def _static_variable_values_for_scope(scope: VariableScopeName) -> list[str]:
+    enum_type = VARIABLE_ENUMS_BY_SCOPE[scope]
+    return sorted({str(member.value) for member in enum_type})
+
+
+def _variable_values_for_scope(scope: VariableScopeName, *, refresh: bool = False) -> list[str]:
+    if not refresh and (cached_values := _SCOPE_VARIABLE_CACHE.get(scope)) is not None:
+        return cached_values
+
+    try:
+        # Shell completion is a strict stdout protocol. The iTerm client setup can
+        # emit Rich debug logs while connecting, which zsh then tries to parse as
+        # completion script text and reports as `(eval):1: parse error near ";;"`.
+        # Keep dynamic extraction, but make the probe completely silent.
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            with create_iterm_client(timeout=2.0) as client:
+                state = client.get_state()
+                scope_vars = run_coro(state.get_variable(scope, "*"), client.loop)
+
+        if not isinstance(scope_vars, dict):
+            return _static_variable_values_for_scope(scope)
+
+        values = sorted(str(key) for key in scope_vars if str(key))
+        _SCOPE_VARIABLE_CACHE[scope] = values
+        return values
+
+    except Exception:
+        return _static_variable_values_for_scope(scope)
+
+
+def _complete_get_variable_arg(incomplete: str, ctx: typer.Context) -> list[tuple[str, str]]:
+    args = tuple(ctx.params.get("args") or ())
+    scope = _get_arg_value(args, "scope", 0)
+
+    # If scope is not known yet, complete scope.
+    if scope not in VARIABLE_ENUMS_BY_SCOPE:
+        incomplete_scope = _strip_kwarg_prefix(incomplete, "scope")
+        prefix = "scope=" if incomplete.startswith("scope=") else ""
+
+        return [
+            (f"{prefix}{scope_name}", help_text)
+            for scope_name, help_text in VARIABLE_SCOPE_COMPLETIONS
+            if scope_name.startswith(incomplete_scope)
+        ]
+
+    # Scope is known; complete variable.
+    incomplete_variable = _strip_kwarg_prefix(incomplete, "variable")
+    prefix = "variable=" if incomplete.startswith("variable=") else ""
+
+    return [
+        (f"{prefix}{value}", f"{scope} variable")
+        for value in _variable_values_for_scope(scope)
+        if value.startswith(incomplete_variable)
+    ]
 
 
 def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop) -> T:
@@ -39,18 +138,25 @@ def profiles_completion(incomplete: str, ctx: typer.Context) -> list[tuple[str, 
 
 
 def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[str, str]]:
+    func_name: str = ctx.params.get("func_name", "")
+    if func_name == "get_variable":
+        return _complete_get_variable_arg(incomplete, ctx)
+
     functions: dict[str, CoroutineFn[iTermState, Any]] = {
         "send_command": send_command,
+        "get_variable": get_variable,
         "show_capabilities": show_capabilities,
         "alert": test_alerts,
         "text_input_alert": test_text_input_alert,
         "poly_modal_alert": test_poly_modal_alert,
         "all_alerts": test_all_alerts,
     }
+
     func_name: str = ctx.params.get("func_name", "")
     func: Callable[..., Any] | None = functions.get(func_name)
     if func is None:
         return []
+
     sig = inspect.signature(func).parameters
     func_params = [
         (f"{name}='", f"{param} ({param.kind.description})")
@@ -156,6 +262,26 @@ async def show_capabilities(state: iTermState, capability: str | None = None) ->
     return capabilities
 
 
+async def get_variable(
+    state: iTermState,
+    scope: Literal["iterm2", "window", "tab", "session", "user"],
+    variable: Variable,
+):
+    match scope:
+        case "iterm2":
+            return await state.get_global_var(variable)
+        case "window":
+            return await state.get_window_var(variable)
+        case "tab":
+            return await state.get_tab_var(variable)
+        case "session":
+            return await state.get_session_var(variable)
+        case "user":
+            return await state.get_user_var(variable)
+        case _:
+            raise RuntimeError(f"Unknown variable scope: {scope}")
+
+
 async def send_command(
     state: iTermState, command: str | None = None, path: str | None = None, timeout: float = 120.0
 ) -> CommandExecutionResult:
@@ -179,9 +305,10 @@ def main(
         str,
         typer.Argument(
             ...,
-            help="The function to run: alert, text_input_alert, poly_modal_alert, all_alerts, show_capabilities, send_command",
+            help="The function to run: alert, text_input_alert, poly_modal_alert, all_alerts, show_capabilities, get_variable, send_command",
             autocompletion=lambda: [
                 "send_command",
+                "get_variable",
                 "show_capabilities",
                 "alert",
                 "text_input_alert",
@@ -247,10 +374,12 @@ def main(
     fn_args, fn_kwargs = kwarg_conversion(tuple(args or []))
     log.info(f"{fn_args=}\n{fn_kwargs=}")
     match func_name:
-        case "show_capabilities":
-            selected_fn = show_capabilities
         case "send_command":
             selected_fn = send_command
+        case "get_variable":
+            selected_fn = get_variable
+        case "show_capabilities":
+            selected_fn = show_capabilities
         case "alert":
             selected_fn = test_alerts
         case "text_input_alert":
@@ -267,7 +396,8 @@ def main(
         state = client.get_state()
         event_loop = client.loop
         output = run_coro(selected_fn(state, *fn_args, **fn_kwargs), event_loop)
-        log.info(str(output), output)
+        output_style = (str(output), output, type(output)) if not isinstance(output, (int, str)) else f"{output=}"
+        log.info(output_style)
 
 
 if __name__ == "__main__":

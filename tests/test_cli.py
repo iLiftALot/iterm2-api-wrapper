@@ -46,6 +46,56 @@ def test_func_to_args_completion_returns_remaining_function_parameters() -> None
     assert cli.func_to_args_completion("", as_ctx(SimpleNamespace(params={"func_name": "missing"}))) == []
 
 
+def test_get_variable_completion_returns_scopes_before_scope_is_known() -> None:
+    ctx = as_ctx(SimpleNamespace(params={"func_name": "get_variable", "args": ()}))
+
+    completions = cli.func_to_args_completion("s", ctx)
+
+    assert completions == [("session", "Variables for the active session")]
+
+
+def test_get_variable_completion_returns_variables_for_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "_variable_values_for_scope", lambda scope: ["gitBranch", "gitRepo", "home"])
+    ctx = as_ctx(SimpleNamespace(params={"func_name": "get_variable", "args": ("user",)}))
+
+    completions = cli.func_to_args_completion("git", ctx)
+
+    assert completions == [("gitBranch", "user variable"), ("gitRepo", "user variable")]
+
+
+def test_get_variable_completion_supports_keyword_style(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "_variable_values_for_scope", lambda scope: ["path", "profileName"])
+    ctx = as_ctx(SimpleNamespace(params={"func_name": "get_variable", "args": ("scope=session",)}))
+
+    completions = cli.func_to_args_completion("variable=p", ctx)
+
+    assert completions == [("variable=path", "session variable"), ("variable=profileName", "session variable")]
+
+
+def test_variable_values_for_scope_suppresses_completion_probe_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FakeClient:
+        loop = "loop"
+
+        def __enter__(self) -> FakeClient:
+            print("noisy setup stdout")
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            print("noisy teardown stdout")
+
+        def get_state(self) -> object:
+            return SimpleNamespace(get_variable=lambda scope, variable: "coroutine")
+
+    monkeypatch.setattr(cli, "create_iterm_client", lambda **kwargs: FakeClient())
+    monkeypatch.setattr(cli, "run_coro", lambda coro, event_loop: {"user.gitBranch": "main"})
+    cli._SCOPE_VARIABLE_CACHE.clear()
+
+    assert cli._variable_values_for_scope("user", refresh=True) == ["user.gitBranch"]
+    assert capsys.readouterr().out == ""
+
+
 def test_run_coro_executes_on_supplied_loop() -> None:
     async def scenario() -> str:
         return "done"

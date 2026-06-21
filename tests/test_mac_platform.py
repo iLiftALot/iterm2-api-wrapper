@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -39,16 +39,15 @@ def test_iterm_not_open_reports_true_when_app_is_closed(monkeypatch: pytest.Monk
 
 
 class FakeApplication:
-    calls: ClassVar[list[object]] = []
-
     def __init__(self) -> None:
+        self.calls: list[object] = []
         self.active = False
 
     def isActive(self) -> bool:
         return self.active
 
     def activateWithOptions_(self, options: int) -> bool:
-        FakeApplication.calls.append(("activate", options))
+        self.calls.append(("activate", options))
         self.active = True
         return True
 
@@ -62,36 +61,43 @@ class FakeApplication:
         return True
 
 
-class FakeContainer[AppT]:
-    def __init__(self, app: AppT) -> None:
+class FakeContainer:
+    def __init__(self, app: FakeApplication) -> None:
         self.app = app
-        self.running_iterm_apps: list[AppT] = []
+        self.running_iterm_apps: list[FakeApplication] = []
 
-    def first_finished_application(self) -> AppT:
-        return self.app
+    def first_finished_application(self) -> FakeApplication | None:
+        for application in self.running_iterm_apps:
+            if application.isFinishedLaunching():
+                return application
+        return None
 
-    def launch(self) -> None:
-        FakeApplication.calls.append("launch")
-        self.running_iterm_apps = [self.app]
+    def launch(self) -> None: ...
 
-    def activate(self, running_app: FakeApplication, *, call_name: str, options: int | None = None) -> None:
-        calls = (call_name, options) if options else call_name
-        FakeApplication.calls.append(calls)
-        if options:
-            running_app.activateWithOptions_(options)
-            # running_app.activateWithOptions_(3)
+    def activate(self, running_app: FakeApplication) -> None: ...
 
     @classmethod
-    def asPyObjc(cls, app: AppT = None) -> pyobjc_adapter.PyObjcContainer:
-        return cast(pyobjc_adapter.PyObjcContainer, cls(app))
+    def asPyObjc(cls, app: FakeApplication | None = None) -> pyobjc_adapter.PyObjcContainer:
+        resolved_app = app or FakeApplication()
+        return cast(pyobjc_adapter.PyObjcContainer, cls(resolved_app))
 
 
 def test_async_ensure_iterm_app_running_launches_and_activates(monkeypatch: pytest.MonkeyPatch) -> None:
     app = FakeApplication()
-    container = FakeContainer.asPyObjc(app)
+
+    class _FakeContainer(FakeContainer):
+        def launch(self) -> None:
+            app.calls.append("launch")
+            self.running_iterm_apps = [app]
+
+        def activate(self, running_app: FakeApplication) -> None:
+            app.calls.append("container_activate")
+            running_app.activateWithOptions_(3)
+
+    container = _FakeContainer.asPyObjc(app)
 
     async def fake_wait_for_finished_application(app_container: FakeContainer, **kwargs) -> FakeApplication:
-        FakeApplication.calls.append(("wait", kwargs))
+        app.calls.append(("wait", kwargs))
         assert app_container is container
         return app
 
@@ -101,13 +107,12 @@ def test_async_ensure_iterm_app_running_launches_and_activates(monkeypatch: pyte
     result = asyncio.run(pyobjc_adapter.async_ensure_iterm_app_running(activate=True))
 
     assert result is app
-    assert FakeApplication.calls == [
+    assert app.calls == [
         "launch",
         ("wait", {"timeout_s": pyobjc_adapter.ITERM_NEW_APP_TIMEOUT, "poll_interval_s": 0.5}),
         "container_activate",
         ("activate", 3),
     ]
-    FakeApplication.calls.clear()
 
 
 def test_async_ensure_iterm_app_running_does_not_launch_running_app(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -115,7 +120,7 @@ def test_async_ensure_iterm_app_running_does_not_launch_running_app(monkeypatch:
     container = FakeContainer.asPyObjc(app)
 
     async def fake_wait_for_finished_application(app_container: FakeContainer, **kwargs) -> FakeApplication:
-        FakeApplication.calls.append(("wait", kwargs))
+        app.calls.append(("wait", kwargs))
         assert app_container is container
         return app
 
@@ -125,10 +130,7 @@ def test_async_ensure_iterm_app_running_does_not_launch_running_app(monkeypatch:
     result = asyncio.run(pyobjc_adapter.async_ensure_iterm_app_running(activate=False))
 
     assert result is app
-    assert FakeApplication.calls == [
-        ("wait", {"timeout_s": pyobjc_adapter.ITERM_NEW_APP_TIMEOUT, "poll_interval_s": 0.5})
-    ]
-    FakeApplication.calls.clear()
+    assert app.calls == [("wait", {"timeout_s": pyobjc_adapter.ITERM_NEW_APP_TIMEOUT, "poll_interval_s": 0.5})]
 
 
 def test_get_new_app_timeout_parses_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,6 +176,7 @@ def test_log_launch_completion_handles_all_branches(monkeypatch: pytest.MonkeyPa
 def test_wait_for_finished_application_returns_first_ready() -> None:
     app = FakeApplication()
     container = FakeContainer.asPyObjc(app)
+    cast(FakeContainer, container).running_iterm_apps = [app]
     result = asyncio.run(pyobjc_adapter._wait_for_finished_application(container, timeout_s=1.0))
     assert result is app
 
@@ -197,11 +200,11 @@ def test_async_create_app_with_retry_launches_then_connects(monkeypatch: pytest.
     app = FakeApplication()
 
     async def fake_ensure(*, activate: bool) -> object:
-        FakeApplication.calls.append(("ensure", activate))
+        app.calls.append(("ensure", activate))
         return app
 
     async def fake_create_connection(connection_cls: object, *, timeout_s: float) -> str:
-        FakeApplication.calls.append(("connect", timeout_s))
+        app.calls.append(("connect", timeout_s))
         return "connection"
 
     monkeypatch.setattr(pyobjc_adapter, "async_ensure_iterm_app_running", fake_ensure)
@@ -210,8 +213,7 @@ def test_async_create_app_with_retry_launches_then_connects(monkeypatch: pytest.
     result = asyncio.run(pyobjc_adapter.async_create_app_with_retry(FakeConnection, activate=True))
 
     assert result == "connection"
-    assert FakeApplication.calls == [("ensure", True), ("connect", pyobjc_adapter._CONNECTION_READY_TIMEOUT_S)]
-    FakeApplication.calls.clear()
+    assert app.calls == [("ensure", True), ("connect", pyobjc_adapter._CONNECTION_READY_TIMEOUT_S)]
 
 
 def test_maybe_reveal_hotkey_window_requires_applescript_package() -> None:
