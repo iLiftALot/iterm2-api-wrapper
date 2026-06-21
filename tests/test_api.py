@@ -528,9 +528,7 @@ def test_check_api_enabled_reads_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     assert iTermAPI._check_api_enabled() is True
     assert recorded[0][:2] == ["defaults", "read"]
 
-    monkeypatch.setattr(
-        api_module.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout="0")
-    )
+    monkeypatch.setattr(api_module.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout="0"))
     assert iTermAPI._check_api_enabled() is False
 
     def raises(*a: object, **k: object) -> SimpleNamespace:
@@ -653,12 +651,8 @@ def test_json_serializes_context_snapshot() -> None:
             SimpleNamespace(windows=[object(), object()], broadcast_domains=[], buried_sessions=[object()]),
         )
     )
-    api.window = as_window(
-        cast(FakeWindow, SimpleNamespace(tabs=[object()], window_id="window-1", window_number=1))
-    )
-    api.tab = as_tab(
-        cast(FakeTab, SimpleNamespace(tab_id="tab-1", all_sessions=[object()], active_session_id="sid"))
-    )
+    api.window = as_window(cast(FakeWindow, SimpleNamespace(tabs=[object()], window_id="window-1", window_number=1)))
+    api.tab = as_tab(cast(FakeTab, SimpleNamespace(tab_id="tab-1", all_sessions=[object()], active_session_id="sid")))
     api.session = as_session(cast(FakeSession, SimpleNamespace(session_id="sid", name="iterm-api:pyterm-mcp")))
 
     payload = json.loads(api.json())

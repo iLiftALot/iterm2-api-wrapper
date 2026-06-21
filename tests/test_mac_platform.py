@@ -144,9 +144,7 @@ def test_get_new_app_timeout_parses_env(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_activation_options_combines_flags() -> None:
-    expected = (
-        pyobjc_adapter.NSApplicationActivateAllWindows | pyobjc_adapter.NSApplicationActivateIgnoringOtherApps
-    )
+    expected = pyobjc_adapter.NSApplicationActivateAllWindows | pyobjc_adapter.NSApplicationActivateIgnoringOtherApps
     assert pyobjc_adapter._activation_options() == expected
 
 
@@ -165,9 +163,7 @@ def test_log_launch_completion_handles_all_branches(monkeypatch: pytest.MonkeyPa
     assert any("without a running application" in d for d in debugs)
 
     # Success branch.
-    running_app = SimpleNamespace(
-        bundleIdentifier=lambda: "com.googlecode.iterm2", isFinishedLaunching=lambda: True
-    )
+    running_app = SimpleNamespace(bundleIdentifier=lambda: "com.googlecode.iterm2", isFinishedLaunching=lambda: True)
     pyobjc_adapter._log_launch_completion(cast(pyobjc_adapter.NSRunningApplication, running_app), None)
     assert any("launch callback completed: bundle=" in d for d in debugs)
 
@@ -179,7 +175,11 @@ def test_wait_for_finished_application_returns_first_ready() -> None:
         def first_finished_application(self) -> object:
             return app
 
-    result = asyncio.run(pyobjc_adapter._wait_for_finished_application(cast(pyobjc_adapter.PyObjcContainer, FakeContainer()), timeout_s=1.0))
+    result = asyncio.run(
+        pyobjc_adapter._wait_for_finished_application(
+            cast(pyobjc_adapter.PyObjcContainer, FakeContainer()), timeout_s=1.0
+        )
+    )
     assert result is app
 
 
