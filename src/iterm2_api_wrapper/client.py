@@ -5,6 +5,7 @@ import concurrent.futures
 import inspect
 import threading
 from collections.abc import Awaitable, Callable, Coroutine
+from dataclasses import InitVar, dataclass, field
 from threading import Thread
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Unpack, cast
@@ -256,22 +257,69 @@ def create_iterm_client(*, timeout: float | None = None, **kwargs: Unpack[iTermS
     return iTermClient(timeout=timeout, **kwargs)
 
 
-_shared_client: ITermClient | None = None
+@dataclass(frozen=True)
+class SharedClientKey:
+    service_name: str = "iterm-api"
+    dedicated_profile_name: str | None = None
+    extra_id: str | None = None
+
+    @classmethod
+    def from_kwargs(cls, **kwargs: Unpack[iTermSetupKwargs]) -> SharedClientKey:
+        return cls(
+            service_name=kwargs.get("service_name") or "iterm-api",
+            dedicated_profile_name=kwargs.get("dedicated_profile_name") or None,
+            extra_id=kwargs.get("extra_id") or None,
+        )
+
+
+def _shared_client_key(**kwargs: Unpack[iTermSetupKwargs]) -> SharedClientKey:
+    return SharedClientKey.from_kwargs(**kwargs)
+
+
+_shared_clients: dict[SharedClientKey, ITermClient] = {}
 _shared_lock = asyncio.Lock()
 
 
 async def get_shared_client(**kwargs: Unpack[iTermSetupKwargs]) -> ITermClient:
-    """Async singleton — creates client on first call, returns cached instance thereafter."""
-    global _shared_client
-    service_name = kwargs.get("service_name", "iterm-api")
-    profile_name = kwargs.get("dedicated_profile_name", None)
-    extra_id = kwargs.get("extra_id", None)
+    """Return a shared client resolved by service/profile/extra identifiers.
 
-    if _shared_client is not None:
-        return _shared_client
+    Calls without identifiers still behave like the old singleton and reuse the
+    default key: ``SharedClientKey(service_name="iterm-api")``.
+
+    Calls with identifiers, for example
+    ``service_name="pyterm-mcp", extra_id=ctx.session_id``, get a distinct
+    cached client for those identifiers.
+    """
+    key = _shared_client_key(**kwargs)
+
+    if (client := _shared_clients.get(key)) is not None:
+        return client
 
     async with _shared_lock:
-        if _shared_client is not None:
-            return _shared_client
-        _shared_client = await iTermClient.create(**kwargs)
-        return _shared_client
+        if (client := _shared_clients.get(key)) is not None:
+            return client
+
+        client = await iTermClient.create(**kwargs)
+        _shared_clients[key] = client
+        return client
+
+
+async def close_shared_client(**kwargs: Unpack[iTermSetupKwargs]) -> None:
+    """Close and remove one shared client by identifier, if it exists."""
+    key = _shared_client_key(**kwargs)
+
+    async with _shared_lock:
+        client = _shared_clients.pop(key, None)
+
+    if client is not None:
+        client.close()
+
+
+async def close_all_shared_clients() -> None:
+    """Close and clear all shared clients."""
+    async with _shared_lock:
+        clients = list(_shared_clients.values())
+        _shared_clients.clear()
+
+    for client in clients:
+        client.close()

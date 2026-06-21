@@ -16,7 +16,13 @@ log = PrettyLog(__package__, mode="all", level="DEBUG", pretty_config=get_defaul
 
 
 from .api import create_iterm_state, iTermAPI
-from .client import create_iterm_client, get_shared_client, iTermClient
+from .client import (
+    close_all_shared_clients,
+    close_shared_client,
+    create_iterm_client,
+    get_shared_client,
+    iTermClient,
+)
 from .state import iTermState
 from .typings import CommandExecutionStatus, CommandExitCode
 
@@ -24,6 +30,8 @@ from .typings import CommandExecutionStatus, CommandExitCode
 __all__ = [
     "CommandExecutionStatus",
     "CommandExitCode",
+    "close_all_shared_clients",
+    "close_shared_client",
     "create_iterm_client",
     "create_iterm_state",
     "get_shared_client",
