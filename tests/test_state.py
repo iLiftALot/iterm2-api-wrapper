@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 import pytest
 
 from iterm2_api_wrapper import state as state_module
 from iterm2_api_wrapper.state import (
+    LoopManager,
+    User,
     _validate_state,
     changed_slice,
     iTermState,
 )
+from iterm2_api_wrapper.typings import HexCodeEnum
 
 
 if TYPE_CHECKING:
@@ -432,6 +435,534 @@ def test_run_command_changes_directory_before_fallback() -> None:
 
         assert result.output == "fallback-output"
         assert as_fake_session(state.session).sent == [("cd -- /new\r", True)]
+
+    asyncio.run(scenario())
+
+
+def test_changed_slice_edge_cases() -> None:
+    # No change -> empty slice.
+    assert changed_slice(["a", "b"], ["a", "b"]) == []
+    # Pure append.
+    assert changed_slice(["a"], ["a", "b", "c"]) == ["b", "c"]
+    # Change sandwiched between a stable prefix and suffix.
+    assert changed_slice(["p", "x", "q"], ["p", "y", "z", "q"]) == ["y", "z"]
+    # Empty before yields the whole after.
+    assert changed_slice([], ["only"]) == ["only"]
+
+
+def test_usable_loop_filters_none_and_closed() -> None:
+    assert LoopManager._usable_loop(None) is None
+
+    closed = asyncio.new_event_loop()
+    closed.close()
+    assert LoopManager._usable_loop(closed) is None
+
+    open_loop = asyncio.new_event_loop()
+    try:
+        assert LoopManager._usable_loop(open_loop) is open_loop
+    finally:
+        open_loop.close()
+
+
+def test_user_display_name_and_lookup() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        user = User(state)
+
+        # Plain names get the "user." prefix; existing user refs are left intact.
+        assert user.display_name("foo") == "user.foo"
+        assert user.display_name("session.user.bar") == "session.user.bar"
+
+        # A plain name resolves against the session target.
+        assert await user.async_get_variable("plain") == "plain-value"
+        # A name that already references user context is looked up verbatim.
+        assert await user.async_get_variable("x.user.y") == "x.user.y-value"
+
+    asyncio.run(scenario())
+
+
+def test_send_escape_sequence_resolves_members_and_names() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        async def ensure_state(refresh_callback: Any = None) -> None:
+            return None
+
+        patch_attr(state, "ensure_state", ensure_state)
+
+        await state.send_escape_sequence(HexCodeEnum.ESC, "B", broadcast=False)
+
+        # ESC member + the "B" member name both resolve to their control bytes.
+        assert as_fake_session(state.session).sent == [("\x1bb", True)]
+
+    asyncio.run(scenario())
+
+
+def test_send_escape_sequence_requires_at_least_one_sequence() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        async def ensure_state(refresh_callback: Any = None) -> None:
+            return None
+
+        patch_attr(state, "ensure_state", ensure_state)
+
+        with pytest.raises(ValueError, match="at least one sequence"):
+            await state.send_escape_sequence()
+
+    asyncio.run(scenario())
+
+
+def test_typed_var_getters_route_to_expected_contexts() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        captured: list[tuple[str, str]] = []
+
+        async def fake_get_variable(*, ctx: str, variable: str) -> str:
+            captured.append((ctx, variable))
+            return "value"
+
+        patch_attr(state, "get_variable", fake_get_variable)
+
+        await state.get_session_var("path")
+        await state.get_session_var("foo.user.bar")
+        await state.get_window_var("window_var")
+        await state.get_tab_var("tab_var")
+        await state.get_global_var("global_var")
+        await state.get_user_var("custom")
+
+        assert captured == [
+            ("session", "path"),
+            ("user", "foo.user.bar"),
+            ("window", "window_var"),
+            ("tab", "tab_var"),
+            ("iterm2", "global_var"),
+            ("user", "custom"),
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_online_returns_false_without_websocket() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        as_fake_connection(state.connection).websocket = None
+        assert await state.online() is False
+
+    asyncio.run(scenario())
+
+
+def test_online_returns_false_when_close_code_present() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        as_fake_connection(state.connection).websocket = FakeWebsocket(state="OPEN", close_code=1006)
+        assert await state.online() is False
+
+    asyncio.run(scenario())
+
+
+def test_validated_state_returns_false_when_offline() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        async def offline() -> bool:
+            return False
+
+        patch_attr(state, "online", offline)
+        assert await state.validated_state() is False
+
+    asyncio.run(scenario())
+
+
+def test_validated_state_returns_false_when_app_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        async def online() -> bool:
+            return True
+
+        async def fake_get_app(connection: Any, *, create_if_needed: bool) -> None:
+            return None
+
+        patch_attr(state, "online", online)
+        monkeypatch.setattr(state_module, "async_get_app", fake_get_app)
+
+        assert await state.validated_state() is False
+
+    asyncio.run(scenario())
+
+
+def test_debug_property_reflects_loop_debug_flag() -> None:
+    async def scenario() -> None:
+        loop = asyncio.get_running_loop()
+        state = make_state(loop)
+
+        loop.set_debug(False)
+        assert state.debug is False
+        loop.set_debug(True)
+        assert state.debug is True
+        loop.set_debug(False)
+
+    asyncio.run(scenario())
+
+
+def test_refresh_from_copies_all_fields_and_reconciles_loop() -> None:
+    async def scenario() -> None:
+        loop = asyncio.get_running_loop()
+        state = make_state(loop)
+        replacement = make_state(loop)
+        replacement.is_hotkey_window = True
+
+        async def callback() -> iTermState:
+            return replacement
+
+        replacement._refresh_callback = callback
+
+        state.refresh_from(replacement)
+
+        assert state.connection is replacement.connection
+        assert state.app is replacement.app
+        assert state.window is replacement.window
+        assert state.tab is replacement.tab
+        assert state.session is replacement.session
+        assert state.profile is replacement.profile
+        assert state.is_hotkey_window is True
+        assert state._refresh_callback is callback
+        assert state.connection.loop is loop
+
+    asyncio.run(scenario())
+
+
+def test_refresh_from_rejects_non_state() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        with pytest.raises(TypeError, match="refresh_from expects an iTermState"):
+            state.refresh_from(cast(Any, object()))
+
+    asyncio.run(scenario())
+
+
+def test_ensure_state_accepts_awaitable_callback() -> None:
+    async def scenario() -> None:
+        loop = asyncio.get_running_loop()
+        state = make_state(loop)
+        refreshed = make_state(loop)
+
+        async def invalid() -> bool:
+            return False
+
+        patch_attr(state, "validated_state", invalid)
+
+        async def awaitable_callback() -> iTermState:
+            return refreshed
+
+        await state.ensure_state(awaitable_callback())
+
+        assert state.connection is refreshed.connection
+
+    asyncio.run(scenario())
+
+
+def test_get_terminal_snapshot_trims_trailing_blank_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        class FakeTransaction:
+            def __init__(self, connection: Any) -> None:
+                self.connection = connection
+
+            async def __aenter__(self) -> Self:
+                return self
+
+            async def __aexit__(self, *exc: Any) -> bool:
+                return False
+
+        monkeypatch.setattr(state_module, "Transaction", FakeTransaction)
+
+        session = as_fake_session(state.session)
+        session.line_info = SimpleNamespace(overflow=0, scrollback_buffer_height=0, mutable_area_height=4)
+        session.contents = [
+            SimpleNamespace(string="first"),
+            SimpleNamespace(string="second"),
+            SimpleNamespace(string="   "),
+            SimpleNamespace(string=""),
+        ]
+
+        snapshot = await state._get_terminal_snapshot()
+        assert snapshot == ["first", "second"]
+
+        filtered = await state._get_terminal_snapshot(trim_end=False, filter_all_empty=True)
+        assert filtered == ["first", "second"]
+
+    asyncio.run(scenario())
+
+
+def test_wait_for_terminal_snapshot_completion_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        async def unchanged_snapshot() -> list[str]:
+            return ["prompt$"]
+
+        async def no_sleep(delay: float) -> None:
+            return None
+
+        patch_attr(state, "_get_terminal_snapshot", unchanged_snapshot)
+        monkeypatch.setattr(asyncio, "sleep", no_sleep)
+
+        with pytest.raises(TimeoutError, match="shell integration disabled"):
+            await state._wait_for_terminal_snapshot_completion(["prompt$"], marker="__MISSING__", timeout=0.0)
+
+    asyncio.run(scenario())
+
+
+def test_asdict_exposes_public_fields_only() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        data = state.asdict()
+
+        assert set(data) == {"connection", "app", "window", "tab", "session", "profile", "is_hotkey_window"}
+        assert data["is_hotkey_window"] is False
+        assert all(not key.startswith("_") for key in data)
+        # Objects with __dict__ are expanded into their attribute mapping.
+        assert isinstance(data["session"], dict)
+
+    asyncio.run(scenario())
+
+
+class FakeTransaction:
+    def __init__(self, connection: Any) -> None:
+        self.connection = connection
+
+    async def __aenter__(self) -> FakeTransaction:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
+def test_get_prompt_routes_by_unique_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        captured: dict[str, Any] = {}
+
+        async def by_id(*, connection: Any, session_id: str, prompt_unique_id: str) -> str:
+            captured["by_id"] = (session_id, prompt_unique_id)
+            return "PROMPT-BY-ID"
+
+        async def last(*, connection: Any, session_id: str) -> str:
+            captured["last"] = session_id
+            return "LAST-PROMPT"
+
+        monkeypatch.setattr(state_module, "async_get_prompt_by_id", by_id)
+        monkeypatch.setattr(state_module, "async_get_last_prompt", last)
+
+        assert await state._get_prompt("uid-1") == "PROMPT-BY-ID"
+        assert await state._get_prompt() == "LAST-PROMPT"
+        assert captured["by_id"] == ("session-1", "uid-1")
+        assert captured["last"] == "session-1"
+
+    asyncio.run(scenario())
+
+
+def test_shell_integration_enabled_uses_live_cache() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        sid = state.session.session_id
+
+        # A cached "live" verdict short-circuits without re-probing.
+        assert state.loop is not None
+        state._si_live_cache[sid] = (True, state.loop.time())
+        assert await state._shell_integration_enabled() is True
+
+        # A recent "dead" verdict is honored within the recheck window.
+        state._si_live_cache[sid] = (False, state.loop.time())
+        assert await state._shell_integration_enabled() is False
+
+    asyncio.run(scenario())
+
+
+def test_get_prompt_output_returns_none_when_range_inverted() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        inverted_prompt = SimpleNamespace(
+            output_range=SimpleNamespace(start=SimpleNamespace(y=5), end=SimpleNamespace(y=2), proto="out"),
+            command_range=SimpleNamespace(proto="cmd"),
+            excluded_subranges=[],
+            prompt_range=SimpleNamespace(proto="prompt"),
+            command="echo hi",
+        )
+
+        async def get_prompt(unique_id: str | None = None) -> Any:
+            return inverted_prompt
+
+        patch_attr(state, "_get_prompt", get_prompt)
+
+        assert await state._get_prompt_output("id") is None
+
+    asyncio.run(scenario())
+
+
+def test_get_prompt_output_reads_session_contents(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        monkeypatch.setattr(state_module, "Transaction", FakeTransaction)
+
+        valid_prompt = SimpleNamespace(
+            output_range=SimpleNamespace(start=SimpleNamespace(y=0), end=SimpleNamespace(y=2), proto="out"),
+            command_range=SimpleNamespace(proto="cmd"),
+            excluded_subranges=[],
+            prompt_range=SimpleNamespace(proto="prompt"),
+            command="echo hi",
+        )
+
+        async def get_prompt(unique_id: str | None = None) -> Any:
+            return valid_prompt
+
+        patch_attr(state, "_get_prompt", get_prompt)
+        session = as_fake_session(state.session)
+        session.contents = [SimpleNamespace(string="hi"), SimpleNamespace(string="there")]
+
+        result = await state._get_prompt_output("id")
+        assert result == "hi\nthere"
+
+    asyncio.run(scenario())
+
+
+def _prompt_mode() -> Any:
+    from iterm2 import prompt as iterm_prompt
+
+    return iterm_prompt.PromptMonitor.Mode
+
+
+class FakePromptMonitor:
+    """Minimal stand-in for PromptMonitor used to drive shell-integration probes."""
+
+    Mode = _prompt_mode()
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+    async def __aenter__(self) -> FakePromptMonitor:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
+def test_shell_integration_enabled_returns_false_without_autoload(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        async def get_prompt(unique_id: str | None = None) -> None:
+            return None
+
+        patch_attr(state, "_get_prompt", get_prompt)
+        # Profile has autoload disabled, so no marks -> not live.
+        state.profile = cast(Any, SimpleNamespace(name="Default", all_properties={}))
+
+        assert await state._shell_integration_enabled() is False
+        assert state._si_live_cache[state.session.session_id][0] is False
+
+    asyncio.run(scenario())
+
+
+def test_shell_integration_enabled_trusts_editing_prompt_state() -> None:
+    async def scenario() -> None:
+        from iterm2 import prompt as iterm_prompt
+
+        state = make_state(asyncio.get_running_loop())
+
+        editing_prompt = SimpleNamespace(state=iterm_prompt.PromptState.EDITING)
+
+        async def get_prompt(unique_id: str | None = None) -> Any:
+            return editing_prompt
+
+        patch_attr(state, "_get_prompt", get_prompt)
+
+        assert await state._shell_integration_enabled() is True
+        assert state._si_live_cache[state.session.session_id][0] is True
+
+    asyncio.run(scenario())
+
+
+def test_probe_shell_integration_live_true_on_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        class ProbeMonitor(FakePromptMonitor):
+            async def async_get(self, include_id: bool = False, *, mode: Any = None) -> Any:
+                return (mode, None)
+
+        monkeypatch.setattr(state_module, "PromptMonitor", ProbeMonitor)
+
+        assert await state._probe_shell_integration_live() is True
+        # A bare CR is sent to mint a fresh prompt mark.
+        assert as_fake_session(state.session).sent == [("\r", True)]
+
+    asyncio.run(scenario())
+
+
+def test_probe_shell_integration_live_false_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+
+        class ProbeMonitor(FakePromptMonitor):
+            async def async_get(self, include_id: bool = False, *, mode: Any = None) -> Any:
+                raise TimeoutError
+
+        monkeypatch.setattr(state_module, "PromptMonitor", ProbeMonitor)
+
+        assert await state._probe_shell_integration_live(timeout=0.01) is False
+
+    asyncio.run(scenario())
+
+
+def test_run_command_uses_prompt_output_when_shell_integration_live() -> None:
+    async def scenario() -> None:
+        from iterm2_api_wrapper.typings import CommandExecutionStatus
+
+        state = make_state(asyncio.get_running_loop())
+
+        async def ensure_state(refresh_callback: Any = None) -> None:
+            return None
+
+        async def get_session_var(name: str) -> str:
+            assert name == "path"
+            return "/current"
+
+        async def shell_integration_enabled() -> bool:
+            return True
+
+        async def get_terminal_snapshot() -> list[str]:
+            return ["prompt$"]
+
+        status = CommandExecutionStatus(prompt_id="p-1", command="echo hi", exit_code=0)
+
+        async def wait_for_prompt(coro: Any, *, timeout: float, expected_command: str | None) -> Any:
+            await coro
+            assert expected_command == "echo hi"
+            return status
+
+        async def get_prompt_output(prompt_id: str) -> str:
+            assert prompt_id == "p-1"
+            return "hi"
+
+        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "get_session_var", get_session_var)
+        patch_attr(state, "_shell_integration_enabled", shell_integration_enabled)
+        patch_attr(state, "_get_terminal_snapshot", get_terminal_snapshot)
+        patch_attr(state, "_wait_for_prompt", wait_for_prompt)
+        patch_attr(state, "_get_prompt_output", get_prompt_output)
+
+        result = await state.run_command("echo hi", broadcast=False, timeout=2.0)
+
+        assert result.output == "hi"
+        assert result.status is status
+        # No cd was issued because the current path already matched.
+        assert as_fake_session(state.session).sent == [("echo hi\r", True)]
 
     asyncio.run(scenario())
 

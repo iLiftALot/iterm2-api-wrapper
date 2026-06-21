@@ -1199,18 +1199,18 @@ type AppVarKey = Literal[
 """Defined in the global context"""
 
 
-type AppVariable = AppVarEnum | AppVarKey
-type UserVariable = UserVarEnum | UserVarKey
+type AppVariable = AppVarEnum | AppVarKey | str
+type UserVariable = UserVarEnum | UserVarKey | str
 
 type _NestedSessionVariables = (
     SessionVarEnum.parentSession | SessionVarEnum.tab | SessionVarEnum.iterm2 | SessionVarEnum.user
 )
-type SessionVariable = SessionVarEnum | _NestedSessionVariables | SessionVarKey
+type SessionVariable = SessionVarEnum | _NestedSessionVariables | SessionVarKey | str
 
 type _NestedTabVariables = TabVarEnum.currentSession | TabVarEnum.iterm2 | TabVarEnum.window
-type TabVariable = TabVarEnum | _NestedTabVariables | TabVarKey
+type TabVariable = TabVarEnum | _NestedTabVariables | TabVarKey | str
 
 type _NestedWindowVariables = WindowVarEnum.currentTab | WindowVarEnum.iterm2
-type WindowVariable = WindowVarEnum | _NestedWindowVariables | WindowVarKey
+type WindowVariable = WindowVarEnum | _NestedWindowVariables | WindowVarKey | str
 
 type Variable = AppVariable | UserVariable | SessionVariable | TabVariable | WindowVariable

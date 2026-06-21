@@ -12,6 +12,10 @@ if TYPE_CHECKING:
     from .api.it2session import Session
     from .api.it2tab import Tab
     from .api.it2window import Window
+    from .gateway import _Connection
+
+
+type iTermConnection = type["_Connection | Connection"]
 
 
 class iTermStateSetupKwargs(TypedDict, total=False):

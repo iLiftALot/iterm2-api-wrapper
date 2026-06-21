@@ -24,7 +24,7 @@ from .client import (
     iTermClient,
 )
 from .state import iTermState
-from .typings import CommandExecutionStatus, CommandExitCode
+from .typings import CommandExecutionStatus, CommandExitCode, iTermConnection
 
 
 __all__ = [
@@ -37,6 +37,7 @@ __all__ = [
     "get_shared_client",
     "iTermAPI",
     "iTermClient",
+    "iTermConnection",
     "iTermState",
     "log",
 ]

@@ -144,6 +144,47 @@ def test_poly_modal_alert_handler_wires_all_optional_controls(monkeypatch: pytes
     assert instance.run_kwargs == {"connection": "connection"}
 
 
+def test_poly_modal_alert_handler_combobox_without_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakePolyModalAlert.poly_instances.clear()
+    monkeypatch.setattr(alert_module, "PolyModalAlert", FakePolyModalAlert)
+
+    result = asyncio.run(
+        alert_module.poly_modal_alert_handler(
+            title="Title",
+            subtitle="Subtitle",
+            connection=as_connection("connection"),
+            comboboxes=(["A", "B"], None),
+        )
+    )
+
+    instance = FakePolyModalAlert.poly_instances[-1]
+    assert result == {"button": "OK"}
+    # No default supplied -> only items are passed to add_combobox.
+    assert instance.comboboxes == [{"items": ["A", "B"]}]
+    assert instance.checkboxes == []
+    assert instance.text_fields == []
+
+
+def test_poly_modal_alert_handler_without_optional_controls(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakePolyModalAlert.poly_instances.clear()
+    monkeypatch.setattr(alert_module, "PolyModalAlert", FakePolyModalAlert)
+
+    result = asyncio.run(
+        alert_module.poly_modal_alert_handler(
+            title="Title",
+            subtitle="Subtitle",
+            connection=as_connection("connection"),
+        )
+    )
+
+    instance = FakePolyModalAlert.poly_instances[-1]
+    assert result == {"button": "OK"}
+    assert instance.buttons == []
+    assert instance.comboboxes == []
+    assert instance.checkboxes == []
+    assert instance.text_fields == []
+
+
 def test_poly_modal_alert_handler_rejects_mismatched_text_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     FakePolyModalAlert.poly_instances.clear()
     monkeypatch.setattr(alert_module, "PolyModalAlert", FakePolyModalAlert)
