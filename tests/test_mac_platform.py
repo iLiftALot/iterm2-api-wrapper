@@ -167,7 +167,6 @@ def test_log_launch_completion_handles_all_branches(monkeypatch: pytest.MonkeyPa
     assert any("without a running application" in d for d in debugs)
 
     # Success branch.
-    # running_app = SimpleNamespace(bundleIdentifier=lambda: "com.googlecode.iterm2", isFinishedLaunching=lambda: True)
     running_app = FakeApplication()
     pyobjc_adapter._log_launch_completion(cast(pyobjc_adapter.NSRunningApplication, running_app), None)
     assert any("launch callback completed: bundle=" in d for d in debugs)
