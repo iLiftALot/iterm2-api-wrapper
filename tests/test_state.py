@@ -386,6 +386,14 @@ def test_terminal_diff_helpers_extract_command_output() -> None:
     assert changed == ["prompt$ echo hi", "hi", "prompt$"]
 
 
+def test_marker_line_detection_ignores_wrapped_command_argument() -> None:
+    marker = "__ITERM_DONE_snapshot-diff__"
+    wrapped_echo = f"prompt$ echo hi; printf '\\n{marker}\\n'"
+
+    assert not state_module._is_marker_line(wrapped_echo, marker)
+    assert state_module._is_marker_line(marker, marker)
+
+
 def test_run_command_without_shell_integration_uses_empty_snapshot_without_prompt_probe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -412,7 +420,7 @@ def test_run_command_without_shell_integration_uses_empty_snapshot_without_promp
             command="echo hi", suppress_broadcast=True, timeout=1.0
         )
 
-        assert result == f"{wrapped_echo}\nhi\n{marker}"
+        assert result == f"{wrapped_echo}\nhi"
         assert as_fake_session(state.session).sent == [(f"{wrapped_echo}\r", True)]
 
     asyncio.run(scenario())
@@ -449,7 +457,7 @@ def test_run_command_without_shell_integration_uses_snapshot_diff(monkeypatch: p
             command="echo hi", suppress_broadcast=False, timeout=1.0
         )
 
-        assert result == f"{wrapped_echo}\nhi\n{marker}\nprompt$"
+        assert result == f"{wrapped_echo}\nhi"
         assert as_fake_session(state.session).sent == [(f"{sent_command}\r", False)]
 
     asyncio.run(scenario())
@@ -486,6 +494,70 @@ def test_run_command_changes_directory_before_fallback() -> None:
     asyncio.run(scenario())
 
 
+def test_wait_for_prompt_accepts_fast_command_end_only_for_initial_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        Mode = FakePromptMonitor.Mode
+
+        async def send_command() -> None:
+            return None
+
+        FakePromptMonitor.reset(
+            snapshots=[["prompt$"]],
+            events=[(Mode.COMMAND_END, 0, "prompt-current")],
+        )
+        monkeypatch.setattr(state_module, "PromptMonitor", FakePromptMonitor)
+
+        result = await state._wait_for_prompt(
+            send_command(),
+            timeout=1.0,
+            expected_command="ls-fancy",
+            initial_prompt_id="prompt-current",
+        )
+
+        assert result == CommandExecutionStatus(
+            prompt_id=None,
+            command="ls-fancy",
+            exit_code=CommandExecutionStatus.ExitCode.SUCCESS,
+        )
+
+    asyncio.run(scenario())
+
+
+def test_wait_for_prompt_accepts_fast_command_end_but_uses_initial_prompt_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        Mode = FakePromptMonitor.Mode
+
+        async def send_command() -> None:
+            return None
+
+        FakePromptMonitor.reset(
+            snapshots=[["prompt$"]],
+            events=[(Mode.COMMAND_END, 0, "old-prompt")],
+        )
+        monkeypatch.setattr(state_module, "PromptMonitor", FakePromptMonitor)
+
+        result = await state._wait_for_prompt(
+            send_command(),
+            timeout=1.0,
+            expected_command="ls-fancy",
+            initial_prompt_id="prompt-current",
+        )
+
+        assert result == CommandExecutionStatus(
+            prompt_id=None,
+            command="ls-fancy",
+            exit_code=CommandExecutionStatus.ExitCode.SUCCESS,
+        )
+
+    asyncio.run(scenario())
+
+
 def test_wait_for_prompt_ignores_foreign_events_and_uses_active_prompt_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -514,7 +586,7 @@ def test_wait_for_prompt_ignores_foreign_events_and_uses_active_prompt_id(
 
         assert sent == [True]
         assert result == CommandExecutionStatus(
-            prompt_id="start-prompt",
+            prompt_id=None,
             command="echo hi",
             exit_code=CommandExecutionStatus.ExitCode.SUCCESS,
         )
@@ -565,13 +637,22 @@ def test_run_command_with_shell_integration_returns_prompt_output() -> None:
         async def get_terminal_snapshot() -> list[str]:
             return ["prompt$"]
 
+        async def get_prompt(unique_id: str | None = None) -> Any:
+            assert unique_id is None
+            return SimpleNamespace(unique_id="prompt-current")
+
         async def wait_for_prompt(coro: Any, **kwargs: Any) -> CommandExecutionStatus:
-            assert kwargs == {"timeout": 2.0, "expected_command": "echo\\nhi"}
+            assert kwargs == {
+                "timeout": 2.0,
+                "expected_command": "echo\\nhi",
+                "initial_prompt_id": "prompt-current",
+            }
             await coro
             return status
 
-        async def get_prompt_output(prompt_id: str) -> str:
+        async def get_prompt_output(prompt_id: str, *, expected_command: str | None = None) -> str:
             assert prompt_id == "prompt-1"
+            assert expected_command == "echo\\nhi"
             return "prompt-output"
 
         patch_attr(state, "ensure_state", ensure_state)
@@ -579,6 +660,7 @@ def test_run_command_with_shell_integration_returns_prompt_output() -> None:
         patch_attr(state, "_get_terminal_snapshot", get_terminal_snapshot)
         patch_attr(state, "_wait_for_prompt", wait_for_prompt)
         patch_attr(state, "_get_prompt_output", get_prompt_output)
+        patch_attr(state, "_get_prompt", get_prompt)
 
         result = await state.run_command("echo\nhi", broadcast=True, timeout=2.0)
 
@@ -608,11 +690,20 @@ def test_run_command_with_shell_integration_falls_back_to_snapshot_diff() -> Non
         async def get_terminal_snapshot() -> list[str]:
             return next(snapshots)
 
+        async def get_prompt(unique_id: str | None = None) -> Any:
+            assert unique_id is None
+            return SimpleNamespace(unique_id="prompt-current")
+
         async def wait_for_prompt(coro: Any, **kwargs: Any) -> CommandExecutionStatus:
+            assert kwargs == {
+                "timeout": 3.0,
+                "expected_command": "echo hi",
+                "initial_prompt_id": "prompt-current",
+            }
             await coro
             return status
 
-        async def get_prompt_output(prompt_id: str) -> None:
+        async def get_prompt_output(prompt_id: str, *, expected_command: str | None = None) -> None:
             assert prompt_id == "prompt-1"
             return None
 
@@ -621,6 +712,7 @@ def test_run_command_with_shell_integration_falls_back_to_snapshot_diff() -> Non
         patch_attr(state, "_get_terminal_snapshot", get_terminal_snapshot)
         patch_attr(state, "_wait_for_prompt", wait_for_prompt)
         patch_attr(state, "_get_prompt_output", get_prompt_output)
+        patch_attr(state, "_get_prompt", get_prompt)
 
         result = await state.run_command("echo hi", timeout=3.0)
 
@@ -996,12 +1088,66 @@ def test_shell_integration_enabled_uses_live_cache() -> None:
     asyncio.run(scenario())
 
 
+def test_get_prompt_output_returns_none_for_empty_output_range() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        empty_prompt = SimpleNamespace(
+            output_range=SimpleNamespace(
+                start=SimpleNamespace(x=0, y=0),
+                end=SimpleNamespace(x=0, y=0),
+                proto="out",
+            ),
+            command_range=SimpleNamespace(proto="cmd"),
+            excluded_subranges=[],
+            prompt_range=SimpleNamespace(proto="prompt"),
+            command="echo hi",
+        )
+
+        async def get_prompt(unique_id: str | None = None) -> Any:
+            assert unique_id == "id"
+            return empty_prompt
+
+        patch_attr(state, "_get_prompt", get_prompt)
+        patch_attr(state.session, "contents", [SimpleNamespace(string="this must not be read")])
+
+        assert await state._get_prompt_output("id", expected_command="echo hi") is None
+
+    asyncio.run(scenario())
+
+
+def test_get_prompt_output_rejects_prompt_for_different_command() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        stale_prompt = SimpleNamespace(
+            output_range=SimpleNamespace(
+                start=SimpleNamespace(x=0, y=0),
+                end=SimpleNamespace(x=0, y=1),
+                proto="out",
+            ),
+            command_range=SimpleNamespace(proto="cmd"),
+            excluded_subranges=[],
+            prompt_range=SimpleNamespace(proto="prompt"),
+            command="source ~/.iterm2_shell_integration.zsh",
+        )
+
+        async def get_prompt(unique_id: str | None = None) -> Any:
+            assert unique_id == "id"
+            return stale_prompt
+
+        patch_attr(state, "_get_prompt", get_prompt)
+        patch_attr(state.session, "contents", [SimpleNamespace(string="stale output")])
+
+        assert await state._get_prompt_output("id", expected_command="echo final-smoke") is None
+
+    asyncio.run(scenario())
+
+
 def test_get_prompt_output_returns_none_when_range_inverted() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
 
         inverted_prompt = SimpleNamespace(
-            output_range=SimpleNamespace(start=SimpleNamespace(y=5), end=SimpleNamespace(y=2), proto="out"),
+            output_range=SimpleNamespace(start=SimpleNamespace(x=0, y=5), end=SimpleNamespace(x=0, y=2), proto="out"),
             command_range=SimpleNamespace(proto="cmd"),
             excluded_subranges=[],
             prompt_range=SimpleNamespace(proto="prompt"),
@@ -1024,7 +1170,7 @@ def test_get_prompt_output_reads_session_contents(monkeypatch: pytest.MonkeyPatc
         monkeypatch.setattr(state_module, "Transaction", FakeTransaction)
 
         valid_prompt = SimpleNamespace(
-            output_range=SimpleNamespace(start=SimpleNamespace(y=0), end=SimpleNamespace(y=2), proto="out"),
+            output_range=SimpleNamespace(start=SimpleNamespace(x=0, y=0), end=SimpleNamespace(x=0, y=2), proto="out"),
             command_range=SimpleNamespace(proto="cmd"),
             excluded_subranges=[],
             prompt_range=SimpleNamespace(proto="prompt"),
@@ -1133,12 +1279,24 @@ def test_run_command_uses_prompt_output_when_shell_integration_live() -> None:
 
         status = CommandExecutionStatus(prompt_id="p-1", command="echo hi", exit_code=0)
 
-        async def wait_for_prompt(coro: Any, *, timeout: float, expected_command: str | None) -> Any:
+        async def get_prompt(unique_id: str | None = None) -> Any:
+            assert unique_id is None
+            return SimpleNamespace(unique_id="prompt-current")
+
+        async def wait_for_prompt(
+            coro: Any,
+            *,
+            timeout: float,
+            expected_command: str | None,
+            initial_prompt_id: str | None,
+        ) -> Any:
             await coro
+            assert timeout == 2.0
             assert expected_command == "echo hi"
+            assert initial_prompt_id == "prompt-current"
             return status
 
-        async def get_prompt_output(prompt_id: str) -> str:
+        async def get_prompt_output(prompt_id: str, *, expected_command: str | None = None) -> str:
             assert prompt_id == "p-1"
             return "hi"
 
@@ -1148,6 +1306,7 @@ def test_run_command_uses_prompt_output_when_shell_integration_live() -> None:
         patch_attr(state, "_get_terminal_snapshot", get_terminal_snapshot)
         patch_attr(state, "_wait_for_prompt", wait_for_prompt)
         patch_attr(state, "_get_prompt_output", get_prompt_output)
+        patch_attr(state, "_get_prompt", get_prompt)
 
         result = await state.run_command("echo hi", broadcast=False, timeout=2.0)
 

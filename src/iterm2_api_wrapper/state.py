@@ -49,6 +49,22 @@ log = PrettyLog.get_logger(__name__)
 DEFAULT_SHELL_INTEGRATION_PATH = str(Path.home().joinpath(".iterm2_shell_integration.{shell}"))
 
 
+def _has_session_value(value: object) -> bool:
+    return value is not None and bool(str(value).strip())
+
+
+def _is_marker_line(line: str, marker: str) -> bool:
+    return line.strip() == marker
+
+
+def _strip_marker_suffix(lines: list[str], marker: str) -> list[str]:
+    """Drop the standalone sentinel line and anything printed after it."""
+    for index, line in enumerate(lines):
+        if _is_marker_line(line, marker):
+            return lines[:index]
+    return lines
+
+
 def changed_slice(before: list[str], after: list[str]) -> list[str]:
     """Return the changed block between two terminal snapshots."""
     prefix = 0
@@ -607,14 +623,16 @@ class iTermState:
             log.debug("✅ Shell integration enabled.")
 
             initial_snapshot = await self._get_terminal_snapshot()
+            initial_prompt = await self._get_prompt()
+            initial_prompt_id = initial_prompt.unique_id if initial_prompt is not None else None
+
             send_cmd_task = self.session.async_send_text(command + "\r", suppress_broadcast=suppress)
-            result = await self._wait_for_prompt(send_cmd_task, timeout=timeout, expected_command=command)
-            # TODO:
-            #   - see *_.py and pyterm-mcp copilot chat 'Fix files excluding _dev.py'
-            #   - return an object including the submitted command (prompt.command), the raw output, and the exit code
-            #   - handle the object in the pyterm-mcp package by:
-            #       - utilizing the exit code for the error status
-            #       - including the expected command submission along with the actual command submission (prompt.command)
+            result = await self._wait_for_prompt(
+                send_cmd_task,
+                timeout=timeout,
+                expected_command=command,
+                initial_prompt_id=initial_prompt_id,
+            )
             if result.timed_out:
                 log.warning(
                     "Command monitor timed out; preserving shell-integration cache because "
@@ -625,7 +643,7 @@ class iTermState:
 
             if result.prompt_id is not None:
                 log.debug(f"Prompt ID was retrieved normally: {result.prompt_id}")
-                content = await self._get_prompt_output(result.prompt_id)
+                content = await self._get_prompt_output(result.prompt_id, expected_command=command)
 
             if content is None:
                 log.warning("Content == None. Trying another method...")
@@ -651,13 +669,26 @@ class iTermState:
         return last_prompt
 
     async def _wait_for_prompt(
-        self, coro: Awaitable[None], *, timeout: float = 30.0, expected_command: str | None = None
+        self,
+        coro: Awaitable[None],
+        *,
+        timeout: float = 30.0,
+        expected_command: str | None = None,
+        initial_prompt_id: str | None = None,
     ) -> CommandExecutionStatus:
         """Wait for shell-integration prompt events for a command."""
         Mode = PromptMonitor.Mode
         modes = [Mode.COMMAND_START, Mode.COMMAND_END, Mode.PROMPT]
 
-        log.debug("Command monitor initialized", {"session_id": self.session.session_id, "timeout": timeout})
+        log.debug(
+            "Command monitor initialized",
+            {
+                "session_id": self.session.session_id,
+                "timeout": timeout,
+                "expected_command": expected_command,
+                "initial_prompt_id": initial_prompt_id,
+            },
+        )
 
         async with PromptMonitor(
             self.connection, self.session.session_id, modes, snapshot_provider=self._get_terminal_snapshot
@@ -686,9 +717,9 @@ class iTermState:
                             "saw_expected_start": saw_expected_start,
                             "active_command": active_command,
                             "active_prompt_id": active_prompt_id,
+                            "initial_prompt_id": initial_prompt_id,
                         },
                     )
-
                     return CommandExecutionStatus(
                         prompt_id=active_prompt_id,
                         command=active_command,
@@ -700,7 +731,7 @@ class iTermState:
                     prompt_obj = event[1]
                     prompt_id = event[2]
                     active_prompt_id = prompt_id or (prompt_obj.unique_id if prompt_obj is not None else None)
-                    log.debug("PROMPT DETECTED: ", {"mode": event[0].value, "prompt_id": active_prompt_id})
+                    log.debug("PROMPT DETECTED: ", {"mode": event[0], "prompt_id": active_prompt_id})
                     continue
 
                 if event[0] == Mode.COMMAND_START:
@@ -713,18 +744,59 @@ class iTermState:
 
                     saw_expected_start = True
                     active_command = command
-                    active_prompt_id = prompt_id or active_prompt_id
-                    log.debug("COMMAND STARTED: ", {"mode": event[0].value, "command": active_command})
+                    active_prompt_id = prompt_id or active_prompt_id or initial_prompt_id
+                    log.debug("COMMAND STARTED: ", {"mode": event[0], "command": active_command})
                     continue
 
                 if event[0] == Mode.COMMAND_END:
-                    if not saw_expected_start:
-                        log.debug("Ignoring COMMAND_END preceding our COMMAND_START (initial text / leftover)")
-                        continue
-
                     raw_exit_code = event[1]
+                    event_prompt_id = event[2]
+                    prompt_id_is_reliable = saw_expected_start
+
+                    if not saw_expected_start:
+                        if expected_command is None:
+                            log.debug(
+                                "Ignoring COMMAND_END preceding matching COMMAND_START",
+                                {
+                                    "event_prompt_id": event_prompt_id,
+                                    "initial_prompt_id": initial_prompt_id,
+                                    "expected_command": expected_command,
+                                    "active_command": active_command,
+                                    "active_prompt_id": active_prompt_id,
+                                },
+                            )
+                            continue
+
+                        current_snapshot = await monitor.refresh_snapshot()
+                        if current_snapshot == last_snapshot:
+                            log.debug(
+                                "Ignoring COMMAND_END without COMMAND_START and without terminal changes",
+                                {
+                                    "event_prompt_id": event_prompt_id,
+                                    "initial_prompt_id": initial_prompt_id,
+                                    "expected_command": expected_command,
+                                },
+                            )
+                            continue
+
+                        last_snapshot = current_snapshot
+                        saw_expected_start = True
+                        active_command = expected_command
+                        active_prompt_id = None
+                        prompt_id_is_reliable = False
+                        log.debug(
+                            "Accepting COMMAND_END without COMMAND_START; prompt id is not reliable, using snapshot fallback",
+                            {
+                                "event_prompt_id": event_prompt_id,
+                                "initial_prompt_id": initial_prompt_id,
+                                "expected_command": expected_command,
+                            },
+                        )
+
                     exit_code = CommandExecutionStatus.ExitCode(raw_exit_code)
-                    prompt_id = event[2] or active_prompt_id
+                    prompt_id = active_prompt_id or event_prompt_id or initial_prompt_id
+                    if not prompt_id_is_reliable:
+                        prompt_id = None
 
                     log.debug(
                         "COMMAND FINISHED:",
@@ -733,10 +805,10 @@ class iTermState:
 
                     return CommandExecutionStatus(prompt_id=prompt_id, command=active_command, exit_code=exit_code)
 
-    async def _get_prompt_output(self, prompt_id: str) -> str | None:
-        """Returns a string with the content in a range of lines."""
+    async def _get_prompt_output(self, prompt_id: str, *, expected_command: str | None = None) -> str | None:
+        """Return command output for a prompt id, or None when the prompt is not usable."""
         updated_prompt = await self._get_prompt(prompt_id)
-        if updated_prompt is None:  # Shouldn't happen
+        if updated_prompt is None:
             log.error(":error: Unable to get updated prompt; raising RuntimeError.", emoji=True)
             raise RuntimeError("Failed to retrieve prompt after command execution.")
 
@@ -751,15 +823,34 @@ class iTermState:
         )
         # fmt: on
 
+        if expected_command is not None:
+            prompt_command = str(updated_prompt.command or "").strip()
+            if prompt_command != expected_command.strip():
+                log.debug(
+                    "Prompt output rejected because prompt command does not match expected command",
+                    {"prompt_command": prompt_command, "expected_command": expected_command},
+                )
+                return None
+
         output_range = updated_prompt.output_range
         start, end = output_range.start, output_range.end
-        start_y, end_y = start.y, end.y
-        if end_y < start_y:
-            log.debug(f"end_y < start_y: {end_y=}, {start_y=}")
+        start_x, start_y = start.x, start.y
+        end_x, end_y = end.x, end.y
+
+        if (start_x, start_y) == (end_x, end_y):
+            log.debug("Prompt output range is empty; falling back to snapshot diff")
             return None
 
+        if end_y < start_y or (end_y == start_y and end_x < start_x):
+            log.debug(f"Invalid output range: {start_x=}, {start_y=}, {end_x=}, {end_y=}")
+            return None
+
+        number_of_lines = end_y - start_y
+        if number_of_lines == 0:
+            number_of_lines = 1
+
         async with Transaction(self.connection):
-            contents = await self.session.async_get_contents(start_y, max(1, end_y - start_y))
+            contents = await self.session.async_get_contents(start_y, number_of_lines)
 
         result = "\n".join(line.string for line in contents).strip()
         if not result:
@@ -768,16 +859,7 @@ class iTermState:
         return result
 
     async def _shell_integration_enabled(self, allow_autoload: bool = True) -> bool:
-        """True only for *verified-live* shell integration.
-
-        Mark presence is necessary but NOT sufficient: iTerm2 persists marks
-        (and their prompt state) through arrangement/session restore, so a
-        dead session can carry another shell's marks. The only currency proof
-        is minting a fresh mark, so unverified sessions get one bounded CR
-        probe; the verdict is cached per session id. Live verdicts persist
-        (flipped by run_command on prompt-path timeout); dead verdicts expire
-        after SI_DEAD_RECHECK_SECONDS so late-loaded integration is found.
-        """
+        """Return True when prompt-monitor output extraction is usable now."""
         sid = self.session.session_id
         loop = self.loop or asyncio.get_running_loop()
 
@@ -786,50 +868,64 @@ class iTermState:
             if live or (loop.time() - checked_at) < self.SI_DEAD_RECHECK_SECONDS:
                 return live
 
-        last_prompt = await self._get_prompt()
-
-        if last_prompt is None:
-            auto_load: Literal[0, 1] = self.profile.all_properties.get("Load Shell Integration Automatically", 0)
-            live = allow_autoload and bool(auto_load) and await self.maybe_load_shell_integration()
+        def cache(live: bool) -> bool:
             self._si_live_cache[sid] = (live, loop.time())
             return live
 
-        if last_prompt.state == prompt.PromptState.EDITING:
-            self._si_live_cache[sid] = (True, loop.time())
-            return True
+        last_prompt = await self._get_prompt()
 
-        if last_prompt.state == prompt.PromptState.UNKNOWN:
-            # Older iTerm2/runtime: marks exist, but state isn't available.
-            # Trust the prompt evidence rather than forcing fallback.
-            self._si_live_cache[sid] = (True, loop.time())
-            return True
+        if last_prompt is None:
+            auto_load = self.profile.all_properties.get("Load Shell Integration Automatically", 0)
+            if allow_autoload and bool(auto_load):
+                return cache(await self.maybe_load_shell_integration())
+            return cache(False)
 
-        job = await self.get_session_var("jobName")
-        shell = await self.get_session_var("shell")
+        last_command = await self.session.async_get_variable("lastCommand")
+        username = await self.session.async_get_variable("username")
+        hostname = await self.session.async_get_variable("hostname")
+
+        prompt_state = getattr(last_prompt, "state", None)
+        prompt_ready = prompt_state in {prompt.PromptState.EDITING, prompt.PromptState.UNKNOWN}
+        has_identity = _has_session_value(username) and _has_session_value(hostname)
+
+        if prompt_ready and has_identity:
+            log.debug(
+                "Shell integration prompt evidence accepted",
+                {
+                    "prompt_state": prompt_state,
+                    "lastCommand": last_command,
+                    "username": username,
+                    "hostname": hostname,
+                },
+            )
+            return cache(True)
+
+        strict_snapshot = await self._get_terminal_snapshot(filter_all_empty=True)
+        if strict_snapshot and not has_identity:
+            log.debug(
+                "Shell integration prompt evidence rejected: identity variables are missing",
+                {
+                    "prompt_state": prompt_state,
+                    "lastCommand": last_command,
+                    "username": username,
+                    "hostname": hostname,
+                    "line_count": len(strict_snapshot),
+                },
+            )
+            return cache(False)
+
+        job = await self.session.async_get_variable("jobName")
+        shell = await self.session.async_get_variable("shell")
 
         if job and shell and job != Path(str(shell)).name:
             log.debug(
-                "Shell integration marks exist, but foreground job is not the shell", {"job": job, "shell": shell}
+                "Shell integration prompt exists, but foreground job is not the shell", {"job": job, "shell": shell}
             )
-            self._si_live_cache[sid] = (False, loop.time())
-            return False
+            return cache(False)
 
-        live = await self._probe_shell_integration_live()
-        self._si_live_cache[sid] = (live, loop.time())
-        return live
+        return cache(await self._probe_shell_integration_live())
 
     async def _probe_shell_integration_live(self, timeout: float | None = None) -> bool:
-        """Ground truth: a bare CR at an idle prompt must mint a fresh PROMPT
-        mark. Restored/stale marks cannot pass this; only a live precmd hook
-        can. Refuses to probe when the foreground job is not the shell (the CR
-        would feed a running program's stdin) and reports not-live — which is
-        the correct routing decision for that moment anyway.
-        """
-        # job, shell = await self.get_session_var("jobName"), await self.get_session_var("shell")
-        # if not job or not shell or job != Path(str(shell)).name:
-        #     log.debug("Skipping CR probe: foreground job is not the shell", {"job": job, "shell": shell})
-        #     return False
-
         async with PromptMonitor(self.connection, self.session.session_id) as monitor:
             await self.session.async_send_text("\r", suppress_broadcast=True)
             try:
@@ -902,7 +998,6 @@ class iTermState:
         )
 
         await self.session.async_send_text(wrapped_command, suppress_broadcast=suppress_broadcast)
-
         return await self._wait_for_terminal_snapshot_completion(starting_snapshot, marker=marker, timeout=timeout)
 
     async def _wait_for_terminal_snapshot_completion(
@@ -916,7 +1011,7 @@ class iTermState:
         while True:
             current_snapshot = await self._get_terminal_snapshot()
 
-            if marker in current_snapshot:
+            if any(_is_marker_line(line, marker) for line in current_snapshot):
                 break
 
             if current_snapshot != previous_snapshot:
@@ -928,7 +1023,7 @@ class iTermState:
 
             await asyncio.sleep(poll_interval)
 
-        snapshot_diff = changed_slice(starting_snapshot, current_snapshot)
+        snapshot_diff = _strip_marker_suffix(changed_slice(starting_snapshot, current_snapshot), marker)
         output = "\n".join(snapshot_diff)
         log.debug(
             f"Recovered command output from snapshot:\n- line_count={len(current_snapshot)}\n- output_len={len(output)}"
