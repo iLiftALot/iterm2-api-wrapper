@@ -614,7 +614,7 @@ class iTermState:
 
             shell_integration_enabled = await self._shell_integration_enabled()
             if shell_integration_enabled is False:
-                log.warning("❌ Shell integration disabled.")
+                log.warning("⚠️ Shell integration disabled.")
                 output = await self._run_command_without_shell_integration(
                     command=command, suppress_broadcast=suppress, timeout=timeout
                 )
