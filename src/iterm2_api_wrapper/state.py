@@ -587,7 +587,9 @@ class iTermState:
         return result
 
     @_validate_state
-    async def send_escape_sequence(self, *sequences: HexCode | str, broadcast: bool = False, timeout: float = 2.0) -> bool:
+    async def send_escape_sequence(
+        self, *sequences: HexCode | str, broadcast: bool = False, timeout: float = 2.0
+    ) -> bool:
         """Send one or more escape/control sequences to the session.
 
         Each argument may be a :class:`HexCode` member (e.g. :attr:`HexCode.CNTRL_C`),
@@ -634,7 +636,6 @@ class iTermState:
             except TimeoutError:
                 log.warning(f"Timed out waiting for prompt after sending escape sequence(s): {sequences}")
                 return False
-
 
     @_validate_state
     async def run_command(
