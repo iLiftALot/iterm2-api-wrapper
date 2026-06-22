@@ -1,7 +1,7 @@
 [project]
 name = "iterm2-api-wrapper"
 version = "0.1.0"
-description = "..."
+description = "A Pythonic wrapper around the iTerm2 Python API for scripting and automating iTerm2 sessions, tabs, and windows."
 readme = "README.md"
 requires-python = ">= 3.12"
 license = "MIT"
