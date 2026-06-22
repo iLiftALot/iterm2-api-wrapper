@@ -272,6 +272,12 @@ class iTermState:
     HEX: ClassVar[type[HexCodeEnum]] = HexCodeEnum
     """Enum class :class:`HexCode` for type-hinted hex codes to use with :meth:`~iTermState.send_escape_sequence`."""
 
+    # TODO: Implement Command Event Signaling
+    class CommandEvent:
+        idle: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
+        running: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
+        cancelled: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
+
     # refresh_callback and _event_loop are set in client.py after initialization
     _refresh_callback: Callable[[], Awaitable[iTermState]] | Awaitable[iTermState] | None = field(
         default=None, init=False, repr=False
@@ -452,6 +458,16 @@ class iTermState:
 
     @property
     def loop_manager(self) -> LoopManager:
+        """Get the loop manager associated with this state.
+
+        This property ensures that a :class:`LoopManager` instance is created if it doesn't already exist.
+
+        ---
+
+        :return: The loop manager associated with this state.
+        :rtype: `LoopManager`
+        """
+
         if self._loop_manager is None:
             self._loop_manager = LoopManager(self)
         return self._loop_manager
@@ -571,33 +587,54 @@ class iTermState:
         return result
 
     @_validate_state
-    async def send_escape_sequence(self, *sequences: HexCode | str, broadcast: bool = False) -> None:
-        """
-        Send one or more escape/control sequences to the session.
+    async def send_escape_sequence(self, *sequences: HexCode | str, broadcast: bool = False, timeout: float = 2.0) -> bool:
+        """Send one or more escape/control sequences to the session.
 
-        Each argument may be a ``HexCode`` member (e.g. ``HexCode.CNTRL_C``),
-        a ``HexCode`` member *name* (e.g. ``"CNTRL_C"`` or ``"ESC"``), or a raw
+        Each argument may be a :class:`HexCode` member (e.g. :attr:`HexCode.CNTRL_C`),
+        a `HexCode` member *name* (e.g. `"CNTRL_C"` or `"ESC"`), or a raw
         string. Member names are resolved to their underlying control bytes.
-        Multiple arguments are concatenated in order, so
-        ``send_escape_sequence(HexCode.ESC, "B")`` sends ``"\\x1bb"``.
 
-        :param sequences: HexCode members, member names, and/or raw strings.
-        :param broadcast: If False (default), suppress broadcast to other
-            sessions; if True, allow it.
+        Multiple arguments are concatenated in order, so :meth:`iTermState.send_escape_sequence` `(HexCode.ESC, "B")`
+        sends `"\\x1bb"`.
+
+        ---
+
+        :param sequences: :class:`HexCode` members, member names, and/or raw strings.
+        :type sequences: `tuple[HexCode | str, ...]`
+        :param broadcast: If `False` (default), suppress broadcast to other sessions; if `True`, allow it.
+        :type broadcast: `bool`, optional, default=`False`
+        :param timeout: Seconds to wait for a prompt after sending, defaults to 2.0
+        :type timeout: `float`, optional
+
+        ---
+
+        :returns: `True` if a prompt was detected after sending, `False` on timeout.
+        :rtype: `bool`
         """
         if not sequences:
             raise ValueError("send_escape_sequence requires at least one sequence")
 
-        def _resolve(seq: HexCode | str) -> HexCode | str:
-            if isinstance(seq, HexCodeEnum):
-                return str(seq)
+        payload = "".join(self.HEX.resolve(seq) for seq in sequences)
+        coro = self.session.async_send_text(payload, suppress_broadcast=not broadcast)
 
-            # Resolve a HexCode member name (including aliases) to its bytes.
-            member = HexCodeEnum.__members__.get(seq)
-            return str(member) if member is not None else seq
+        async with PromptMonitor(
+            self.connection,
+            self.session.session_id,
+            [PromptMonitor.Mode.PROMPT],
+            snapshot_provider=self._get_terminal_snapshot,
+        ) as monitor:
+            await coro
+            try:
+                await asyncio.wait_for(
+                    monitor.async_get(mode=PromptMonitor.Mode.PROMPT),
+                    timeout=timeout,
+                )
+                log.debug(f"Prompt detected after sending escape sequence(s): {sequences}")
+                return True
+            except TimeoutError:
+                log.warning(f"Timed out waiting for prompt after sending escape sequence(s): {sequences}")
+                return False
 
-        payload = "".join(_resolve(seq) for seq in sequences)
-        await self.session.async_send_text(payload, suppress_broadcast=not broadcast)
 
     @_validate_state
     async def run_command(
@@ -793,7 +830,7 @@ class iTermState:
                             },
                         )
 
-                    exit_code = CommandExecutionStatus.ExitCode(raw_exit_code)
+                    exit_code = CommandExecutionStatus.ExitCode.coerce(raw_exit_code)
                     prompt_id = active_prompt_id or event_prompt_id or initial_prompt_id
                     if not prompt_id_is_reliable:
                         prompt_id = None

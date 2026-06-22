@@ -250,6 +250,15 @@ class HexCodeEnum(StrEnum):
     F12 = 0x1B5B32347E
     """\\x1b[24~"""
 
+    @classmethod
+    def resolve(cls, seq: HexCode | str) -> HexCode | str:
+        if isinstance(seq, HexCodeEnum):
+            return str(seq)
+
+        # Resolve a HexCode member name (including aliases) to its bytes.
+        member = HexCodeEnum.__members__.get(seq)
+        return str(member) if member is not None else seq
+
 
 # fmt: off
 HexCodeKey: TypeAlias = Literal[
