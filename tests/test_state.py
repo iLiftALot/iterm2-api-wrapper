@@ -571,7 +571,7 @@ def test_wait_for_prompt_ignores_foreign_events_and_uses_active_prompt_id(
             sent.append(True)
 
         FakePromptMonitor.reset(
-            snapshots=[["prompt$"]],
+            snapshots=[["prompt$"], ["prompt$"]],
             events=[
                 (Mode.COMMAND_END, 0, "old-prompt"),
                 (Mode.COMMAND_START, "foreign command", "foreign-prompt"),
@@ -586,7 +586,7 @@ def test_wait_for_prompt_ignores_foreign_events_and_uses_active_prompt_id(
 
         assert sent == [True]
         assert result == CommandExecutionStatus(
-            prompt_id=None,
+            prompt_id="start-prompt",
             command="echo hi",
             exit_code=CommandExecutionStatus.ExitCode.SUCCESS,
         )
