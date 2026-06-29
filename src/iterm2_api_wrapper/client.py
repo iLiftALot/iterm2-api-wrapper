@@ -16,7 +16,7 @@ from .gateway import DefaultITermGateway, ITermGateway, SetupCoroGateway
 if TYPE_CHECKING:
     from .gateway import RefreshableState, _Connection
     from .state import iTermState
-    from .typings import iTermSetupKwargs
+    from .typings import iTermStateSetupKwargs
 
 
 class iTermClient[StateT: RefreshableState[Any]]:
@@ -26,7 +26,7 @@ class iTermClient[StateT: RefreshableState[Any]]:
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
-        **kwargs: Unpack[iTermSetupKwargs],
+        **kwargs: Unpack[iTermStateSetupKwargs],
     ) -> None:
         self._setup(coro=coro, gateway=gateway, timeout=timeout, **kwargs)
         self._state: StateT = asyncio.run_coroutine_threadsafe(self._init_async(), self._loop).result(
@@ -39,7 +39,7 @@ class iTermClient[StateT: RefreshableState[Any]]:
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
-        **kwargs: Unpack[iTermSetupKwargs],
+        **kwargs: Unpack[iTermStateSetupKwargs],
     ) -> None:
         """Non-blocking initialization of loop, thread, and gateway."""
         if gateway is not None:
@@ -63,7 +63,7 @@ class iTermClient[StateT: RefreshableState[Any]]:
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
-        **kwargs: Unpack[iTermSetupKwargs],
+        **kwargs: Unpack[iTermStateSetupKwargs],
     ) -> iTermClient[StateT]:
         """Async factory — never blocks the calling event loop."""
         instance = object.__new__(cls)
@@ -246,7 +246,7 @@ else:
     ITermClient = iTermClient
 
 
-def create_iterm_client(*, timeout: float | None = None, **kwargs: Unpack[iTermSetupKwargs]) -> ITermClient:
+def create_iterm_client(*, timeout: float | None = None, **kwargs: Unpack[iTermStateSetupKwargs]) -> ITermClient:
     """
     Convenience factory that provides strong type inference for the default state type.
 
@@ -264,15 +264,15 @@ class SharedClientKey:
     extra_id: str | None = None
 
     @classmethod
-    def from_kwargs(cls, **kwargs: Unpack[iTermSetupKwargs]) -> SharedClientKey:
+    def from_kwargs(cls, **kwargs: Unpack[iTermStateSetupKwargs]) -> SharedClientKey:
         return cls(
             service_name=kwargs.get("service_name") or "iterm-api",
             dedicated_profile_name=kwargs.get("dedicated_profile_name") or None,
-            extra_id=kwargs.get("extra_id") or None,
+            extra_id=kwargs.get("extra_id") or None
         )
 
 
-def _shared_client_key(**kwargs: Unpack[iTermSetupKwargs]) -> SharedClientKey:
+def _shared_client_key(**kwargs: Unpack[iTermStateSetupKwargs]) -> SharedClientKey:
     return SharedClientKey.from_kwargs(**kwargs)
 
 
@@ -280,7 +280,7 @@ _shared_clients: dict[SharedClientKey, ITermClient] = {}
 _shared_lock = asyncio.Lock()
 
 
-async def get_shared_client(**kwargs: Unpack[iTermSetupKwargs]) -> ITermClient:
+async def get_shared_client(**kwargs: Unpack[iTermStateSetupKwargs]) -> ITermClient:
     """Return a shared client resolved by service/profile/extra identifiers.
 
     Calls without identifiers still behave like the old singleton and reuse the
@@ -304,7 +304,7 @@ async def get_shared_client(**kwargs: Unpack[iTermSetupKwargs]) -> ITermClient:
         return client
 
 
-async def close_shared_client(**kwargs: Unpack[iTermSetupKwargs]) -> None:
+async def close_shared_client(**kwargs: Unpack[iTermStateSetupKwargs]) -> None:
     """Close and remove one shared client by identifier, if it exists."""
     key = _shared_client_key(**kwargs)
 

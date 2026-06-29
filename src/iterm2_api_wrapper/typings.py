@@ -28,9 +28,6 @@ class iTermStateSetupKwargs(TypedDict, total=False):
     extra_id: str | None
     debug: bool
     """Whether to enable debug logging."""
-
-
-class iTermSetupKwargs(iTermStateSetupKwargs, total=False):
     activate: bool
     """Whether to bring iTerm2 to the foreground during setup."""
 
@@ -99,7 +96,7 @@ class HexCodeEnum(StrEnum):
     CNTRL_U = 0x15
     """Delete entire line (or to start, shell-dependent)"""
     CNTRL_V = 0x16
-    """Quoted insert (literal next)"""
+    """Quoted insert (literal text)"""
     CNTRL_W = 0x17
     """Delete word to the left"""
     CNTRL_X = 0x18
@@ -156,7 +153,7 @@ class HexCodeEnum(StrEnum):
     """Delete (DEL / rubout)"""
     SPACE = 0x20
     """Space"""
-    NUL = 0x00
+    NULL = 0x00
     """Null byte"""
 
     # ── Meta / Alt sequences (ESC + char) ────────────────────────────
@@ -278,7 +275,7 @@ HexCodeKey: TypeAlias = Literal[
     "BACKSPACE",
     "DELETE", "DEL",
     "SPACE",
-    "NUL",
+    "NULL",
     # ── Meta / Alt sequences (ESC + char) ────────────────────────────
     "ESCAPE_B", "ESC_B", "ALT_B",
     "ESCAPE_F", "ESC_F", "ALT_F",

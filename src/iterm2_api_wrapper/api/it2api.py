@@ -14,7 +14,7 @@ from ..errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundErro
 from .it2app import App, async_get_app
 from .it2connection import Connection
 from .it2lifecycle import NewSessionMonitor
-from .it2profile import Profile
+from .it2profile import LocalWriteOnlyProfile, Profile, ProfileProperties
 from .it2prompt import PromptMonitor
 from .it2runtime import bootstrap_iterm2_runtime, validate_iterm2_runtime
 from .it2window import Window
@@ -52,6 +52,7 @@ class iTermAPI:
         new_tab: bool = False,
         debug: bool | None = None,
         activate: bool = True,
+        profile_properties: ProfileProperties | None = None
     ) -> None:
         self._connection: Connection | None = connection_instance
         self._app: App | None = None
@@ -63,10 +64,12 @@ class iTermAPI:
         self.new_tab = new_tab
         self.debug = debug or os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true"}
         self.activate = activate
+        self.profile_properties = profile_properties
+
         self.window: Window | None = None
         self.tab: Tab | None = None
         self.session: Session | None = None
-        self.profile: Profile | PartialProfile | None = None
+        self._profile: Profile | PartialProfile | None = None
 
         if connection_instance is not None:
             type(self).__connection = connection_instance
@@ -146,8 +149,6 @@ class iTermAPI:
 
         self._app = await self.get_app()
         self.profile = await self.get_profile()
-        self.profile_name = self.profile_name or self.profile.name
-        self._profile_cache[self.profile_name] = self.profile
 
         selected_window: Window
         selected_tab: Tab
@@ -165,10 +166,10 @@ class iTermAPI:
                 selected_window = (
                     self.app.current_window
                     or self.app.windows[0]
-                    or await self.create_window(profile_name=self.profile.name)
+                    or await self.create_window(profile_name=self.profile_name)
                 )
                 if selected_window is None:
-                    raise WindowNotFoundError(f"{self.profile.name} ({self._profile_guid(self.profile)})")
+                    raise WindowNotFoundError(f"{self.profile_name} ({self._profile_guid(self.profile)})")
             else:
                 selected_window = await self.get_window()
             selected_tab, selected_session = await self._get_tagged_tab_with_session(
@@ -193,9 +194,9 @@ class iTermAPI:
         return cast(App, self._app)
 
     async def get_profile(self, *, target_profile_name: str | None = None) -> Profile | PartialProfile:
-        target_profile_name = target_profile_name or self.profile_name or self._profile_name(self.profile)
-        target_is_current = (self.profile is not None) and (
-            target_profile_name is None or target_profile_name == self.profile.name
+        target_profile_name = target_profile_name or self.profile_name or self._profile_name(self._profile)
+        target_is_current = self._profile is not None and (
+            target_profile_name is None or target_profile_name == self._profile.name
         )
         target_in_cache = target_profile_name in self._profile_cache
 
@@ -221,6 +222,27 @@ class iTermAPI:
 
         self._profile_cache[profile.name] = profile
         return profile
+
+    @classmethod
+    async def configure_profile(cls, session: Session, properties: ProfileProperties) -> Profile:
+        new_profile = LocalWriteOnlyProfile(properties)
+        await session.async_set_profile_properties(new_profile)
+        return await session.async_get_profile()
+
+    @property
+    def profile(self) -> Profile | PartialProfile:
+        if self._profile is None:
+            raise RuntimeError("iTermAPI.profile is not set.")
+        return self._profile
+
+    @profile.setter
+    def profile(self, value: Profile | PartialProfile | None) -> None:
+        if not value and self._profile is not None:
+            self._profile_cache.pop(self._profile.name)
+        elif value:
+            self._profile_cache[value.name] = value
+        self._profile = value
+        self.profile_name = value.name if value else None
 
     @overload
     async def get_window(self, *, window_id: str | None = None) -> Window: ...
@@ -482,6 +504,13 @@ class iTermAPI:
             await session.async_set_buried(False)
             await session.async_activate(select_tab=False, order_window_front=False)
 
+        async def _configure_profile() -> None:
+            if self.profile_properties is not None:
+                self.profile = await self.configure_profile(session, self.profile_properties)
+                self.profile_name = self.profile.name
+                self._profile_cache[self.profile_name] = self.profile
+
+        await _configure_profile()
         return session
 
     async def create_window(self, *, profile_name: str | None = None, command: str | None = None) -> Window | None:
@@ -883,7 +912,7 @@ class iTermAPI:
 
 
 async def create_iterm_state(
-    connection_instance: Connection | None = None, *, activate: bool = True, **kwargs: Unpack[iTermStateSetupKwargs]
+    connection_instance: Connection | None = None, **kwargs: Unpack[iTermStateSetupKwargs]
 ) -> iTermState:
     """Create and return a fully populated :class:`iTermState` using :class:`iTermAPI`.
 
@@ -898,7 +927,7 @@ async def create_iterm_state(
         extra_id=kwargs.get("extra_id"),
         new_tab=kwargs.get("new_tab", False),
         debug=kwargs.get("debug"),
-        activate=activate,
+        activate=kwargs.get("activate", False),
     )
 
     from iterm2_api_wrapper.state import iTermState

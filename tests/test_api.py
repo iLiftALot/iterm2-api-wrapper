@@ -1,11 +1,12 @@
+# pyright: reportArgumentType=false, reportCallIssue=false
 from __future__ import annotations
 
 import asyncio
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast
 
 import pytest
 
@@ -17,15 +18,16 @@ from iterm2_api_wrapper.errors import ProfileNotFoundError, TabNotFoundError
 if TYPE_CHECKING:
     from iterm2_api_wrapper.api.it2app import App
     from iterm2_api_wrapper.api.it2connection import Connection
-    from iterm2_api_wrapper.api.it2profile import PartialProfile, Profile
+    from iterm2_api_wrapper.api.it2profile import LocalWriteOnlyProfile, PartialProfile, Profile
     from iterm2_api_wrapper.api.it2session import Session
     from iterm2_api_wrapper.api.it2tab import Tab
     from iterm2_api_wrapper.api.it2window import Window
 else:
-    App = Connection = PartialProfile = Profile = Session = Tab = Window = object
+    App = Connection = LocalWriteOnlyProfile = PartialProfile = Profile = Session = Tab = Window = object
 
 
 TProfile = TypeVar("TProfile", bound=Profile, covariant=True)
+TLocalWriteOnlyProfile = TypeVar("TLocalWriteOnlyProfile", bound=LocalWriteOnlyProfile, covariant=True)
 TApp = TypeVar("TApp", bound=App, covariant=True)
 
 
@@ -35,11 +37,16 @@ class _FakeProfile(Protocol[TProfile]):
     original_guid: str | None = None
 
 
+class FakeLocalWriteOnlyProfile(Protocol[TLocalWriteOnlyProfile]):
+    values: dict[str, Any]
+
+
 @dataclass
 class FakeProfile:
     name: str
     guid: str
     original_guid: str | None = None
+    all_properties: dict[str, object] = field(default_factory=dict)
 
 
 class FakeSession:
@@ -49,6 +56,7 @@ class FakeSession:
         self.profile = profile
         self.buried = buried
         self.activation_args: tuple[bool, bool] | None = None
+        self.profile_properties_written: list[FakeLocalWriteOnlyProfile] = []
 
     async def async_get_profile(self) -> FakeProfile:
         return self.profile
@@ -67,6 +75,9 @@ class FakeSession:
     async def async_activate(self, select_tab: bool, order_window_front: bool) -> None:
         self.activation_args = (select_tab, order_window_front)
         self.buried = False
+
+    async def async_set_profile_properties(self, profile_properties: object) -> None:
+        self.profile_properties_written.append(profile_properties)
 
 
 class FakeTab:
@@ -198,6 +209,7 @@ def make_api(profile: FakeProfile, windows: list[FakeWindow]) -> iTermAPI:
     api._profile_cache = {profile.name: typed_profile}
     api.service_name = "iterm-api"
     api.activate = False
+    api.profile_properties = None
     return api
 
 
@@ -694,5 +706,210 @@ def test_create_window_delegates_to_window_factory(monkeypatch: pytest.MonkeyPat
         result = await api.create_window(profile_name="Work", command="ls")
         assert result is created
         assert calls == [(api._connection, "Work", "ls")]
+
+    asyncio.run(scenario())
+
+
+def test_create_tab_waits_for_matching_session_and_prompt_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        profile = FakeProfile(name="pyterm-mcp", guid="GUID")
+        created_session = FakeSession("created", "created-pyterm-mcp", profile)
+        created_tab = FakeTab("created-tab", [created_session])
+
+        class CreatingWindow(FakeWindow):
+            async def async_create_tab(self, profile: str) -> FakeTab:
+                self.created_profiles.append(profile)
+                self.tabs.append(created_tab)
+                return created_tab
+
+        window = CreatingWindow("window-1", [])
+        api = make_api(profile, [window])
+        conn = as_connection(SimpleNamespace())
+        api._connection = conn
+        new_session_events: list[str] = []
+        prompt_monitors: list[Any] = []
+
+        class FakeNewSessionMonitor:
+            def __init__(self, connection: object) -> None:
+                assert connection is conn
+                self.session_ids = iter(["unrelated-session", "created-pyterm-mcp"])
+
+            async def __aenter__(self) -> FakeNewSessionMonitor:
+                return self
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+            async def async_get(self) -> str:
+                session_id = next(self.session_ids)
+                new_session_events.append(session_id)
+                return session_id
+
+        class FakePromptMonitor:
+            Mode = api_module.PromptMonitor.Mode
+
+            def __init__(self, connection: object, session_id: str, modes: list[object]) -> None:
+                assert connection is conn
+                self.session_id = session_id
+                self.modes = modes
+                prompt_monitors.append(self)
+
+            async def __aenter__(self) -> FakePromptMonitor:
+                return self
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+            async def async_get(self, include_id: bool = False) -> tuple[object, object, str]:
+                assert include_id is True
+                return (self.Mode.PROMPT, SimpleNamespace(working_directory="/tmp"), "prompt-1")
+
+        monkeypatch.setattr(api_module, "NewSessionMonitor", FakeNewSessionMonitor)
+        monkeypatch.setattr(api_module, "PromptMonitor", FakePromptMonitor)
+
+        tab, session = await api.create_tab(window, profile, with_session=True, timeout=1.0)
+
+        assert tab is created_tab
+        assert session is created_session
+        assert window.created_profiles == ["pyterm-mcp"]
+        assert new_session_events == ["unrelated-session", "created-pyterm-mcp"]
+        assert len(prompt_monitors) == 1
+        assert prompt_monitors[0].session_id == "created-pyterm-mcp"
+        assert prompt_monitors[0].modes == [
+            FakePromptMonitor.Mode.PROMPT,
+            FakePromptMonitor.Mode.COMMAND_START,
+            FakePromptMonitor.Mode.COMMAND_END,
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_create_tab_treats_prompt_monitor_timeout_as_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        profile = FakeProfile(name="pyterm-mcp", guid="GUID")
+        created_session = FakeSession("created", "created-pyterm-mcp", profile)
+        created_tab = FakeTab("created-tab", [created_session])
+
+        class CreatingWindow(FakeWindow):
+            async def async_create_tab(self, profile: str) -> FakeTab:
+                self.created_profiles.append(profile)
+                return created_tab
+
+        window = CreatingWindow("window-1", [])
+        api = make_api(profile, [window])
+        conn = as_connection(SimpleNamespace())
+        api._connection = conn
+
+        class FakeNewSessionMonitor:
+            def __init__(self, connection: object) -> None:
+                assert connection is conn
+
+            async def __aenter__(self) -> FakeNewSessionMonitor:
+                return self
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+            async def async_get(self) -> str:
+                return "created-pyterm-mcp"
+
+        class TimeoutPromptMonitor:
+            Mode = api_module.PromptMonitor.Mode
+
+            def __init__(self, connection: object, session_id: str, modes: list[object]) -> None:
+                assert connection is conn
+                assert session_id == "created-pyterm-mcp"
+                assert modes == [self.Mode.PROMPT, self.Mode.COMMAND_START, self.Mode.COMMAND_END]
+
+            async def __aenter__(self) -> TimeoutPromptMonitor:
+                return self
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+            async def async_get(self, include_id: bool = False) -> object:
+                assert include_id is True
+                raise TimeoutError
+
+        monkeypatch.setattr(api_module, "NewSessionMonitor", FakeNewSessionMonitor)
+        monkeypatch.setattr(api_module, "PromptMonitor", TimeoutPromptMonitor)
+
+        tab, session = await api._create_tab_get_with_session(window, profile, timeout=0.01)
+
+        assert tab is created_tab
+        assert session is created_session
+
+    asyncio.run(scenario())
+
+
+def test_create_tab_raises_when_loaded_session_cannot_be_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        profile = FakeProfile(name="pyterm-mcp", guid="GUID")
+        created_tab = FakeTab("created-tab", [])
+
+        class CreatingWindow(FakeWindow):
+            async def async_create_tab(self, profile: str) -> FakeTab:
+                self.created_profiles.append(profile)
+                return created_tab
+
+        window = CreatingWindow("window-1", [])
+        api = make_api(profile, [])
+        conn = as_connection(SimpleNamespace())
+        api._connection = conn
+
+        class FakeNewSessionMonitor:
+            def __init__(self, connection: object) -> None:
+                assert connection is conn
+
+            async def __aenter__(self) -> FakeNewSessionMonitor:
+                return self
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+            async def async_get(self) -> str:
+                return "missing-session"
+
+        class TimeoutPromptMonitor:
+            Mode = api_module.PromptMonitor.Mode
+
+            async def __aenter__(self) -> TimeoutPromptMonitor:
+                return self
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                return None
+
+            async def async_get(self, include_id: bool = False) -> object:
+                raise TimeoutError
+
+        monkeypatch.setattr(api_module, "NewSessionMonitor", FakeNewSessionMonitor)
+        monkeypatch.setattr(api_module, "PromptMonitor", TimeoutPromptMonitor)
+
+        with pytest.raises(RuntimeError, match="session 'missing-session' could not be resolved"):
+            await api._create_tab_get_with_session(window, profile, timeout=0.01)
+
+    asyncio.run(scenario())
+
+
+def test_get_session_applies_profile_properties_to_current_context() -> None:
+    async def scenario() -> None:
+        profile = FakeProfile(name="pyterm-mcp", guid="GUID")
+        session = FakeSession("target", "session-1", profile)
+        tab = FakeTab("tab-1", [session])
+        window = FakeWindow("window-1", [tab])
+        api = make_api(profile, [window])
+        api.session = as_session(session)
+        api.tab = as_tab(tab)
+        api.window = as_window(window)
+        api.profile_properties = {"Normal Font": "Monaco 12"} # pyright: ignore[reportAttributeAccessIssue]
+
+        assert await api.get_session(session_id="session-1") is session
+
+        assert len(session.profile_properties_written) == 1
+        written = session.profile_properties_written[0]
+        assert written.values["Normal Font"] == json.dumps("Monaco 12")
 
     asyncio.run(scenario())

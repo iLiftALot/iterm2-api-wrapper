@@ -4,13 +4,13 @@ from typing import Unpack
 from iterm2_api_wrapper.api.it2api import create_iterm_state
 from iterm2_api_wrapper.api.it2connection import run_until_complete
 from iterm2_api_wrapper.state import iTermState
-from iterm2_api_wrapper.typings import iTermSetupKwargs
+from iterm2_api_wrapper.typings import iTermStateSetupKwargs
 
 
 __all__ = ["create_iterm_state", "init", "run_until_complete"]
 
 
-def init(retry: bool, **kwargs: Unpack[iTermSetupKwargs]) -> iTermState:
+def init(retry: bool, **kwargs: Unpack[iTermStateSetupKwargs]) -> iTermState:
     """Main function to run iTerm2 setup."""
 
     global_state: iTermState = run_until_complete(create_iterm_state, retry, **kwargs)  # ty:ignore[invalid-argument-type]]
