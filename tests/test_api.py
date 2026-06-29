@@ -202,11 +202,11 @@ def make_api(profile: FakeProfile, windows: list[FakeWindow]) -> iTermAPI:
     api.extra_id = None
     api._connection = None
     api._app = as_app(FakeApp(windows))
+    api._profile_cache = {}
     api.profile = typed_profile
     api.window = None
     api.tab = None
     api.session = None
-    api._profile_cache = {profile.name: typed_profile}
     api.service_name = "iterm-api"
     api.activate = False
     api.profile_properties = None
