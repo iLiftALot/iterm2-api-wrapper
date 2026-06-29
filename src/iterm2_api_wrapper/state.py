@@ -293,9 +293,9 @@ class MarkedCommand:
                 self.command,
                 "} always {",
                 "__iterm_status=$?",
-                f"printf {after_output} \"$__iterm_status\"",
+                f'printf {after_output} "$__iterm_status"',
                 "}",
-                "return \"$__iterm_status\"",
+                'return "$__iterm_status"',
                 "",
             )
         )

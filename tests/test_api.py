@@ -904,7 +904,7 @@ def test_get_session_applies_profile_properties_to_current_context() -> None:
         api.session = as_session(session)
         api.tab = as_tab(tab)
         api.window = as_window(window)
-        api.profile_properties = {"Normal Font": "Monaco 12"} # pyright: ignore[reportAttributeAccessIssue]
+        api.profile_properties = {"Normal Font": "Monaco 12"}  # pyright: ignore[reportAttributeAccessIssue]
 
         assert await api.get_session(session_id="session-1") is session
 

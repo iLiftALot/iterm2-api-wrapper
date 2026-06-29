@@ -268,7 +268,7 @@ class SharedClientKey:
         return cls(
             service_name=kwargs.get("service_name") or "iterm-api",
             dedicated_profile_name=kwargs.get("dedicated_profile_name") or None,
-            extra_id=kwargs.get("extra_id") or None
+            extra_id=kwargs.get("extra_id") or None,
         )
 
 

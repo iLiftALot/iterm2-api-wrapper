@@ -52,7 +52,7 @@ class iTermAPI:
         new_tab: bool = False,
         debug: bool | None = None,
         activate: bool = True,
-        profile_properties: ProfileProperties | None = None
+        profile_properties: ProfileProperties | None = None,
     ) -> None:
         self._connection: Connection | None = connection_instance
         self._app: App | None = None
