@@ -147,9 +147,8 @@ def test_get_new_app_timeout_parses_env(monkeypatch: pytest.MonkeyPatch) -> None
     assert pyobjc_adapter._get_new_app_timeout_s() == pyobjc_adapter._DEFAULT_NEW_APP_TIMEOUT_S
 
 
-def test_activation_options_combines_flags() -> None:
-    expected = pyobjc_adapter.NSApplicationActivateAllWindows | pyobjc_adapter.NSApplicationActivateIgnoringOtherApps
-    assert pyobjc_adapter._activation_options() == expected
+def test_activation_options_uses_all_windows_flag() -> None:
+    assert pyobjc_adapter._activation_options() == pyobjc_adapter.NSApplicationActivateAllWindows
 
 
 def test_log_launch_completion_handles_all_branches(monkeypatch: pytest.MonkeyPatch) -> None:

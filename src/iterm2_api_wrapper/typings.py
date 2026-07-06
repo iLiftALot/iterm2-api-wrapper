@@ -349,6 +349,9 @@ class CommandExitCode(IntEnum):
 
         Unknown utility-specific statuses are returned unchanged.
         """
+        if not (0 <= code <= 255):
+            raise ValueError("Exit codes must be between 0 and 255.")
+
         try:
             return cls(code)
         except ValueError:

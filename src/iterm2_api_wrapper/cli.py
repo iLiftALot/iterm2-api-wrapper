@@ -263,9 +263,7 @@ async def show_capabilities(state: iTermState, capability: str | None = None) ->
 
 
 async def get_variable(
-    state: iTermState,
-    scope: Literal["iterm2", "window", "tab", "session", "user"],
-    variable: Variable,
+    state: iTermState, scope: Literal["iterm2", "window", "tab", "session", "user"], variable: Variable
 ):
     match scope:
         case "iterm2":

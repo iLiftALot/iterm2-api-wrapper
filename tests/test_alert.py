@@ -150,10 +150,7 @@ def test_poly_modal_alert_handler_combobox_without_default(monkeypatch: pytest.M
 
     result = asyncio.run(
         alert_module.poly_modal_alert_handler(
-            title="Title",
-            subtitle="Subtitle",
-            connection=as_connection("connection"),
-            comboboxes=(["A", "B"], None),
+            title="Title", subtitle="Subtitle", connection=as_connection("connection"), comboboxes=(["A", "B"], None)
         )
     )
 
@@ -171,9 +168,7 @@ def test_poly_modal_alert_handler_without_optional_controls(monkeypatch: pytest.
 
     result = asyncio.run(
         alert_module.poly_modal_alert_handler(
-            title="Title",
-            subtitle="Subtitle",
-            connection=as_connection("connection"),
+            title="Title", subtitle="Subtitle", connection=as_connection("connection")
         )
     )
 

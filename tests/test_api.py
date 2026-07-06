@@ -671,10 +671,7 @@ def test_json_serializes_context_snapshot() -> None:
     api = make_api(profile, [])
     api._connection = as_connection(SimpleNamespace(iterm2_protocol_version=(1, 5)))
     api._app = as_app(
-        cast(
-            FakeApp,
-            SimpleNamespace(windows=[object(), object()], broadcast_domains=[], buried_sessions=[object()]),
-        )
+        cast(FakeApp, SimpleNamespace(windows=[object(), object()], broadcast_domains=[], buried_sessions=[object()]))
     )
     api.window = as_window(cast(FakeWindow, SimpleNamespace(tabs=[object()], window_id="window-1", window_number=1)))
     api.tab = as_tab(cast(FakeTab, SimpleNamespace(tab_id="tab-1", all_sessions=[object()], active_session_id="sid")))

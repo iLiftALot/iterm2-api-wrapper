@@ -50,9 +50,7 @@ def test_get_connect_timeout_clamps_negative_values(monkeypatch: pytest.MonkeyPa
     assert _get_connect_timeout_s() == 0.0
 
 
-def test_temporary_iterm_env_sets_values_and_restores_previous_environment(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_temporary_iterm_env_sets_values_and_restores_previous_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IT2_SUITE", "previous-suite")
     monkeypatch.delenv("IT2_APP_PATH", raising=False)
 

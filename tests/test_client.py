@@ -231,9 +231,7 @@ def test_get_shared_client_uses_identifier_key(monkeypatch: pytest.MonkeyPatch) 
         second = await client_module.get_shared_client(service_name="pyterm-mcp", extra_id="session-a")
         third = await client_module.get_shared_client(service_name="pyterm-mcp", extra_id="session-b")
         fourth = await client_module.get_shared_client(
-            service_name="pyterm-mcp",
-            dedicated_profile_name="Default",
-            extra_id="session-a",
+            service_name="pyterm-mcp", dedicated_profile_name="Default", extra_id="session-a"
         )
 
         assert first is second
@@ -244,11 +242,7 @@ def test_get_shared_client_uses_identifier_key(monkeypatch: pytest.MonkeyPatch) 
         assert calls == [
             {"service_name": "pyterm-mcp", "extra_id": "session-a"},
             {"service_name": "pyterm-mcp", "extra_id": "session-b"},
-            {
-                "service_name": "pyterm-mcp",
-                "dedicated_profile_name": "Default",
-                "extra_id": "session-a",
-            },
+            {"service_name": "pyterm-mcp", "dedicated_profile_name": "Default", "extra_id": "session-a"},
         ]
 
     asyncio.run(scenario())
@@ -267,15 +261,9 @@ def test_close_shared_client_removes_only_matching_key(monkeypatch: pytest.Monke
         session_client = ClosableClient()
 
         default_key = client_module._shared_client_key()
-        session_key = client_module._shared_client_key(
-            service_name="pyterm-mcp",
-            extra_id="session-a",
-        )
+        session_key = client_module._shared_client_key(service_name="pyterm-mcp", extra_id="session-a")
 
-        shared_clients = {
-            default_key: default_client,
-            session_key: session_client,
-        }
+        shared_clients = {default_key: default_client, session_key: session_client}
 
         monkeypatch.setattr(client_module, "_shared_clients", shared_clients)
         monkeypatch.setattr(client_module, "_shared_lock", asyncio.Lock())

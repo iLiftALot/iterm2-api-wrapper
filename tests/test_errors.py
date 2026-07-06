@@ -60,10 +60,6 @@ def test_window_tab_session_errors_embed_profile_name() -> None:
 
 
 def test_iterm_errors_are_raisable_base_exceptions() -> None:
-    for error_cls, args in (
-        (WindowNotFoundError, ("p",)),
-        (TabNotFoundError, ("p",)),
-        (SessionNotFoundError, ("p",)),
-    ):
+    for error_cls, args in ((WindowNotFoundError, ("p",)), (TabNotFoundError, ("p",)), (SessionNotFoundError, ("p",))):
         with pytest.raises(error_cls):
             raise error_cls(*args)

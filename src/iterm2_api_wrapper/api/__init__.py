@@ -16,12 +16,28 @@ from .it2window import Window
 
 
 from .it2variable import (  # isort: skip
-    UserVarEnum, UserVarKey, UserVariable, UserScope,
-    SessionVarEnum, SessionVarKey, SessionVariable, SessionScope,
-    AppVarEnum, AppVarKey, AppVariable, AppScope,
-    TabVarEnum, TabVarKey, TabVariable, TabScope,
-    WindowVarEnum, WindowVarKey, WindowVariable, WindowScope,
-    Variable, VariableScope
+    UserVarEnum,
+    UserVarKey,
+    UserVariable,
+    UserScope,
+    SessionVarEnum,
+    SessionVarKey,
+    SessionVariable,
+    SessionScope,
+    AppVarEnum,
+    AppVarKey,
+    AppVariable,
+    AppScope,
+    TabVarEnum,
+    TabVarKey,
+    TabVariable,
+    TabScope,
+    WindowVarEnum,
+    WindowVarKey,
+    WindowVariable,
+    WindowScope,
+    Variable,
+    VariableScope,
 )
 
 from .it2api import create_iterm_state, iTermAPI
@@ -71,5 +87,5 @@ __all__ = [
     "create_iterm_state",
     "iTermAPI",
     "run_forever",
-    "run_until_complete"
+    "run_until_complete",
 ]

@@ -256,13 +256,7 @@ class MarkedCommand:
     BEFORE_OUTPUT = r"\033]133;C\a"
     AFTER_OUTPUT = r"\033]133;D;%d\a"
 
-    def __init__(
-        self,
-        command: str,
-        *,
-        command_label: str | None = None,
-        prompt: str = "iterm2-api-wrapper> ",
-    ) -> None:
+    def __init__(self, command: str, *, command_label: str | None = None, prompt: str = "iterm2-api-wrapper> ") -> None:
         self.command = command
         self.label = command if command_label is None else command_label
         self.prompt = prompt
@@ -665,11 +659,7 @@ class iTermState:
 
     @_validate_state
     async def send_escape_sequence(
-        self,
-        *sequences: HexCode | str,
-        broadcast: bool = False,
-        timeout: float = 2.0,
-        wait: bool = False,
+        self, *sequences: HexCode | str, broadcast: bool = False, timeout: float = 2.0, wait: bool = False
     ) -> bool:
         """Send one or more escape/control sequences to the session.
 
@@ -684,7 +674,7 @@ class iTermState:
         :param broadcast: If `False`, suppress broadcast to other sessions.
         :type broadcast: `bool`, optional, default=`False`
         :param timeout: Seconds to wait when ``wait=True``.
-        :type timeout: `float`, optional
+        :type timeout: `float`, optional, default=2.0
         :param wait: If `False`, return immediately after writing. If `True`,
             wait for a prompt/command event or terminal content change.
         :type wait: `bool`, optional, default=`False`
@@ -726,11 +716,7 @@ class iTermState:
 
     @_validate_state
     async def run_command(
-        self,
-        command: str,
-        path: str | None = None,
-        broadcast: bool = False,
-        timeout: float = 10.0,
+        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 10.0
     ) -> CommandExecutionResult:
         """Run a command and return its output."""
         safe_command = command.replace("\n", "\\n").replace("\r", "\\r")
@@ -1041,12 +1027,7 @@ class iTermState:
         if prompt_ready and has_identity:
             log.debug(
                 "Shell integration prompt evidence accepted",
-                {
-                    "prompt_state": prompt_state,
-                    "lastCommand": last_command,
-                    "username": username,
-                    "hostname": hostname,
-                },
+                {"prompt_state": prompt_state, "lastCommand": last_command, "username": username, "hostname": hostname},
             )
             return cache(True)
 
@@ -1128,13 +1109,7 @@ class iTermState:
     # ! NON-Shell-Integration-Related Helpers
     # --------------------------------------------------
 
-    async def _send_text(
-        self,
-        command: str | MarkedCommand,
-        suppress: bool,
-        *,
-        clear_line: bool = True,
-    ) -> None:
+    async def _send_text(self, command: str | MarkedCommand, suppress: bool, *, clear_line: bool = True) -> None:
         """Send a command line to the session."""
         text = str(command).removesuffix("\r")
 

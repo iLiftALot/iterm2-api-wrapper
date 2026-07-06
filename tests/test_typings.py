@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from iterm2_api_wrapper.typings import (
-    CommandExecutionResult,
-    CommandExecutionStatus,
-    HexCodeEnum,
-)
+from iterm2_api_wrapper.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
 
 
 CommandExitCode = CommandExecutionStatus.ExitCode

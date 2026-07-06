@@ -1,6 +1,6 @@
 """Runtime re-exports of the untyped PyObjC symbols used by this project.
 
-Type information lives in the sibling ``typings.pyi`` stub, which type
+Type information lives in the sibling ``pyobjc_typings.pyi`` stub, which type
 checkers prefer over this module. At runtime these names are the real ObjC
 classes, functions, and constants from PyObjC's framework modules.
 
@@ -15,6 +15,7 @@ import AppKit as _AppKit
 import ApplicationServices as _ApplicationServices
 import Foundation as _Foundation
 import PyObjCTools.AppHelper as _AppHelper
+import objc as _objc
 
 
 # PyObjC framework modules expose most Objective-C classes/constants lazily via
@@ -26,6 +27,10 @@ AppKit = cast(Any, _AppKit)
 ApplicationServices = cast(Any, _ApplicationServices)
 Foundation = cast(Any, _Foundation)
 AppHelper = cast(Any, _AppHelper)
+objc = cast(Any, _objc)
+
+# --- objc ---
+autorelease_pool = objc.autorelease_pool
 
 # --- Foundation ---
 NSDate = Foundation.NSDate
@@ -37,6 +42,7 @@ NSRunLoop = Foundation.NSRunLoop
 NSRunLoopCommonModes = Foundation.NSRunLoopCommonModes
 NSPort = Foundation.NSPort
 NSTimer = Foundation.NSTimer
+NSBundle = Foundation.NSBundle
 
 # --- PyObjCTools.AppHelper ---
 callAfter = AppHelper.callAfter
