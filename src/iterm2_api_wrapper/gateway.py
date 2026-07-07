@@ -6,12 +6,18 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Protocol
+from ._logging import PrettyLog
 
 
 if TYPE_CHECKING:
     from .api.it2connection import Connection
     from .state import iTermState
+
+def _debug_enabled(debug: bool | None) -> bool:
+    if debug is not None:
+        return debug
+    return os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true"}
+
 
 
 class _Connection(Protocol):
@@ -146,6 +152,8 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
         activate = bool(kwargs.pop("activate", True))
+        debug = _debug_enabled(kwargs.get("debug"))
+        PrettyLog.get_logger("iterm2_api_wrapper").set_level("DEBUG" if debug else "INFO", propagate=True)
 
         with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
             await bootstrap_iterm2_runtime()
@@ -182,6 +190,8 @@ class SetupCoroGateway[StateT: RefreshableState[Any]](ITermGateway[StateT]):
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
         activate = bool(kwargs.pop("activate", True))
+        debug = _debug_enabled(kwargs.get("debug"))
+        PrettyLog.get_logger("iterm2_api_wrapper").set_level("DEBUG" if debug else "INFO", propagate=True)
 
         with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
             await bootstrap_iterm2_runtime()
