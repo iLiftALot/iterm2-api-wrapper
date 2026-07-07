@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Literal, cast, overload
+from typing import TYPE_CHECKING, Generic, Literal, cast, overload, TypeVar
 
 from iterm2 import capabilities, prompt
 
@@ -17,20 +17,22 @@ class Prompt(prompt.Prompt):
     _Prompt__proto: GetPromptResponse
 
 
-type PromptEvent = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None]
-type PromptEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None, str | None]
+PromptEvent = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None]
+PromptEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None, str | None]
 
-type CommandStartEvent = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_START], str]
-type CommandStartEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_START], str, str | None]
+CommandStartEvent = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_START], str]
+CommandStartEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_START], str, str | None]
 
-type CommandEndEvent = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_END], int]
-type CommandEndEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_END], int, str | None]
+CommandEndEvent = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_END], int]
+CommandEndEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.COMMAND_END], int, str | None]
 
-type PromptMonitorEvent = PromptEvent | CommandStartEvent | CommandEndEvent
-type PromptMonitorEventWithId = PromptEventWithId | CommandStartEventWithId | CommandEndEventWithId
+PromptMonitorEvent = PromptEvent | CommandStartEvent | CommandEndEvent
+PromptMonitorEventWithId = PromptEventWithId | CommandStartEventWithId | CommandEndEventWithId
+
+SnapshotT = TypeVar("SnapshotT")
 
 
-class PromptMonitor[SnapshotT](prompt.PromptMonitor):
+class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
     initial_snapshot: SnapshotT
     current_snapshot: SnapshotT
     snapshot_provider: Callable[[], Awaitable[SnapshotT]] | None

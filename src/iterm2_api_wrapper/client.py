@@ -3,15 +3,21 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import inspect
+import sys
 import threading
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from threading import Thread
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Unpack, cast
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from .gateway import DefaultITermGateway, ITermGateway, SetupCoroGateway
 
+
+if sys.version_info >= (3, 12):
+    from typing import Unpack
+else:
+    from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from .gateway import RefreshableState, _Connection
@@ -19,7 +25,10 @@ if TYPE_CHECKING:
     from .typings import iTermStateSetupKwargs
 
 
-class iTermClient[StateT: RefreshableState[Any]]:
+StateT = TypeVar("StateT", bound="RefreshableState[Any]")
+
+
+class iTermClient(Generic[StateT]):
     def __init__(
         self,
         coro: Callable[[_Connection], Awaitable[iTermState]] | None = None,
@@ -241,7 +250,7 @@ class iTermClient[StateT: RefreshableState[Any]]:
 
 
 if TYPE_CHECKING:
-    type ITermClient = iTermClient[iTermState]
+    ITermClient = iTermClient[iTermState]
 else:
     ITermClient = iTermClient
 

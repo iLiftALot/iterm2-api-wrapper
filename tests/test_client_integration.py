@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Generator
-from typing import Any, Coroutine
+from typing import Any, Coroutine, TypeVar
 
 import pytest
 
@@ -11,6 +11,8 @@ from iterm2_api_wrapper.client import iTermClient
 from iterm2_api_wrapper.state import iTermState
 
 from .conftest import RUN_TIMEOUT, log_var
+
+T = TypeVar("T")
 
 
 pytestmark = pytest.mark.skipif(
@@ -21,7 +23,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def run_coroutine_threadsafe[T](
+def run_coroutine_threadsafe(
     coro: Coroutine[Any, Any, T], loop: asyncio.AbstractEventLoop, run_timeout: float = RUN_TIMEOUT
 ) -> T:
     future = asyncio.run_coroutine_threadsafe(coro, loop)

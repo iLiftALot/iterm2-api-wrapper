@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 import tempfile
-from typing import TYPE_CHECKING, Any, ClassVar, Concatenate, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Concatenate, Literal, ParamSpec, TypeVar, cast, overload
 
 from websockets import ConcurrencyError, ConnectionClosed
 
@@ -48,6 +48,8 @@ if TYPE_CHECKING:
 
 log = PrettyLog.get_logger(__name__)
 DEFAULT_SHELL_INTEGRATION_PATH = str(Path.home().joinpath(".iterm2_shell_integration.{shell}"))
+P = ParamSpec("P")
+T = TypeVar("T")
 
 
 def _has_session_value(value: object) -> bool:
@@ -82,7 +84,7 @@ def changed_slice(before: list[str], after: list[str]) -> list[str]:
     return after[prefix:end]
 
 
-def _validate_state[**P, T](
+def _validate_state(
     method: Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]],
 ) -> Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]]:
     """Decorator that validates state and auto-routes to the correct event loop."""
@@ -455,18 +457,19 @@ class iTermState:
                 else f"The connection (iTermState.connection) is closed or has a runtime error: {e!r}"
             )
             log.error(
-                f"The connection (iTermState.connection) is closed:\n{
-                    json.dumps(
+                (
+                    "The connection (iTermState.connection) is closed:\n"
+                    + json.dumps(
                         {
-                            'code': e.code,
-                            'rcvd': e.rcvd,
-                            'sent': e.sent,
-                            'rcvd_then_sent': e.rcvd_then_sent,
-                            'reason': e.reason,
+                            "code": e.code,
+                            "rcvd": e.rcvd,
+                            "sent": e.sent,
+                            "rcvd_then_sent": e.rcvd_then_sent,
+                            "reason": e.reason,
                         },
                         indent=4,
                     )
-                }"
+                )
                 if isinstance(e, ConnectionClosed)
                 else errMsg
             )
@@ -566,7 +569,7 @@ class iTermState:
     # --------------------------------------------------
 
     @_validate_state
-    async def on_state_loop[T](self, coro_factory: Coroutine[None, None, T]) -> T:
+    async def on_state_loop(self, coro_factory: Coroutine[None, None, T]) -> T:
         return await coro_factory
 
     @overload
@@ -705,7 +708,7 @@ class iTermState:
                 event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
                 log.debug(f"Prompt/command event detected after sending escape sequence(s): {sequences}: {event}")
                 return True
-            except TimeoutError:
+            except (asyncio.TimeoutError, TimeoutError):
                 after = await monitor.refresh_snapshot()
                 if after != before:
                     log.debug(f"No prompt event after escape sequence(s), but terminal contents changed: {sequences}")

@@ -6,6 +6,8 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+
 from ._logging import PrettyLog
 
 
@@ -13,11 +15,15 @@ if TYPE_CHECKING:
     from .api.it2connection import Connection
     from .state import iTermState
 
+
 def _debug_enabled(debug: bool | None) -> bool:
     if debug is not None:
         return debug
     return os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true"}
 
+
+StateTAny = TypeVar("StateTAny")
+StateTRefreshable = TypeVar("StateTRefreshable", bound="RefreshableState[Any]", covariant=True)
 
 
 class _Connection(Protocol):
@@ -29,7 +35,7 @@ class _Connection(Protocol):
     async def async_create(cls) -> Connection: ...
 
 
-class RefreshableState[StateT](Protocol):
+class RefreshableState(Protocol[StateTAny]):
     """
     Minimal protocol that `iTermClient` needs from a "state" object.
 
@@ -37,13 +43,13 @@ class RefreshableState[StateT](Protocol):
     tests can provide simple fakes without requiring a live iTerm2 runtime.
     """
 
-    _refresh_callback: Callable[[], Awaitable[StateT]] | Awaitable[StateT] | None
+    _refresh_callback: Callable[[], Awaitable[StateTAny]] | Awaitable[StateTAny] | None
     _event_loop: asyncio.AbstractEventLoop | None
 
     async def ensure_state(
-        self, refresh_callback: Callable[[], Awaitable[StateT]] | Awaitable[StateT] | None = None
+        self, refresh_callback: Callable[[], Awaitable[StateTAny]] | Awaitable[StateTAny] | None = None
     ) -> None: ...
-    def refresh_from(self, new_state: StateT) -> None: ...
+    def refresh_from(self, new_state: StateTAny) -> None: ...
 
 
 _ENV_CONNECT_TIMEOUT = "ITERM_CONNECT_TIMEOUT"
@@ -125,7 +131,7 @@ def _temporary_iterm_env(*, it2_suite: str | None = None, it2_app_path: str | No
                 os.environ[key] = old_value
 
 
-class ITermGateway[StateT: RefreshableState[Any]](Protocol):
+class ITermGateway(Protocol[StateTRefreshable]):
     """
     Creates a fully-initialized state object.
 
@@ -133,7 +139,7 @@ class ITermGateway[StateT: RefreshableState[Any]](Protocol):
     than importing iTerm2 directly.
     """
 
-    async def create_state(self, **kwargs: Any) -> StateT: ...
+    async def create_state(self, **kwargs: Any) -> StateTRefreshable: ...
 
 
 class DefaultITermGateway(ITermGateway["iTermState"]):
@@ -172,7 +178,7 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
             return await create_iterm_state(conn, activate=False, **kwargs)
 
 
-class SetupCoroGateway[StateT: RefreshableState[Any]](ITermGateway[StateT]):
+class SetupCoroGateway(ITermGateway[StateTRefreshable]):
     """
     Gateway that builds state using a provided setup coroutine.
 
@@ -180,10 +186,10 @@ class SetupCoroGateway[StateT: RefreshableState[Any]](ITermGateway[StateT]):
     still allowing unit tests to supply a fully-fake gateway (no iTerm2 import).
     """
 
-    def __init__(self, setup_coro: Callable[..., Awaitable[StateT]]) -> None:
-        self._setup_coro: Callable[..., Awaitable[StateT]] = setup_coro
+    def __init__(self, setup_coro: Callable[..., Awaitable[StateTRefreshable]]) -> None:
+        self._setup_coro: Callable[..., Awaitable[StateTRefreshable]] = setup_coro
 
-    async def create_state(self, **kwargs: Any) -> StateT:
+    async def create_state(self, **kwargs: Any) -> StateTRefreshable:
         from .api.it2connection import Connection
         from .api.it2runtime import bootstrap_iterm2_runtime
 

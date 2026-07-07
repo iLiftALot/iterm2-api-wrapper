@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import IntEnum, StrEnum
+from enum import Enum, IntEnum
 from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, TypedDict
 
 
@@ -15,7 +15,12 @@ if TYPE_CHECKING:
     from .gateway import _Connection
 
 
-type iTermConnection = type["_Connection | Connection"]
+iTermConnection = type["_Connection | Connection"]
+
+
+class StrEnum(str, Enum):
+    def __str__(self) -> str:
+        return str.__str__(self)
 
 
 class iTermStateSetupKwargs(TypedDict, total=False):
@@ -297,7 +302,7 @@ HexCodeKey: TypeAlias = Literal[
 """All member names (including aliases) of :class:`HexCode`, for name-based autocomplete."""
 # fmt: on
 
-type HexCode = HexCodeEnum | HexCodeKey
+HexCode = HexCodeEnum | HexCodeKey
 
 
 class CommandExitCode(IntEnum):

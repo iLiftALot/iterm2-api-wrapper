@@ -189,7 +189,7 @@ ThemeStyle = Literal[
     "iso8601.time",
     "iso8601.timezone",
 ]
-type ColorName = Literal[
+ColorName = Literal[
     "black",
     "red",
     "green",
@@ -428,7 +428,7 @@ type ColorName = Literal[
 ]
 
 
-type ColorLike = Color | ColorName | str
+ColorLike = Color | ColorName | str
 
 
 class StyleType(NamedTuple):
@@ -440,7 +440,7 @@ class StyleType(NamedTuple):
     link: str | None
 
 
-type StyleLike = ThemeStyle | StyleType | Style | str
+StyleLike = ThemeStyle | StyleType | Style | str
 
 # ---------- palette + gradient helpers ----------
 

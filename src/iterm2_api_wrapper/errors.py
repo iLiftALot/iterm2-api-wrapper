@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
 
@@ -9,6 +10,7 @@ if TYPE_CHECKING:
 
 class ErrorMeta(type(BaseException)):
     msg: str
+    __notes__: list[str] | None
 
     def __new__(
         cls: type[ErrorMeta], name: str, bases: tuple[type, ...], namespace: dict[str, Any], /, **kwds: Any
@@ -25,7 +27,14 @@ class iTermError(BaseException, metaclass=ErrorMeta):
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
         self.__module__ = self.__class__.__name__
-        self.add_note("\n\n*****NOTE*****\n\n" + self.msg.format(*args, **kwargs))
+        if sys.version_info >= (3, 11):
+            self.add_note("\n\n*****NOTE*****\n\n" + self.msg.format(*args, **kwargs))
+        else:
+            note = "\n\n*****NOTE*****\n\n" + self.msg.format(*args, **kwargs)
+            if getattr(self, "__notes__", None) is not None and isinstance(self.__notes__, list):
+                self.__notes__.append(note)
+            else:
+                self.__notes__ = [note]
 
 
 class ProfileNotFoundError(iTermError):

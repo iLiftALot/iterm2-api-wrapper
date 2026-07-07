@@ -1,6 +1,9 @@
-from enum import StrEnum, nonmember
-from typing import Literal, cast, overload
+import sys
+from typing import Literal, cast, overload, TypeVar
+from ..typings import StrEnum
 
+
+T = TypeVar("T", bound=StrEnum)
 
 # NOTE: Check https://iterm2.com/documentation-variables.html for potential updates
 
@@ -8,7 +11,7 @@ from typing import Literal, cast, overload
 @overload
 def PrefixedEnum(EnumT: None, prefix: str) -> type[StrEnum]: ...
 @overload
-def PrefixedEnum[T: StrEnum](EnumT: type[T], prefix=None) -> type[T]: ...
+def PrefixedEnum(EnumT: type[T], prefix=None) -> type[T]: ...
 def PrefixedEnum(EnumT: type[StrEnum] | None, prefix: str | None = None) -> type[StrEnum]:
     if EnumT is None:
 
@@ -228,8 +231,15 @@ class _SessionAtCurrentSessionParentSession(StrEnum):
     isBroadcastSource = "currentSession.parentSession.isBroadcastSource"
     """\"1\" if this session is currently a source for input broadcasting, otherwise \"0\"."""
 
-    user = nonmember(PrefixedEnum(UserVarEnum, "currentSession.parentSession.user"))
-    """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        user = nonmember(PrefixedEnum(UserVarEnum, "currentSession.parentSession.user"))
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    else:
+        __ignore__ = ("user",)
+        user = PrefixedEnum(UserVarEnum, "currentSession.parentSession.user")
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
 
 
 class _SessionAtCurrentTabCurrentSession(StrEnum):
@@ -332,8 +342,15 @@ class _SessionAtCurrentTabCurrentSession(StrEnum):
     isBroadcastSource = "currentTab.currentSession.isBroadcastSource"
     """\"1\" if this session is currently a source for input broadcasting, otherwise \"0\"."""
 
-    user = nonmember(PrefixedEnum(UserVarEnum, "currentTab.currentSession.user"))
-    """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        user = nonmember(PrefixedEnum(UserVarEnum, "currentTab.currentSession.user"))
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    else:
+        __ignore__ = ("user",)
+        user = PrefixedEnum(UserVarEnum, "currentTab.currentSession.user")
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
 
 
 class _SessionAtParentSession(StrEnum):
@@ -436,12 +453,23 @@ class _SessionAtParentSession(StrEnum):
     isBroadcastSource = "parentSession.isBroadcastSource"
     """\"1\" if this session is currently a source for input broadcasting, otherwise \"0\"."""
 
-    tab = nonmember(PrefixedEnum(_TabReference, "parentSession.tab"))
-    """A reference to the context of the parent session's active tab."""
-    iterm2 = nonmember(PrefixedEnum(AppVarEnum, "parentSession.iterm2"))
-    """A reference to the variables belonging to the application (i.e., the global context)."""
-    user = nonmember(PrefixedEnum(UserVarEnum, "parentSession.user"))
-    """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        tab = nonmember(PrefixedEnum(_TabReference, "parentSession.tab"))
+        """A reference to the context of the parent session's active tab."""
+        iterm2 = nonmember(PrefixedEnum(AppVarEnum, "parentSession.iterm2"))
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        user = nonmember(PrefixedEnum(UserVarEnum, "parentSession.user"))
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    else:
+        __ignore__ = ("tab", "iterm2", "user")
+        tab = PrefixedEnum(_TabReference, "parentSession.tab")
+        """A reference to the context of the parent session's active tab."""
+        iterm2 = PrefixedEnum(AppVarEnum, "parentSession.iterm2")
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        user = PrefixedEnum(UserVarEnum, "parentSession.user")
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
 
 
 class _SessionAtCurrentSession(StrEnum):
@@ -543,13 +571,24 @@ class _SessionAtCurrentSession(StrEnum):
     """A newline-delimited list of the foreground job's ancestor process names."""
     isBroadcastSource = "currentSession.isBroadcastSource"
     """\"1\" if this session is currently a source for input broadcasting, otherwise \"0\"."""
-    parentSession = nonmember(_SessionAtCurrentSessionParentSession)
-    """The session that was current when this session as created. This is an alias to the context of that session so you can access its variables."""
 
-    iterm2 = nonmember(PrefixedEnum(AppVarEnum, "currentSession.iterm2"))
-    """A reference to the variables belonging to the application (i.e., the global context)."""
-    user = nonmember(PrefixedEnum(UserVarEnum, "currentSession.user"))
-    """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        parentSession = nonmember(_SessionAtCurrentSessionParentSession)
+        """The session that was current when this session as created. This is an alias to the context of that session so you can access its variables."""
+        iterm2 = nonmember(PrefixedEnum(AppVarEnum, "currentSession.iterm2"))
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        user = nonmember(PrefixedEnum(UserVarEnum, "currentSession.user"))
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    else:
+        __ignore__ = ("parentSession", "iterm2", "user")
+        parentSession = _SessionAtCurrentSessionParentSession
+        """The session that was current when this session as created. This is an alias to the context of that session so you can access its variables."""
+        iterm2 = PrefixedEnum(AppVarEnum, "currentSession.iterm2")
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        user = PrefixedEnum(UserVarEnum, "currentSession.user")
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
 
 
 class _TabAtTab(StrEnum):
@@ -570,10 +609,19 @@ class _TabAtTab(StrEnum):
     tabTitle = "tab.title"
     """The fully formatted title as it appears in the tab bar."""
 
-    iterm2 = nonmember(PrefixedEnum(AppVarEnum, "tab.iterm2"))
-    """A reference to the variables belonging to the application (i.e., the global context)."""
-    window = nonmember(PrefixedEnum(_WindowReference, "tab.window"))
-    """A reference to the context of the enclosing window."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        iterm2 = nonmember(PrefixedEnum(AppVarEnum, "tab.iterm2"))
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        window = nonmember(PrefixedEnum(_WindowReference, "tab.window"))
+        """A reference to the context of the enclosing window."""
+    else:
+        __ignore__ = ("iterm2", "window")
+        iterm2 = PrefixedEnum(AppVarEnum, "tab.iterm2")
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        window = PrefixedEnum(_WindowReference, "tab.window")
+        """A reference to the context of the enclosing window."""
 
 
 class _TabAtCurrentTab(StrEnum):
@@ -594,10 +642,19 @@ class _TabAtCurrentTab(StrEnum):
     tabTitle = "currentTab.title"
     """The fully formatted title as it appears in the tab bar."""
 
-    currentSession = nonmember(_SessionAtCurrentTabCurrentSession)
-    """Defined in the context of the tab's current session"""
-    iterm2 = nonmember(PrefixedEnum(AppVarEnum, "currentTab.iterm2"))
-    """A reference to the variables belonging to the application (i.e., the global context)."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        currentSession = nonmember(_SessionAtCurrentTabCurrentSession)
+        """Defined in the context of the tab's current session"""
+        iterm2 = nonmember(PrefixedEnum(AppVarEnum, "currentTab.iterm2"))
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+    else:
+        __ignore__ = ("currentSession", "iterm2")
+        currentSession = _SessionAtCurrentTabCurrentSession
+        """Defined in the context of the tab's current session"""
+        iterm2 = PrefixedEnum(AppVarEnum, "currentTab.iterm2")
+        """A reference to the variables belonging to the application (i.e., the global context)."""
 
 
 class _WindowAtWindow(StrEnum):
@@ -618,8 +675,15 @@ class _WindowAtWindow(StrEnum):
     isHotkeyWindow = "window.isHotkeyWindow"
     """A boolean indicating if this is a hotkey window."""
 
-    iterm2 = nonmember(PrefixedEnum(AppVarEnum, "window.iterm2"))
-    """A reference to the variables belonging to the application (i.e., the global context)."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        iterm2 = nonmember(PrefixedEnum(AppVarEnum, "window.iterm2"))
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+    else:
+        __ignore__ = ("iterm2",)
+        iterm2 = PrefixedEnum(AppVarEnum, "window.iterm2")
+        """A reference to the variables belonging to the application (i.e., the global context)."""
 
 
 class SessionVarEnum(StrEnum):
@@ -737,16 +801,32 @@ class SessionVarEnum(StrEnum):
     """A newline-delimited list of the foreground job's ancestor process names."""
     isBroadcastSource = _SessionReference.isBroadcastSource
     """\"1\" if this session is currently a source for input broadcasting, otherwise \"0\"."""
-    parentSession = nonmember(_SessionAtParentSession)
-    """The session that was current when this session as created. This is an alias to the context of that session so you can access its variables."""
 
-    # > References to Other Contexts
-    tab = nonmember(_TabAtTab)
-    """A reference to the context of the active tab."""
-    iterm2 = nonmember(PrefixedEnum(AppVarEnum, "iterm2"))
-    """A reference to the variables belonging to the application (i.e., the global context)."""
-    user = nonmember(PrefixedEnum(UserVarEnum, "user"))
-    """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        parentSession = nonmember(_SessionAtParentSession)
+        """The session that was current when this session as created. This is an alias to the context of that session so you can access its variables."""
+
+        # > References to Other Contexts
+        tab = nonmember(_TabAtTab)
+        """A reference to the context of the active tab."""
+        iterm2 = nonmember(PrefixedEnum(AppVarEnum, "iterm2"))
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        user = nonmember(PrefixedEnum(UserVarEnum, "user"))
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
+    else:
+        __ignore__ = ("parentSession", "tab", "iterm2", "user")
+        parentSession = _SessionAtParentSession
+        """The session that was current when this session as created. This is an alias to the context of that session so you can access its variables."""
+
+        # > References to Other Contexts
+        tab = _TabAtTab
+        """A reference to the context of the active tab."""
+        iterm2 = PrefixedEnum(AppVarEnum, "iterm2")
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        user = PrefixedEnum(UserVarEnum, "user")
+        """A context for user-set variables. Variables may be set with a custom control sequence or by using the Python scripting API. They are often set when using shell integration. See User-Defined Variables for more information."""
 
 
 class WindowVarEnum(StrEnum):
@@ -774,10 +854,19 @@ class WindowVarEnum(StrEnum):
     """A boolean indicating if this is a hotkey window."""
 
     # References to Other Contexts
-    currentTab = nonmember(_TabAtCurrentTab)
-    """A reference to the context of the active tab."""
-    iterm2 = nonmember(PrefixedEnum(AppVarEnum, "iterm2"))
-    """A reference to the variables belonging to the application (i.e., the global context)."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        currentTab = nonmember(_TabAtCurrentTab)
+        """A reference to the context of the active tab."""
+        iterm2 = nonmember(PrefixedEnum(AppVarEnum, "iterm2"))
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+    else:
+        __ignore__ = ("currentTab", "iterm2")
+        currentTab = _TabAtCurrentTab
+        """A reference to the context of the active tab."""
+        iterm2 = PrefixedEnum(AppVarEnum, "iterm2")
+        """A reference to the variables belonging to the application (i.e., the global context)."""
 
 
 class TabVarEnum(StrEnum):
@@ -801,22 +890,33 @@ class TabVarEnum(StrEnum):
     """The fully formatted title as it appears in the tab bar."""
 
     # > References to Other Contexts
-    currentSession = nonmember(_SessionAtCurrentSession)
-    """A reference to the context of the active session in this tab."""
-    iterm2 = nonmember(PrefixedEnum(AppVarEnum, "iterm2"))
-    """A reference to the variables belonging to the application (i.e., the global context)."""
-    window = nonmember(_WindowAtWindow)
-    """A reference to the context of the enclosing window."""
+    if sys.version_info >= (3, 11):
+        from enum import nonmember
+
+        currentSession = nonmember(_SessionAtCurrentSession)
+        """A reference to the context of the active session in this tab."""
+        iterm2 = nonmember(PrefixedEnum(AppVarEnum, "iterm2"))
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        window = nonmember(_WindowAtWindow)
+        """A reference to the context of the enclosing window."""
+    else:
+        __ignore__ = ("currentSession", "iterm2", "window")
+        currentSession = _SessionAtCurrentSession
+        """A reference to the context of the active session in this tab."""
+        iterm2 = PrefixedEnum(AppVarEnum, "iterm2")
+        """A reference to the variables belonging to the application (i.e., the global context)."""
+        window = _WindowAtWindow
+        """A reference to the context of the enclosing window."""
 
 
-type AppScope = Literal["iterm2"] | AppVarEnum
-type WindowScope = Literal["window"] | WindowVarEnum
-type TabScope = Literal["tab"] | TabVarEnum
-type SessionScope = Literal["session"] | SessionVarEnum
-type UserScope = Literal["user"] | UserVarEnum
-type VariableScope = AppScope | WindowScope | TabScope | SessionScope | UserScope
+AppScope = Literal["iterm2"] | AppVarEnum
+WindowScope = Literal["window"] | WindowVarEnum
+TabScope = Literal["tab"] | TabVarEnum
+SessionScope = Literal["session"] | SessionVarEnum
+UserScope = Literal["user"] | UserVarEnum
+VariableScope = AppScope | WindowScope | TabScope | SessionScope | UserScope
 
-type SessionVarKey = Literal[
+SessionVarKey = Literal[
     "*",  # - All possible session variables.
     # Session Name
     "autoNameFormat",  # - This is an interpolated string from which the autoName variable is computed. It can be modified by changing the "Session Name" field in Edit Session…, by a trigger that sets the session name, or by an OSC control sequence that sets the icon title. It is initialized to the profile name when a new session is created.
@@ -964,7 +1064,7 @@ type SessionVarKey = Literal[
 ]
 """Defined in the context of a session"""
 
-type TabVarKey = Literal[
+TabVarKey = Literal[
     "*",  # - All possible tab variables.
     # Tab Context
     "id",  # - The unique identifier for this tab.
@@ -1098,7 +1198,7 @@ type TabVarKey = Literal[
 ]
 """Defined in the context of a tab"""
 
-type WindowVarKey = Literal[
+WindowVarKey = Literal[
     "*",  # - All possible window variables.
     # Window Title
     "titleOverride",  # - The value from evaluating the interpeted string in titleOverrideFormat, if set.
@@ -1179,7 +1279,7 @@ type WindowVarKey = Literal[
 ]
 """Defined in the context of a window"""
 
-type UserVarKey = Literal["*"] | str
+UserVarKey = Literal["*"] | str
 """
 The only variables that users may directly control are those in the "user" scope of a session.
 For example, you could set a variable named "gitBranch" to the name of the current git branch.
@@ -1189,7 +1289,7 @@ and would be available to Python API scripts. You'd reference it as user.gitBran
 See "Setting User-Defined Variables" in Scripting Fundamentals for details on setting them.
 """
 
-type AppVarKey = Literal[
+AppVarKey = Literal[
     "*",  # - All possible global variables.
     "effectiveTheme",  # - A space-delimited list of words describing the OS theme (e.g., "dark", "light highContrast", "dark minimal")
     "localhostName",  # - The best guess of what localhost's hostname is
@@ -1199,18 +1299,18 @@ type AppVarKey = Literal[
 """Defined in the global context"""
 
 
-type AppVariable = AppVarEnum | AppVarKey | str
-type UserVariable = UserVarEnum | UserVarKey | str
+AppVariable = AppVarEnum | AppVarKey | str
+UserVariable = UserVarEnum | UserVarKey | str
 
-type _NestedSessionVariables = (
-    SessionVarEnum.parentSession | SessionVarEnum.tab | SessionVarEnum.iterm2 | SessionVarEnum.user
-)
-type SessionVariable = SessionVarEnum | _NestedSessionVariables | SessionVarKey | str
+_NestedSessionVariables = Literal[
+    SessionVarEnum.parentSession, SessionVarEnum.tab, SessionVarEnum.iterm2, SessionVarEnum.user
+]
+SessionVariable = SessionVarEnum | _NestedSessionVariables | SessionVarKey | str
 
-type _NestedTabVariables = TabVarEnum.currentSession | TabVarEnum.iterm2 | TabVarEnum.window
-type TabVariable = TabVarEnum | _NestedTabVariables | TabVarKey | str
+_NestedTabVariables = Literal[TabVarEnum.currentSession, TabVarEnum.iterm2, TabVarEnum.window]
+TabVariable = TabVarEnum | _NestedTabVariables | TabVarKey | str
 
-type _NestedWindowVariables = WindowVarEnum.currentTab | WindowVarEnum.iterm2
-type WindowVariable = WindowVarEnum | _NestedWindowVariables | WindowVarKey | str
+_NestedWindowVariables = Literal[WindowVarEnum.currentTab, WindowVarEnum.iterm2]
+WindowVariable = WindowVarEnum | _NestedWindowVariables | WindowVarKey | str
 
-type Variable = AppVariable | UserVariable | SessionVariable | TabVariable | WindowVariable
+Variable = AppVariable | UserVariable | SessionVariable | TabVariable | WindowVariable

@@ -3,13 +3,14 @@ from __future__ import annotations
 import atexit
 import datetime
 import os
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from io import TextIOWrapper
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Unpack, cast, overload
+from typing import Any, ClassVar, Literal, cast, overload
 from urllib.parse import quote
 
 from rich.console import Console, ConsoleOptions, JustifyMethod, RenderResult
@@ -36,6 +37,12 @@ from .config import (
     get_default_log_config,
 )
 from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleAttribute, StyleLike, StyleType
+
+
+if sys.version_info >= (3, 12):
+    from typing import Unpack
+else:
+    from typing_extensions import Unpack
 
 
 # Install rich tracebacks globally for better error output

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import pytest
 
@@ -19,6 +20,11 @@ from iterm2_api_wrapper.state import (
 )
 from iterm2_api_wrapper.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
 
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 if TYPE_CHECKING:
     from iterm2_api_wrapper.api.it2app import App

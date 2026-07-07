@@ -13,17 +13,24 @@ contains the properties that have been explicitly set for that profile.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, NotRequired, Protocol, TypedDict, cast
+import sys
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, cast
 
 from iterm2 import profile
+
+
+if sys.version_info >= (3, 12):
+    from typing import NotRequired
+else:
+    from typing_extensions import NotRequired
 
 
 if TYPE_CHECKING:
     from .it2connection import Connection
 
 
-type ColorSpace = Literal["sRGB", "Dev", "P3"]
-type BoolInt = Literal[0, 1]
+ColorSpace = Literal["sRGB", "Dev", "P3"]
+BoolInt = Literal[0, 1]
 
 ProfileColor = TypedDict(
     "ProfileColor",
@@ -40,7 +47,7 @@ KeyboardMapEntry = TypedDict(
     "KeyboardMapEntry", {"Action": int, "Apply Mode": BoolInt, "Escaping": int, "Text": str, "Version": int}
 )
 
-type KeyboardMap = dict[str, KeyboardMapEntry]
+KeyboardMap = dict[str, KeyboardMapEntry]
 """Maps keystroke identifiers like ``"0x74-0x100000"`` to their bound actions."""
 
 
@@ -452,7 +459,7 @@ ProfileProperties = TypedDict(
 )
 
 
-type ProfilePropertyKey = Literal[
+ProfilePropertyKey = Literal[
     "ASCII Anti Aliased",
     "ASCII Ligatures",
     "AWDS Pane Directory",

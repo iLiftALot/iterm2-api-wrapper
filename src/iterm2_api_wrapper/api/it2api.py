@@ -5,9 +5,11 @@ import json
 import os
 import re
 import subprocess
+import sys
+from async_timeout import timeout as _timeout
 from collections.abc import AsyncGenerator
 from types import NoneType
-from typing import TYPE_CHECKING, Literal, Unpack, cast, overload
+from typing import TYPE_CHECKING, Literal, cast, overload
 
 from .._logging import PrettyLog
 from ..errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
@@ -19,6 +21,11 @@ from .it2prompt import PromptMonitor
 from .it2runtime import bootstrap_iterm2_runtime, validate_iterm2_runtime
 from .it2window import Window
 
+
+if sys.version_info >= (3, 12):
+    from typing import Unpack
+else:
+    from typing_extensions import Unpack
 
 if TYPE_CHECKING:
     from ..state import iTermState
@@ -593,7 +600,7 @@ class iTermAPI:
         async def wait_for_created_session_id(monitor: NewSessionMonitor, created_tab: Tab) -> str:
             expected_id = expected_session_id(created_tab)
 
-            async with asyncio.timeout(timeout):
+            async with _timeout(timeout):
                 while True:
                     session_id = await monitor.async_get()
 
@@ -616,7 +623,7 @@ class iTermAPI:
             async with PromptMonitor(connection, session_id, modes) as monitor:
                 try:
                     event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
-                except TimeoutError:
+                except (asyncio.TimeoutError, TimeoutError):
                     # No marks: profile without working shell integration. The tab
                     # exists; snapshot-based fallback owns it from here.
                     log.debug("New tab produced no prompt marks; treating as loaded", {"session_id": session_id})
@@ -643,7 +650,7 @@ class iTermAPI:
                         try:
                             event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=quiescence)
                             log.debug({"mode": event[0], "command": event[1], "prompt_id": event[2]})
-                        except TimeoutError:
+                        except (asyncio.TimeoutError, TimeoutError):
                             return
 
         async with NewSessionMonitor(connection) as monitor:

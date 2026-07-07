@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
-from enum import IntEnum, StrEnum
+from enum import IntEnum
 from typing import IO, Literal, TypedDict
 
 from rich.console import HighlighterType, JustifyMethod, OverflowMethod
@@ -11,6 +11,7 @@ from rich.style import StyleType
 from rich.text import Text
 from rich.theme import Theme
 
+from ..typings import StrEnum
 from .styles import LOG_THEME, StyleLike
 
 
@@ -64,7 +65,7 @@ def _resolve_level(level: LogLevel | str) -> LogLevel:
     return level if isinstance(level, LogLevel) else _log_level_from_str(level)
 
 
-type LogLevelLike = LogLevel | Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+LogLevelLike = LogLevel | Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
 _LEVEL_STYLES: dict[LogLevel, str] = {

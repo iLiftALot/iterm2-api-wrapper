@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Concatenate, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, TypedDict
 
 from .._logging import PrettyLog
 from .pyobjc_typings import (
@@ -36,6 +36,9 @@ ITERM2_EXECTUABLE_PATH = os.getenv("IT2_APP_PATH", None) or os.getenv(
 _DEFAULT_NEW_APP_TIMEOUT_S = 15.0
 _CONNECTION_READY_TIMEOUT_S = 10.0
 _POLL_INTERVAL_S = 0.5
+P = ParamSpec("P")
+R = TypeVar("R")
+T = TypeVar("T")
 
 
 class KillResult(TypedDict, total=False):
@@ -50,7 +53,7 @@ class KillResult(TypedDict, total=False):
     terminated: bool
 
 
-def autoreleased[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+def autoreleased(func: Callable[P, R]) -> Callable[P, R]:
     """Run a synchronous PyObjC-facing function inside a fresh autorelease pool.
 
     Do not use this decorator on async functions. An autorelease pool should not
@@ -246,7 +249,7 @@ class PyObjcContainer:
             # stats[app_name]["terminated"] = terminated
         return stats
 
-    async def async_for_each_app[**P, T](
+    async def async_for_each_app(
         self,
         func: Callable[Concatenate[NSRunningApplication, P], Coroutine[Any, Any, T]],
         *args: P.args,
@@ -257,7 +260,7 @@ class PyObjcContainer:
             outputs.append(await func(app, *args, **kwargs))
         return outputs
 
-    def for_each_app[**P, T](
+    def for_each_app(
         self, func: Callable[Concatenate[NSRunningApplication, P], T], *args: P.args, **kwargs: P.kwargs
     ) -> list[T]:
         outputs = []

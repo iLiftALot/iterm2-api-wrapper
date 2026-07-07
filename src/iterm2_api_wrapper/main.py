@@ -1,5 +1,9 @@
 import sys
-from typing import Unpack
+
+if sys.version_info >= (3, 12):
+    from typing import Unpack
+else:
+    from typing_extensions import Unpack
 
 from iterm2_api_wrapper.api.it2api import create_iterm_state
 from iterm2_api_wrapper.api.it2connection import run_until_complete

@@ -6,11 +6,10 @@ import asyncio
 import inspect
 from collections.abc import Callable, Coroutine
 from contextlib import redirect_stderr, redirect_stdout
-from enum import StrEnum
 from io import StringIO
 from pathlib import Path
 from types import FunctionType
-from typing import TYPE_CHECKING, Annotated, Any, Concatenate, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Concatenate, Literal, ParamSpec, TypeVar
 
 import typer
 from iterm2 import alert, profile
@@ -25,13 +24,16 @@ from .client import create_iterm_client
 if TYPE_CHECKING:
     from .api import Variable
     from .state import iTermState
-    from .typings import CommandExecutionResult
+    from .typings import CommandExecutionResult, StrEnum
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
 log = PrettyLog.get_logger(__name__)
-type CoroutineFn[T, R: Any] = Callable[Concatenate[T, ...], Coroutine[Any, Any, R]]
-type VariableScopeName = Literal["iterm2", "window", "tab", "session", "user"]
+T = TypeVar("T")
+R = TypeVar("R", bound=Any)
+P = ParamSpec("P")
+CoroutineFn = Callable[Concatenate[T, P], Coroutine[Any, Any, R]]
+VariableScopeName = Literal["iterm2", "window", "tab", "session", "user"]
 VARIABLE_SCOPE_COMPLETIONS: tuple[tuple[VariableScopeName, str], ...] = (
     ("iterm2", "Global iTerm2 application variables"),
     ("window", "Variables for the active window"),
@@ -127,7 +129,7 @@ def _complete_get_variable_arg(incomplete: str, ctx: typer.Context) -> list[tupl
     ]
 
 
-def run_coro[T](coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop) -> T:
+def run_coro(coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop) -> T:
     """Run a coroutine in the given event loop and return a Future."""
     return asyncio.run_coroutine_threadsafe(coro, event_loop).result()
 
@@ -142,7 +144,7 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[s
     if func_name == "get_variable":
         return _complete_get_variable_arg(incomplete, ctx)
 
-    functions: dict[str, CoroutineFn[iTermState, Any]] = {
+    functions: dict[str, CoroutineFn[iTermState, ..., Any]] = {
         "send_command": send_command,
         "get_variable": get_variable,
         "show_capabilities": show_capabilities,
@@ -368,7 +370,7 @@ def main(
 
     log.info(f":rocket: [green]Running function:[/green] [bold]{func_name}[/bold]")
 
-    selected_fn: CoroutineFn[iTermState, Any]
+    selected_fn: CoroutineFn[iTermState, ..., Any]
     fn_args, fn_kwargs = kwarg_conversion(tuple(args or []))
     log.info(f"{fn_args=}\n{fn_kwargs=}")
     match func_name:

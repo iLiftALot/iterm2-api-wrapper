@@ -6,7 +6,7 @@ import os
 import sys
 import traceback
 from collections.abc import Callable, Coroutine
-from typing import Any, ClassVar, Concatenate, overload
+from typing import Any, ClassVar, Concatenate, overload, TypeVar, ParamSpec
 
 from iterm2 import _version, api_pb2, auth  # , connection
 from websockets.asyncio.client import ClientConnection, unix_connect
@@ -18,7 +18,8 @@ from .._logging import PrettyLog
 
 
 log = PrettyLog.get_logger(__name__)
-
+T = TypeVar("T")
+P = ParamSpec("P")
 
 DisconnectCallback = Callable[[], None]
 MessageMatcher = Callable[[api_pb2.ServerOriginatedMessage], bool]
@@ -290,7 +291,7 @@ class Connection:
         await websocket.close()
         await websocket.wait_closed()
 
-    async def async_connect[T](self, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool = False) -> T:
+    async def async_connect(self, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool = False) -> T:
         """Establishes a websocket connection.
 
         ---
@@ -411,7 +412,7 @@ class Connection:
 
         raise RuntimeError("Unreachable code reached in async_connect.")
 
-    def run[T](
+    def run(
         self, forever: bool, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool, debug: bool = False
     ) -> T:
         if self.loop is not None and not self.loop.is_closed():
@@ -572,13 +573,13 @@ class Connection:
 
 
 @overload
-def run[T](
+def run(
     forever: bool, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool = True, debug: bool = False
 ) -> T: ...
 
 
 @overload
-def run[T, **P](
+def run(
     forever: bool,
     coro: Callable[Concatenate[Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
@@ -588,7 +589,7 @@ def run[T, **P](
 ) -> T: ...
 
 
-def run[T, **P](
+def run(
     forever: bool,
     coro: Callable[Concatenate[Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
@@ -625,7 +626,7 @@ def run[T, **P](
     return result
 
 
-def run_until_complete[T, **P](
+def run_until_complete(
     coro: Callable[Concatenate[Connection, P], Coroutine[Any, Any, T]],
     retry: bool = True,
     debug: bool = False,
