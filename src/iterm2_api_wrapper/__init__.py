@@ -7,12 +7,11 @@ __email__ = "nickcorbin17@yahoo.com"
 
 from dotenv import load_dotenv
 
-# from . import triggers
 from ._logging import PrettyLog, get_default_log_config
 
 
 load_dotenv()
-logger = PrettyLog(__package__, mode="all", level="INFO", pretty_config=get_default_log_config())
+logger = PrettyLog(__package__)
 
 from .api import create_iterm_state, iTermAPI
 from .client import close_all_shared_clients, close_shared_client, create_iterm_client, get_shared_client, iTermClient

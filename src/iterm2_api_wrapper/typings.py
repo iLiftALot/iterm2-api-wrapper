@@ -315,13 +315,12 @@ class CommandExitCode(IntEnum):
     POSIX shell-level conventions:
     - 0: success
     - 1: general error
+    - 2: misuse error
     - 126: found but not executable
     - 127: command not found
     - 128: unrecoverable shell read error
-    - >128: signal-related status, implementation-defined
-
-    zsh specifically uses:
-    - 128 + signal number
+    - \\>128: signal-related status, implementation-defined.
+        - zsh specifically uses: 128 + signal number
     """
 
     SUCCESS = 0
@@ -349,13 +348,20 @@ class CommandExitCode(IntEnum):
 
     @classmethod
     def coerce(cls, code: int) -> CommandExitCode | int:
-        """
-        Convert a raw integer exit status to a known enum member when possible.
+        """Convert a raw integer exit status to a known enum member when possible.
 
         Unknown utility-specific statuses are returned unchanged.
+
+        ---
+
+        :param code: The raw integer exit status to coerce.
+        :type code: `int`
+        :return: The corresponding `CommandExitCode` enum member if known, otherwise the original integer.
+        :rtype: `CommandExitCode | int`
+        :raises ValueError: If the provided code is not between 0 and 255.
         """
         if not (0 <= code <= 255):
-            raise ValueError("Exit codes must be between 0 and 255.")
+            raise ValueError(f"Exit code '{code}' is invalid. Must be between 0 and 255.")
 
         try:
             return cls(code)

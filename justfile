@@ -1,4 +1,4 @@
-# Justfile for pyterm-mcp
+# Justfile for iterm2-api-wrapper
 
 set export
 set positional-arguments
@@ -120,11 +120,11 @@ clean-test:
     rm -fr htmlcov/
     rm -fr .pytest_cache
 
-# Clean and rebuild docs
+# Clean docs/_build
 clean-docs:
     rm -rf docs/_build
 
-# remove all build, mypy, test, coverage and Python artifacts
+# remove all build, mypy, test, coverage, docs, and Python artifacts
 clean:
     @just clean-build
     @just clean-pyc

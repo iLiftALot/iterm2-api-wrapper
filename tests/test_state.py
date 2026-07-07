@@ -1094,9 +1094,11 @@ def test_get_prompt_output_returns_none_for_empty_prompt_text_range() -> None:
         state = make_state(asyncio.get_running_loop())
         empty_prompt = SimpleNamespace(
             output_range=SimpleNamespace(start=SimpleNamespace(x=0, y=0), end=SimpleNamespace(x=0, y=0), proto="out"),
-            command_range=SimpleNamespace(proto="cmd"),
+            command_range=SimpleNamespace(start=SimpleNamespace(x=0, y=0), end=SimpleNamespace(x=0, y=0), proto="cmd"),
             excluded_subranges=[],
-            prompt_range=SimpleNamespace(proto="prompt"),
+            prompt_range=SimpleNamespace(
+                start=SimpleNamespace(x=0, y=0), end=SimpleNamespace(x=0, y=0), proto="prompt"
+            ),
             command="echo hi",
         )
 

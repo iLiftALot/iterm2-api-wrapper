@@ -17,7 +17,7 @@ __all__ = ["create_iterm_state", "init", "run_until_complete"]
 def init(retry: bool, **kwargs: Unpack[iTermStateSetupKwargs]) -> iTermState:
     """Main function to run iTerm2 setup."""
 
-    global_state: iTermState = run_until_complete(create_iterm_state, retry, **kwargs)  # ty:ignore[invalid-argument-type]]
+    global_state: iTermState = run_until_complete(create_iterm_state, retry, **kwargs)
     return global_state
 
 

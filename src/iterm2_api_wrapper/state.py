@@ -68,6 +68,16 @@ def _strip_marker_suffix(lines: list[str], marker: str) -> list[str]:
     return lines
 
 
+async def fetch_prompt_segment(updated_prompt: Prompt, session: Session) -> str:
+    start_y = updated_prompt.prompt_range.start.y
+    end_y = updated_prompt.prompt_range.end.y
+    start_x = updated_prompt.prompt_range.start.x
+    end_x = updated_prompt.prompt_range.end.x
+    number_of_lines = max(1, end_y - start_y)
+    contents = await session.async_get_contents(start_y, number_of_lines)
+    return "\n".join(line.string for line in contents)[start_x:end_x].strip()
+
+
 def changed_slice(before: list[str], after: list[str]) -> list[str]:
     """Return the changed block between two terminal snapshots."""
     prefix = 0
@@ -142,11 +152,11 @@ class User:
         self.__state = state
 
     def __contains_user_ref(self, name: str) -> bool:
-        return bool(type(self).__user_ref_pattern.search(name))
+        return bool(self.__user_ref_pattern.search(name))
 
     def __is_session_member(self, name: str) -> bool:
         user_ctx_part: str = ""
-        maybe_match = type(self).__user_ref_pattern.match(name)
+        maybe_match = self.__user_ref_pattern.match(name)
         log.debug(f"Checking: {name}... ", maybe_match)
 
         if maybe_match:
@@ -190,7 +200,7 @@ class User:
 
 
 class LoopManager:
-    """Resolve and reconcile the event loop that owns an ``iTermState``."""
+    """Resolve and reconcile the event loop that owns an :class:`iTermState`."""
 
     def __init__(self, state: iTermState):
         self._state = state
@@ -286,10 +296,10 @@ class MarkedCommand:
                 f"printf '%s\\n' {self.execution_label}",
                 f"printf {before_output}",
                 "{",
-                self.command,
+                f"  {self.command}",
                 "} always {",
-                "__iterm_status=$?",
-                f'printf {after_output} "$__iterm_status"',
+                "  __iterm_status=$?",
+                f'  printf {after_output} "$__iterm_status"',
                 "}",
                 'return "$__iterm_status"',
                 "",
@@ -299,12 +309,15 @@ class MarkedCommand:
     def __str__(self) -> str:
         return self.script_body()
 
+    def __repr__(self) -> str:
+        return f"MarkedCommand(command={self.command!r}, label={self.label!r}, prompt={self.prompt!r})"
+
 
 def write_marked_command_script(marked: MarkedCommand) -> Path:
     """Write a marked command script to a local temp file."""
     script_dir = Path(tempfile.gettempdir())
     script_path = script_dir / f"iterm2_marked_{os.getpid()}_{id(marked)}.zsh"
-    script_path.write_text(marked.script_body(), encoding="utf-8")
+    script_path.write_text(str(marked), encoding="utf-8")
     script_path.chmod(0o600)
     return script_path
 
@@ -317,7 +330,7 @@ def remove_marked_command_script(script_path: Path | None) -> None:
     try:
         script_path.unlink(missing_ok=True)
     except OSError:
-        log.debug("Failed to remove marked command script", {"script_path": str(script_path)})
+        log.error("Failed to remove marked command script", {"script_path": str(script_path)})
 
 
 @dataclass
@@ -830,7 +843,7 @@ class iTermState:
             while True:
                 try:
                     event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
-                except TimeoutError:
+                except (asyncio.TimeoutError, TimeoutError):
                     current_snapshot = await monitor.refresh_snapshot()
                     if last_snapshot != current_snapshot:
                         log.debug("Prompt event timed out, but terminal contents changed; continuing wait")
@@ -933,7 +946,12 @@ class iTermState:
                     return CommandExecutionStatus(prompt_id=prompt_id, command=active_command, exit_code=exit_code)
 
     async def _get_prompt_output(
-        self, prompt_id: str, *, expected_command: str | None = None, extract_prompt_text: bool = False
+        self,
+        prompt_id: str,
+        *,
+        expected_command: str | None = None,
+        extract_prompt_text: bool = False,
+        prompt: Prompt | None = None,
     ) -> str | None:
         """Return command output for a prompt id, or None when the prompt is not usable."""
         updated_prompt = await self._get_prompt(prompt_id)
@@ -961,13 +979,15 @@ class iTermState:
                 )
                 return None
 
-        output_range = updated_prompt.output_range
+        output_range = updated_prompt.output_range if extract_prompt_text is False else updated_prompt.prompt_range
         start, end = output_range.start, output_range.end
         start_x, start_y = start.x, start.y
         end_x, end_y = end.x if extract_prompt_text is True else None, end.y
 
         if (start_x, start_y) == (end_x, end_y):
-            log.debug("Prompt output range is empty; falling back to snapshot diff")
+            log.debug(
+                f"{'Prompt' if extract_prompt_text is True else 'Output'} range is empty; falling back to snapshot diff"
+            )
             return None
 
         if end_y < start_y or (end_y == start_y and (isinstance(end_x, int) and end_x < start_x)):
@@ -991,6 +1011,7 @@ class iTermState:
         async with Transaction(self.connection):
             contents = await self.session.async_get_contents(start_y, number_of_lines)
 
+        # prompt_text = await fetch_prompt_segment(updated_prompt, self.session)
         result = "\n".join(line.string for line in contents)[start_x:end_x].strip()
         if not result:
             return None
@@ -1066,7 +1087,7 @@ class iTermState:
                 await asyncio.wait_for(
                     monitor.async_get(mode=PromptMonitor.Mode.PROMPT), timeout or self.SI_PROBE_TIMEOUT
                 )
-            except TimeoutError:
+            except (asyncio.TimeoutError, TimeoutError):
                 return False
             return True
 

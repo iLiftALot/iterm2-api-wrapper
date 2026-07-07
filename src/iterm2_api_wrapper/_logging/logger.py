@@ -312,7 +312,7 @@ class PrettyLog:
         self,
         name: str = "root",
         mode: Literal["terminal", "file", "all"] = "all",
-        level: LogLevelLike = LogLevel.DEBUG,
+        level: LogLevelLike = LogLevel.INFO,
         *,
         pretty_config: AllLogConfig | None = None,
     ) -> None:
