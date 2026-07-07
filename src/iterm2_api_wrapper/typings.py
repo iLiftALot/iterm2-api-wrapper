@@ -434,6 +434,11 @@ class CommandExecutionStatus:
 
         return None
 
+    @property
+    def was_cancelled(self) -> bool:
+        """Whether this command was cancelled by the user (Ctrl+C, Ctrl+Z)."""
+        return self.code in (CommandExitCode.SIGINT, CommandExitCode.SIGKILL, CommandExitCode.SIGTERM)
+
 
 @dataclass
 class CommandExecutionResult:
