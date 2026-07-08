@@ -16,9 +16,9 @@ T = TypeVar("T")
 
 
 pytestmark = pytest.mark.skipif(
-    str(os.getenv("ITERM_PYTEST_INTEGRATION", "")).lower() not in {"1", "true", "yes"},
+    str(os.getenv("IT2_PYTEST_INTEGRATION", "")).lower() not in {"1", "true", "yes"},
     reason=(
-        "Integration tests require iTerm2 running with the Python API enabled. Set ITERM_PYTEST_INTEGRATION=1 to run."
+        "Integration tests require iTerm2 running with the Python API enabled. Set IT2_PYTEST_INTEGRATION=1 to run."
     ),
 )
 

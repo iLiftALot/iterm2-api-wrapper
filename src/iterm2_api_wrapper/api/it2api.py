@@ -65,7 +65,7 @@ class iTermAPI:
         self._app: App | None = None
         self._profile_cache: dict[str, Profile | PartialProfile] = {}
 
-        self.profile_name = profile_name or os.getenv("ITERM_DEDICATED_PROFILE", None)
+        self.profile_name = profile_name or os.getenv("IT2_DEFAULT_PROFILE", None)
         self.service_name = service_name or "iterm-api"
         self.extra_id = extra_id
         self.new_tab = new_tab

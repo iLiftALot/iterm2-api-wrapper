@@ -34,7 +34,7 @@ jobs:
 
       - name: Run tests
         env:
-          ITERM_PYTEST_INTEGRATION: "0"
+          IT2_PYTEST_INTEGRATION: "0"
         run: |
           uv run pytest
 

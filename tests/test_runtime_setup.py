@@ -41,7 +41,7 @@ def test_bootstrap_runs_once_and_skips_enhance_by_default(monkeypatch) -> None:
     monkeypatch.setattr(it2runtime, "_BOOTSTRAPPED", False)
     monkeypatch.setattr(it2runtime, "_install_iterm2_connection_bridge", lambda: calls.append("install"))
     monkeypatch.setattr(it2runtime, "_enhance_iterm2_imports", lambda: calls.append("enhance"))
-    monkeypatch.delenv("ITERM_ENHANCE_IMPORTS", raising=False)
+    monkeypatch.delenv("IT2_ENHANCE_IMPORTS", raising=False)
 
     asyncio.run(it2runtime.bootstrap_iterm2_runtime())
     # Second call is a no-op because the module flag is now set.
@@ -57,7 +57,7 @@ def test_bootstrap_enhances_imports_when_env_enabled(monkeypatch) -> None:
     monkeypatch.setattr(it2runtime, "_BOOTSTRAPPED", False)
     monkeypatch.setattr(it2runtime, "_install_iterm2_connection_bridge", lambda: calls.append("install"))
     monkeypatch.setattr(it2runtime, "_enhance_iterm2_imports", lambda: calls.append("enhance"))
-    monkeypatch.setenv("ITERM_ENHANCE_IMPORTS", "true")
+    monkeypatch.setenv("IT2_ENHANCE_IMPORTS", "true")
 
     asyncio.run(it2runtime.bootstrap_iterm2_runtime())
 

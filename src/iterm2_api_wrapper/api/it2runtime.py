@@ -31,7 +31,7 @@ async def bootstrap_iterm2_runtime(*, enhance_imports: bool | None = None) -> No
     _install_iterm2_connection_bridge()
 
     if enhance_imports is None:
-        enhance_imports = os.getenv("ITERM_ENHANCE_IMPORTS", "").strip().lower() in {"1", "true", "yes", "on"}
+        enhance_imports = os.getenv("IT2_ENHANCE_IMPORTS", "").strip().lower() in {"1", "true", "yes", "on"}
 
     if enhance_imports:
         _enhance_iterm2_imports()

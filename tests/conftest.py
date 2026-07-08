@@ -224,9 +224,7 @@ def _terminal_theme_from_itermcolors(path: Path) -> TerminalTheme | None:
 
 
 def _load_iterm_profile() -> dict[str, object] | None:
-    if not (
-        os.getenv("TERM_PROGRAM") == "iTerm.app" or os.getenv("ITERM_PROFILE") or os.getenv("ITERM_DEDICATED_PROFILE")
-    ):
+    if not (os.getenv("TERM_PROGRAM") == "iTerm.app" or os.getenv("ITERM_PROFILE") or os.getenv("IT2_DEFAULT_PROFILE")):
         return None
 
     prefs_path = Path("~/Library/Preferences/com.googlecode.iterm2.plist").expanduser()
@@ -248,7 +246,7 @@ def _load_iterm_profile() -> dict[str, object] | None:
     if not isinstance(profiles, list):
         return None
 
-    profile_id = os.getenv("PYTEST_HTML_THEME_PROFILE_ID") or os.getenv("ITERM_PROFILE_ID")
+    profile_id = os.getenv("PYTEST_HTML_THEME_PROFILE_ID") or os.getenv("IT2_PROFILE_ID")
     profile_name = os.getenv("PYTEST_HTML_THEME_PROFILE") or os.getenv("ITERM_PROFILE")
 
     if profile_id:
@@ -275,7 +273,7 @@ def _load_iterm_profile() -> dict[str, object] | None:
 
 
 def _build_terminal_theme() -> TerminalTheme | None:
-    theme_path = os.getenv("ITERM_PYTEST_THEME_PATH")
+    theme_path = os.getenv("IT2_PYTEST_THEME_PATH")
     if theme_path:
         console.print(f"[blue]Loading terminal theme from[/blue]:\n{theme_path}")
         path = Path(theme_path).expanduser()
@@ -299,7 +297,7 @@ def _load_html_extra_css() -> str | None:
         if path.is_file():
             return path.read_text(encoding="utf-8")
 
-    theme_path = os.getenv("ITERM_PYTEST_THEME_PATH")
+    theme_path = os.getenv("IT2_PYTEST_THEME_PATH")
     if theme_path:
         console.print(f"[blue]Loading HTML extra CSS from[/blue]:\n{theme_path}")
         path = Path(theme_path).expanduser()

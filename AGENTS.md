@@ -6,7 +6,7 @@
 - When edits are authorized, keep changes narrow, design-aligned, and verified with direct `uv run --python=3.10 ...` commands unless intentionally checking another supported Python version.
 - `AGENTS.md` is ignored by `.gitignore`; inspect it directly because normal `git status` / `git diff` will not show it.
 - If sandboxing blocks `~/.cache/uv`, prefix uv commands with `UV_CACHE_DIR=/private/tmp/iterm2-api-wrapper-uv-cache`.
-- Codex Desktop setup is configured by ignored `.codex/environments/environment.toml` plus tracked `.codex/env.sh`; generated `.codex/bin/` and `.codex/tools/` stay ignored, and default actions force `ITERM_PYTEST_INTEGRATION=0`.
+- Codex Desktop setup is configured by ignored `.codex/environments/environment.toml` plus tracked `.codex/env.sh`; generated `.codex/bin/` and `.codex/tools/` stay ignored, and default actions force `IT2_PYTEST_INTEGRATION=0`.
 - Do not preserve stale tests by reintroducing old code paths. Update tests to the intended design when the user clarifies that legacy behavior is unwanted.
 - Do not add compatibility/legacy layers unless the user explicitly asks for backwards compatibility; this package favors clean, current behavior over carrying removed APIs.
 
@@ -26,9 +26,9 @@
 | Sync dev env | `uv sync --group dev --group ci` |
 | Lint | `uv run --python=3.10 --group dev --group ci ruff check .` |
 | Format check | `uv run --python=3.10 --group dev --group ci ruff format --check .` |
-| Unit tests | `ITERM_PYTEST_INTEGRATION=0 uv run --python=3.10 --group dev pytest` |
-| Focused unit subset | `ITERM_PYTEST_INTEGRATION=0 uv run --python=3.10 --group dev pytest tests/test_gateway.py tests/test_client.py` |
-| Integration tests | `ITERM_PYTEST_INTEGRATION=1 uv run --python=3.10 --group dev pytest tests/test_client_integration.py` |
+| Unit tests | `IT2_PYTEST_INTEGRATION=0 uv run --python=3.10 --group dev pytest` |
+| Focused unit subset | `IT2_PYTEST_INTEGRATION=0 uv run --python=3.10 --group dev pytest tests/test_gateway.py tests/test_client.py` |
+| Integration tests | `IT2_PYTEST_INTEGRATION=1 uv run --python=3.10 --group dev pytest tests/test_client_integration.py` |
 | Typecheck | `uv run --python=3.10 ty check .` |
 | Build docs | `uv run --python=3.10 --group dev sphinx-build -b html docs docs/_build` |
 
@@ -56,7 +56,7 @@
 - `src/iterm2_api_wrapper/gateway.py`: `ITermGateway`/`DefaultITermGateway` protocol boundary; lazily imports iTerm2 and `pyobjc_adapter` inside methods so importing the package stays test-friendly off macOS; owns `ITERM_CONNECT_TIMEOUT`.
 - `src/iterm2_api_wrapper/pyobjc_adapter/`: AppKit/PyObjC runtime boundary (`PyObjcContainer`, `async_ensure_iterm_app_running`, `is_iterm_app_running`) launching/activating iTerm2 via `NSRunningApplication`; `pyobjc_typings.pyi` holds the typed AppKit shims (the sibling `pyobjc_typings.py` only re-exports the untyped PyObjC symbols at runtime).
 - `src/iterm2_api_wrapper/api/it2api.py`: `iTermAPI`, iTerm2 activation/setup, profile lookup, dedicated tagged window/tab/session selection.
-- `src/iterm2_api_wrapper/api/it2runtime.py`: iTerm2 runtime monkeypatch/bootstrap, capability validation, optional `ITERM_ENHANCE_IMPORTS` import enhancement.
+- `src/iterm2_api_wrapper/api/it2runtime.py`: iTerm2 runtime monkeypatch/bootstrap, capability validation, optional `IT2_ENHANCE_IMPORTS` import enhancement.
 - `src/iterm2_api_wrapper/api/it2*.py`: typed wrappers around upstream iTerm2 alert/app/connection/lifecycle/profile/prompt/session/tab/transaction/variable/window APIs (`it2transaction.py` exposes `Transaction`; `it2alert.py` exposes `Alert`, `TextInputAlert`, `PolyModalAlert`).
 - `src/iterm2_api_wrapper/state.py`: `iTermState`, variable access, escape sending, command execution, prompt/output retrieval for the current resolved state.
 - `src/iterm2_api_wrapper/api/it2connection.py`: custom `Connection` wrapper for current `websockets` behavior and run helpers.
@@ -70,12 +70,12 @@
 
 ## Tests And Runtime
 
-- The default unit suite is offline-safe with `ITERM_PYTEST_INTEGRATION=0`; current coverage spans alert/api/cli/client/connection/errors/gateway/logging/mac/main/prompt/runtime/state/typings behavior.
+- The default unit suite is offline-safe with `IT2_PYTEST_INTEGRATION=0`; current coverage spans alert/api/cli/client/connection/errors/gateway/logging/mac/main/prompt/runtime/state/typings behavior.
 - `tests/test_gateway.py`, `tests/test_gateway_defaults.py`, and `tests/test_client.py` use fakes and do not require live iTerm2.
-- `tests/test_client_integration.py` is opt-in via `ITERM_PYTEST_INTEGRATION=1` and requires iTerm2 running with Python API enabled.
+- `tests/test_client_integration.py` is opt-in via `IT2_PYTEST_INTEGRATION=1` and requires iTerm2 running with Python API enabled.
 - Test logging writes `logs/pytest.log`, `logs/pytest.html`, and pytest's `trace` debug file; all are ignored artifacts.
 - Importing the top-level package loads `.env` and initializes package logging, so imports can create local log side effects.
-- Runtime/test knobs include `ITERM_CONNECT_TIMEOUT`, `ITERM_DEDICATED_PROFILE`, `ITERM_DEBUG`, `ITERM_ENHANCE_IMPORTS`, `ITERM_INTEGRATION_TIMEOUT`, `ITERM_INTEGRATION_LOG`, `ITERM_NEW_APP_TIMEOUT`, `ITERM_PYTEST_INTEGRATION`, `IT2_APP_PATH`, `IT2_SUITE`, `ITERM2_BUNDLE_ID`, and the legacy misspelled `ITERM2_EXECTUABLE_PATH`; conftest also reads HTML-report theming knobs `ITERM_PROFILE`, `ITERM_PROFILE_ID`, `ITERM_PYTEST_THEME_PATH`, `PYTEST_HTML_THEME_PROFILE`, `PYTEST_HTML_THEME_PROFILE_ID`, `PYTEST_HTML_THEME_CSS_PATH`, and `PYTEST_HTML_THEME_CSS`.
+- Runtime/test knobs include `ITERM_CONNECT_TIMEOUT`, `IT2_DEFAULT_PROFILE`, `ITERM_DEBUG`, `IT2_ENHANCE_IMPORTS`, `ITERM_INTEGRATION_TIMEOUT`, `ITERM_INTEGRATION_LOG`, `ITERM_NEW_APP_TIMEOUT`, `IT2_PYTEST_INTEGRATION`, `IT2_APP_PATH`, `IT2_SUITE`, `ITERM2_BUNDLE_ID`, and the legacy misspelled `IT2_EXECTUABLE_PATH`; conftest also reads HTML-report theming knobs `ITERM_PROFILE`, `IT2_PROFILE_ID`, `IT2_PYTEST_THEME_PATH`, `PYTEST_HTML_THEME_PROFILE`, `PYTEST_HTML_THEME_PROFILE_ID`, `PYTEST_HTML_THEME_CSS_PATH`, and `PYTEST_HTML_THEME_CSS`.
 - Live command smoke tests can be run from VS Code's terminal while targeting iTerm2; do not assume the caller's terminal is the target iTerm session.
 - When command behavior changes, validate both a fast command such as `echo final-smoke` and a loose-timeout command such as `sleep 3 && echo HEY && sleep 3 && echo BYE` with `timeout=5.0`.
 

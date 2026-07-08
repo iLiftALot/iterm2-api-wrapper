@@ -347,7 +347,7 @@ def main(
             "-p",
             help="The iTerm2 profile to use for the session.",
             autocompletion=profiles_completion,
-            envvar="ITERM_DEDICATED_PROFILE",
+            envvar="IT2_DEFAULT_PROFILE",
             default_factory=lambda: run_until_complete(profile.Profile.async_get_default).name,
             metavar="PROFILE_NAME",
             rich_help_panel="iTerm Setup Options",
