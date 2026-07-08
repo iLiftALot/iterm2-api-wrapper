@@ -241,8 +241,8 @@ iterm2_api_wrapper-*.tar.gz
 iterm2_api_wrapper-*.whl
 assets/*
 # README.md
-AGENTS.md
-CLAUDE.md
+# AGENTS.md
+# CLAUDE.md
 .agent*/
 **/\**.py
 src/iterm2_api_wrapper/triggers.py
