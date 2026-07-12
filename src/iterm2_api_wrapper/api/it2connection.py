@@ -27,6 +27,16 @@ NotificationHelper = Callable[["Connection", api_pb2.ServerOriginatedMessage], C
 gDisconnectCallbacks: list[DisconnectCallback] = []
 
 
+def _run_disconnect_callbacks() -> None:
+    global gDisconnectCallbacks
+
+    callbacks = list(gDisconnectCallbacks)
+    gDisconnectCallbacks.clear()
+
+    for callback in callbacks:
+        callback()
+
+
 def _getenv(key: str) -> str | None:
     return os.environ.get(key)
 
@@ -285,11 +295,13 @@ class Connection:
 
         websocket = self.websocket
         self.websocket = None
-        if websocket is None:
-            return
 
-        await websocket.close()
-        await websocket.wait_closed()
+        try:
+            if websocket is not None:
+                await websocket.close()
+                await websocket.wait_closed()
+        finally:
+            _run_disconnect_callbacks()
 
     async def async_connect(self, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool = False) -> T:
         """Establishes a websocket connection.
@@ -450,11 +462,7 @@ class Connection:
         try:
             result = loop.run_until_complete(self.async_connect(async_main, retry))
         finally:
-            global gDisconnectCallbacks
-            callbacks = list(gDisconnectCallbacks)
-            gDisconnectCallbacks.clear()
-            for callback in callbacks:
-                callback()
+            _run_disconnect_callbacks()
 
         return result
 
