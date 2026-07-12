@@ -1,0 +1,58 @@
+#!/usr/bin/env zsh
+set -u
+
+# Debugging
+log="$PWD/scripts/debugger"
+source "$log"
+
+repo_root="$(git rev-parse --show-toplevel)"
+repo_name="$(basename "$repo_root")"
+repo_src="$repo_root/src"
+first_applescript="$(find "$repo_src" -type f -name '*.applescript' -print -quit)"
+
+if [[ -z "$first_applescript" ]]; then
+    warn "No AppleScript files found in ${c_bold}$repo_src${c_reset}"
+    exit 1
+fi
+
+osa_abs_dir="${first_applescript:h}"
+osa_rel_dir="${osa_abs_dir#$repo_root/}"
+applescript_files=("$osa_abs_dir"/*.applescript(N))
+
+if (( ${#applescript_files[@]} == 0 )); then
+    warn "No AppleScript files found in ${c_bold}$repo_name/$osa_rel_dir${c_reset}"
+    exit 1
+fi
+
+info "Compiling AppleScript files in ${c_bold}$repo_name/$osa_rel_dir${c_reset}"
+echo "${c_dim}Found ${#applescript_files[@]} file(s) to compile.${c_reset}"
+
+compiled_count=0
+
+for file in "${applescript_files[@]}"; do
+    target="${file%.applescript}.scpt"
+    file_rel="${file#$repo_root/}"
+    target_rel="${target#$repo_root/}"
+
+    echo
+    info "Compiling ${c_cyan}$file_rel${c_reset}"
+
+    rm -f "$target"
+
+    if osacompile -o "$target" "$file"; then
+        if [[ -f "$target" ]]; then
+            compiled_count=$((compiled_count + 1))
+            success "${c_bold}$file_rel${c_reset} → ${c_green}$target_rel${c_reset}"
+        else
+            error "Compile reported success but output file was not created: $target_rel"
+            exit 1
+        fi
+    else
+        # Keep osacompile's own stderr intact so task problem matchers can still parse it.
+        error "Failed to compile ${c_bold}$file_rel${c_reset}"
+        exit 1
+    fi
+done
+
+echo
+success "Compiled ${c_bold}$compiled_count${c_reset} AppleScript file(s) successfully."

@@ -1,0 +1,36 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Script",
+      "type": "shell",
+      "command": "osascript",
+      "args": [
+        "${cwd}/src/iterm2_api_wrapper/mac/applescripts/iterm_osa.scpt",
+        "true",
+        "${cwd}/src/iterm2_api_wrapper/mac/applescripts"
+      ],
+      "dependsOn": "Compile Script",
+      "problemMatcher": []
+    },
+    {
+      "label": "Compile Script",
+      "type": "shell",
+      "command": "${cwd}/scripts/osacompiler",
+      "group": "build",
+      "problemMatcher": {
+        "owner": "applescript",
+        "source": "osacompile",
+        "fileLocation": "absolute",
+        "severity": "error",
+        "pattern": {
+          "regexp": "^(.*\\.applescript):(\\d+):(\\d+):\\s*(?:script )?error:\\s*(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      }
+    }
+  ]
+}

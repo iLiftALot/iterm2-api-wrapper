@@ -1,0 +1,42 @@
+#!/usr/bin/env zsh
+
+# Enable colors only when writing to a terminal.
+if [[ -t 1 ]]; then
+    c_reset=$'\033[0m'
+    c_bold=$'\033[1m'
+    c_dim=$'\033[2m'
+    c_red=$'\033[31m'
+    c_green=$'\033[32m'
+    c_yellow=$'\033[33m'
+    c_blue=$'\033[34m'
+    c_cyan=$'\033[36m'
+else
+    c_reset=''
+    c_bold=''
+    c_dim=''
+    c_red=''
+    c_green=''
+    c_yellow=''
+    c_blue=''
+    c_cyan=''
+fi
+
+debug() {
+    echo "${c_dim}‽${c_reset} $*"
+}
+
+info() {
+    echo "${c_blue}ℹ${c_reset} $*"
+}
+
+success() {
+    echo "${c_green}✔${c_reset} $*"
+}
+
+warn() {
+    echo "${c_yellow}⚠${c_reset} $*"
+}
+
+error() {
+    echo "${c_red}✖${c_reset} $*" >&2
+}
