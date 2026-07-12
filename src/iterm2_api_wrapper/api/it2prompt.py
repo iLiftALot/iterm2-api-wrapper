@@ -3,18 +3,33 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Generic, Literal, cast, overload, TypeVar
 
-from iterm2 import capabilities, prompt
+from iterm2 import capabilities, prompt, rpc, api_pb2
 
 from .it2connection import Connection
+from .it2measurement import CoordRange
 
 
 if TYPE_CHECKING:
-    from iterm2.api_pb2 import GetPromptResponse
-    from iterm2.connection import Connection as IT2Connection
+    from iterm2 import Connection as IT2Connection
 
 
 class Prompt(prompt.Prompt):
-    _Prompt__proto: GetPromptResponse
+    _Prompt__proto: api_pb2.GetPromptResponse
+
+    @property
+    def output_range(self) -> CoordRange:
+        parent_coord_range = super().output_range
+        return CoordRange(parent_coord_range)
+
+    @property
+    def prompt_range(self) -> CoordRange:
+        parent_coord_range = super().prompt_range
+        return CoordRange(parent_coord_range)
+
+    @property
+    def command_range(self) -> CoordRange:
+        parent_coord_range = super().command_range
+        return CoordRange(parent_coord_range)
 
 
 PromptEvent = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None]
@@ -119,40 +134,33 @@ class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
         return self.current_snapshot
 
 
-async def async_get_last_prompt(connection: Connection, session_id: str) -> Prompt | None:
-    """
-    Fetches info about the last prompt in a session.
+async def async_get_prompt(
+    connection: Connection, session_id: str | None = None, prompt_id: str | None = None
+) -> Prompt | None:
+    """Fetches a :class:`Prompt` by its unique ID if provided, or the most recent prompt.
 
-    :param connection: The connection to iTerm2.
-    :type connection: :class:`Connection`
-    :param session_id: The session ID for which to fetch the most recent prompt.
-
-    :returns: The prompt if one exists, or else `None`.
-    :rtype: :class:`iterm2.prompt.Prompt` | None
-
-    :raises: :class:`iterm2.rpc.RPCException` if something goes wrong.
-    """
-    return cast(Prompt | None, await prompt.async_get_last_prompt(cast("IT2Connection", connection), session_id))
-
-
-async def async_get_prompt_by_id(connection: Connection, session_id: str, prompt_unique_id: str) -> Prompt | None:
-    """
-    Fetches a Prompt by its unique ID.
+    ---
 
     :param connection: The connection to iTerm2.
     :type connection: :class:`Connection`
     :param session_id: The Session ID the prompt belongs to.
-    :param prompt_unique_id: The unique ID of the prompt.
-
-    :returns: The prompt if one exists or else `None`.
-    :rtype: :class:`iterm2.prompt.Prompt` | None
-
-    :raises: :class:`iterm2.rpc.RPCException` if something goes wrong.
+    :type session_id: `str` | `None`, default=None
+    :param prompt_id: The unique ID of the prompt.
+    :type prompt_id: `str | None`, default=None
+    :return: The prompt if one exists or else `None`.
+    :rtype: :class:`Prompt` | `None`
+    :raises :class:`rpc.RPCException`: _description_
     """
-    return cast(
-        Prompt | None,
-        await prompt.async_get_prompt_by_id(cast("IT2Connection", connection), session_id, prompt_unique_id),
-    )
+
+    if prompt_id:
+        capabilities.check_supports_prompt_id(connection)
+    response: api_pb2.ServerOriginatedMessage = await rpc.async_get_prompt(connection, session_id, prompt_id)
+    status: api_pb2.GetPromptResponse._Status.ValueType = response.get_prompt_response.status
+    if status == api_pb2.GetPromptResponse.Status.Value("OK"):  # 0
+        return Prompt(response.get_prompt_response)
+    if status == api_pb2.GetPromptResponse.Status.Value("PROMPT_UNAVAILABLE"):  # 3
+        return None
+    raise rpc.RPCException(api_pb2.GetPromptResponse.Status.Name(status))
 
 
 def check_supports_prompt_monitor_modes(connection) -> None:

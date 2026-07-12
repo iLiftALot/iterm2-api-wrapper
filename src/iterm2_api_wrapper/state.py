@@ -6,11 +6,11 @@ import json
 import os
 import re
 import shlex
+import tempfile
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-import tempfile
 from typing import TYPE_CHECKING, Any, ClassVar, Concatenate, Literal, ParamSpec, TypeVar, cast, overload
 
 from websockets import ConcurrencyError, ConnectionClosed
@@ -18,10 +18,11 @@ from websockets import ConcurrencyError, ConnectionClosed
 from ._logging import PrettyLog
 from .alert import poly_modal_alert_handler
 from .api.it2app import async_get_app
-from .api.it2prompt import PromptMonitor, async_get_last_prompt, async_get_prompt_by_id, prompt
+from .api.it2prompt import PromptMonitor, async_get_prompt, prompt
 from .api.it2transaction import Transaction
 from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
 from .typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
+from .utils.parser import Parser, ParseResult
 
 
 if TYPE_CHECKING:
@@ -56,44 +57,6 @@ def _has_session_value(value: object) -> bool:
     return value is not None and bool(str(value).strip())
 
 
-def _is_marker_line(line: str, marker: str) -> bool:
-    return line.strip() == marker
-
-
-def _strip_marker_suffix(lines: list[str], marker: str) -> list[str]:
-    """Drop the standalone sentinel line and anything printed after it."""
-    for index, line in enumerate(lines):
-        if _is_marker_line(line, marker):
-            return lines[:index]
-    return lines
-
-
-async def fetch_prompt_segment(updated_prompt: Prompt, session: Session) -> str:
-    start_y = updated_prompt.prompt_range.start.y
-    end_y = updated_prompt.prompt_range.end.y
-    start_x = updated_prompt.prompt_range.start.x
-    end_x = updated_prompt.prompt_range.end.x
-    number_of_lines = max(1, end_y - start_y)
-    contents = await session.async_get_contents(start_y, number_of_lines)
-    return "\n".join(line.string for line in contents)[start_x:end_x].strip()
-
-
-def changed_slice(before: list[str], after: list[str]) -> list[str]:
-    """Return the changed block between two terminal snapshots."""
-    prefix = 0
-    max_prefix = min(len(before), len(after))
-    while prefix < max_prefix and before[prefix] == after[prefix]:
-        prefix += 1
-
-    suffix = 0
-    max_suffix = min(len(before) - prefix, len(after) - prefix)
-    while suffix < max_suffix and before[-(suffix + 1)] == after[-(suffix + 1)]:
-        suffix += 1
-
-    end = len(after) - suffix if suffix else len(after)
-    return after[prefix:end]
-
-
 def _validate_state(
     method: Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]],
 ) -> Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]]:
@@ -102,7 +65,7 @@ def _validate_state(
     @wraps(method)
     async def async_wrapper(self: iTermState, *args: P.args, **kwargs: P.kwargs) -> T:
         # Auto-route: if we're on the wrong loop, hop to the correct one
-        if not self._on_correct_loop():
+        if not self.on_correct_loop:
             target_loop = self.loop_manager.require_loop()
             routed = async_wrapper(self, *args, **kwargs)
 
@@ -273,6 +236,12 @@ class MarkedCommand:
         self.label = command if command_label is None else command_label
         self.prompt = prompt
 
+        self.script_path = Path(tempfile.gettempdir()) / f"iterm2_marked_{os.getpid()}_{id(self)}.zsh"
+        self.source_command = f"source {shlex.quote(str(self.script_path))}"
+        self._closed = False
+
+        self._generate_script()
+
     @property
     def execution_label(self) -> str:
         return shlex.quote(self.label)
@@ -281,6 +250,7 @@ class MarkedCommand:
     def execution_prompt(self) -> str:
         return f"{self.BEFORE_PROMPT}{self.prompt}{self.AFTER_PROMPT}"
 
+    @property
     def script_body(self) -> str:
         before_prompt = shlex.quote(self.execution_prompt)
         before_output = shlex.quote(self.BEFORE_OUTPUT)
@@ -306,31 +276,37 @@ class MarkedCommand:
             )
         )
 
+    def _generate_script(self) -> None:
+        """Write a marked command script to a local temp file."""
+        self.script_path.write_text(self.script_body, encoding="utf-8")
+        self.script_path.chmod(0o600)
+
+    def cleanup(self) -> None:
+        """Best-effort cleanup for the generated marked command script."""
+        if self._closed:
+            return
+
+        self._closed = True
+        try:
+            self.script_path.unlink(missing_ok=True)
+        except OSError:
+            log.error("Failed to remove marked command script", {"script_path": str(self.script_path)})
+
+    def __enter__(self) -> MarkedCommand:
+        return self
+
+    def __exit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
+        self.cleanup()
+
+    def __del__(self) -> None:
+        # Safety net only. Deterministic cleanup should happen via context manager.
+        self.cleanup()
+
     def __str__(self) -> str:
-        return self.script_body()
+        return self.source_command
 
     def __repr__(self) -> str:
         return f"MarkedCommand(command={self.command!r}, label={self.label!r}, prompt={self.prompt!r})"
-
-
-def write_marked_command_script(marked: MarkedCommand) -> Path:
-    """Write a marked command script to a local temp file."""
-    script_dir = Path(tempfile.gettempdir())
-    script_path = script_dir / f"iterm2_marked_{os.getpid()}_{id(marked)}.zsh"
-    script_path.write_text(str(marked), encoding="utf-8")
-    script_path.chmod(0o600)
-    return script_path
-
-
-def remove_marked_command_script(script_path: Path | None) -> None:
-    """Best-effort cleanup for a generated marked command script."""
-    if script_path is None:
-        return
-
-    try:
-        script_path.unlink(missing_ok=True)
-    except OSError:
-        log.error("Failed to remove marked command script", {"script_path": str(script_path)})
 
 
 @dataclass
@@ -568,7 +544,8 @@ class iTermState:
         """
         return self.loop_manager.loop
 
-    def _on_correct_loop(self) -> bool:
+    @property
+    def on_correct_loop(self) -> bool:
         """Check if the current context is running on the connection's event loop.
 
         Returns:
@@ -712,7 +689,7 @@ class iTermState:
             self.connection,
             self.session.session_id,
             [PromptMonitor.Mode.PROMPT, PromptMonitor.Mode.COMMAND_START, PromptMonitor.Mode.COMMAND_END],
-            snapshot_provider=self._get_terminal_snapshot,
+            snapshot_provider=self._snapshot,
         ) as monitor:
             before = monitor.initial_snapshot
             await self.session.async_send_text(payload, suppress_broadcast=suppress)
@@ -735,9 +712,8 @@ class iTermState:
         self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 10.0
     ) -> CommandExecutionResult:
         """Run a command and return its output."""
-        safe_command = command.replace("\n", "\\n").replace("\r", "\\r")
+        safe_command = re.sub(r"(\r|\n)", lambda m: "\\r" if m.group(1) == "\r" else "\\n", command)
         suppress = not broadcast
-        script_path: Path | None = None
 
         async with self._run_command_lock:
             current_path = await self.get_session_var("path")
@@ -752,44 +728,30 @@ class iTermState:
             )
 
             expected_command = safe_command
-            initial_snapshot = await self._get_terminal_snapshot()
+            initial_snapshot = await self._snapshot()
             initial_prompt = await self._get_prompt()
             initial_prompt_id = initial_prompt.unique_id if initial_prompt is not None else None
 
-            try:
-                if shell_integration_enabled is True:
-                    send_cmd_task = self._send_text(safe_command, suppress=suppress)
-                else:
-                    marked = MarkedCommand(safe_command, command_label=safe_command)
-                    script_path = write_marked_command_script(marked)
-                    source_command = f"source {shlex.quote(str(script_path))}"
-                    send_cmd_task = self._send_text(source_command, suppress=suppress)
-
-                result = await self._wait_for_prompt(
+            if shell_integration_enabled is True:
+                send_cmd_task = self._send_text(safe_command, suppress=suppress)
+                execution_status = await self._wait_for_prompt(
                     send_cmd_task,
                     timeout=timeout,
                     expected_command=expected_command,
                     initial_prompt_id=initial_prompt_id,
                 )
-                if result.timed_out:
-                    log.warning(
-                        "Command monitor timed out; preserving shell-integration cache because "
-                        "a command timeout is not proof that shell integration is dead."
+            else:
+                with MarkedCommand(safe_command, command_label=safe_command) as marked:
+                    send_cmd_task = self._send_text(marked, suppress=suppress)
+                    execution_status = await self._wait_for_prompt(
+                        send_cmd_task,
+                        timeout=timeout,
+                        expected_command=expected_command,
+                        initial_prompt_id=initial_prompt_id,
                     )
 
-                content: str | None = None
-
-                if result.prompt_id is not None:
-                    log.debug(f"Prompt ID was retrieved normally: {result.prompt_id}")
-                    content = await self._get_prompt_output(result.prompt_id, expected_command=expected_command)
-
-                if content is None:
-                    log.warning("Content == None. Trying another method...")
-                    content = "\n".join(changed_slice(initial_snapshot, await self._get_terminal_snapshot()))
-
-                return CommandExecutionResult(output=content, status=result)
-            finally:
-                remove_marked_command_script(script_path)
+            parse_result = await self._run_parser(execution_status.prompt_id, expected_command, initial_snapshot)
+            return CommandExecutionResult(output=parse_result.output, status=execution_status)
 
     # --------------------------------------------------
     # Shell-Integration-Related Helpers
@@ -797,16 +759,8 @@ class iTermState:
 
     async def _get_prompt(self, unique_id: str | None = None) -> Prompt | None:
         """Get prompt history from the session."""
-        prompt_obj: Callable[..., Coroutine[Any, Any, Prompt | None]]
-        call_args: dict[str, Any] = {"connection": self.connection, "session_id": self.session.session_id}
-        if unique_id:
-            prompt_obj = async_get_prompt_by_id
-            call_args["prompt_unique_id"] = unique_id
-        else:
-            prompt_obj = async_get_last_prompt
-
-        last_prompt: Prompt | None = await prompt_obj(**call_args)
-        return last_prompt
+        prompt: Prompt | None = await async_get_prompt(self.connection, self.session.session_id, unique_id)
+        return prompt
 
     async def _wait_for_prompt(
         self,
@@ -831,7 +785,7 @@ class iTermState:
         )
 
         async with PromptMonitor(
-            self.connection, self.session.session_id, modes, snapshot_provider=self._get_terminal_snapshot
+            self.connection, self.session.session_id, modes, snapshot_provider=self._snapshot
         ) as monitor:
             last_snapshot = monitor.initial_snapshot
             saw_expected_start = expected_command is None
@@ -851,7 +805,7 @@ class iTermState:
                         continue
 
                     log.warning(
-                        "Timed out waiting for shell-integration prompt event",
+                        "Timed out waiting for shell-integration prompt event:",
                         {
                             "expected_command": expected_command,
                             "saw_expected_start": saw_expected_start,
@@ -859,6 +813,7 @@ class iTermState:
                             "active_prompt_id": active_prompt_id,
                             "initial_prompt_id": initial_prompt_id,
                         },
+                        "Preserving shell-integration cache...",
                     )
                     return CommandExecutionStatus(
                         prompt_id=active_prompt_id,
@@ -945,19 +900,27 @@ class iTermState:
 
                     return CommandExecutionStatus(prompt_id=prompt_id, command=active_command, exit_code=exit_code)
 
-    async def _get_prompt_output(
-        self,
-        prompt_id: str,
-        *,
-        expected_command: str | None = None,
-        extract_prompt_text: bool = False,
-        prompt: Prompt | None = None,
-    ) -> str | None:
-        """Return command output for a prompt id, or None when the prompt is not usable."""
-        updated_prompt = await self._get_prompt(prompt_id)
+    async def _run_parser(
+        self, prompt_id: str | None, expected_command: str, initial_snapshot: list[str], *, prompt: Prompt | None = None
+    ) -> ParseResult:
+        """Return command output for a prompt id, or None when the prompt/range is not usable."""
+        updated_prompt = prompt if prompt is not None else await self._get_prompt(prompt_id)
         if updated_prompt is None:
-            log.error(":error: Unable to get updated prompt; raising RuntimeError.", emoji=True)
+            log.error(
+                ":error: Unable to get updated prompt; raising RuntimeError.",
+                {"prompt_id": prompt_id, "expected_command": expected_command},
+                emoji=True
+            )
             raise RuntimeError("Failed to retrieve prompt after command execution.")
+
+        log.debug(
+            (
+                "Prompt ID unavailable; parser will use the last known prompt with snapshot fallback support..."
+                if prompt_id is None
+                else "Prompt ID provided; Extracting results..."
+            ),
+            {"prompt_id": prompt_id, "expected_command": expected_command}
+        )
 
         # fmt: off
         log.debug(
@@ -970,53 +933,10 @@ class iTermState:
         )
         # fmt: on
 
-        if expected_command is not None:
-            prompt_command = str(updated_prompt.command or "").strip()
-            if prompt_command != expected_command.strip():
-                log.debug(
-                    "Prompt output rejected because prompt command does not match expected command",
-                    {"prompt_command": prompt_command, "expected_command": expected_command},
-                )
-                return None
+        async with Parser(self, updated_prompt, expected_command, initial_snapshot=initial_snapshot) as parser:
+            parse_result = parser.result
 
-        output_range = updated_prompt.output_range if extract_prompt_text is False else updated_prompt.prompt_range
-        start, end = output_range.start, output_range.end
-        start_x, start_y = start.x, start.y
-        end_x, end_y = end.x if extract_prompt_text is True else None, end.y
-
-        if (start_x, start_y) == (end_x, end_y):
-            log.debug(
-                f"{'Prompt' if extract_prompt_text is True else 'Output'} range is empty; falling back to snapshot diff"
-            )
-            return None
-
-        if end_y < start_y or (end_y == start_y and (isinstance(end_x, int) and end_x < start_x)):
-            log.debug(f"Invalid output range: {start_x=}, {start_y=}, {end_x=}, {end_y=}")
-            return None
-
-        # number_of_lines = max(1, (end_y - start_y) - 1)
-        number_of_lines = max(1, end_y - start_y)
-        # TODO: Handle prompt-cmd-line exclusion
-        #   - assign prompt_line by calling this method recursively with extract_prompt_text=True if prompt_line is False
-        #   - pop lines from the result until it does not include the prompt line
-        #   - prompt extraction example:
-        #       _start_y = updated_prompt.prompt_range.start.y
-        #       _end_y = updated_prompt.prompt_range.end.y
-        #       _start_x = updated_prompt.prompt_range.start.x
-        #       _end_x = updated_prompt.prompt_range.end.x
-        #       _number_of_lines = max(1, _end_y - _start_y)
-        #       _contents = await self.session.async_get_contents(_start_y, _number_of_lines)
-        #       _result = "\n".join(line.string for line in _contents)[_start_x:_end_x].strip()
-
-        async with Transaction(self.connection):
-            contents = await self.session.async_get_contents(start_y, number_of_lines)
-
-        # prompt_text = await fetch_prompt_segment(updated_prompt, self.session)
-        result = "\n".join(line.string for line in contents)[start_x:end_x].strip()
-        if not result:
-            return None
-
-        return result
+        return parse_result
 
     async def _shell_integration_enabled(self, allow_autoload: bool = True) -> bool:
         """Return True when prompt-monitor output extraction is usable now."""
@@ -1055,7 +975,7 @@ class iTermState:
             )
             return cache(True)
 
-        strict_snapshot = await self._get_terminal_snapshot(filter_all_empty=True)
+        strict_snapshot = await self._snapshot(filter_all_empty=True)
         if strict_snapshot and not has_identity:
             log.debug(
                 "Shell integration prompt evidence rejected: identity variables are missing",
@@ -1115,14 +1035,10 @@ class iTermState:
         if should_load_shell_integration:
             if si_path.exists():
                 log.debug(f"Loading shell integration at: {si_path!s}")
-                send_cmd_coro = self.session.async_send_text(
-                    f"source {shlex.quote(str(si_path))}\r", suppress_broadcast=True
-                )
+                cmd = f"source {shlex.quote(str(si_path))}\r"
+                send_cmd_coro = self.session.async_send_text(cmd, suppress_broadcast=True)
                 si_load_output = await self._wait_for_prompt(send_cmd_coro)
-                log.debug(
-                    "Shell integration loaded with output:",
-                    await self._get_prompt_output(f"{si_load_output.prompt_id}"),
-                )
+                log.debug("Shell integration loaded: ", {"prompt_id": si_load_output.prompt_id, "command": cmd})
                 return await self._shell_integration_enabled(allow_autoload=False)
 
             log.warning(f"Unknown shell integration file - '{si_path!s}' does not exist.")
@@ -1138,12 +1054,13 @@ class iTermState:
         text = str(command).removesuffix("\r")
 
         if clear_line is True:
+            log.debug("Clearing existing prompt line before sending command (clear_line=True)")
             await self.session.async_send_text(str(self.HEX.CNTRL_U), suppress_broadcast=suppress)
             await asyncio.sleep(0.02)
 
         await self.session.async_send_text(text + "\r", suppress_broadcast=suppress)
 
-    async def _get_terminal_snapshot(self, *, trim_end: bool = True, filter_all_empty: bool = False) -> list[str]:
+    async def _snapshot(self, *, trim_end: bool = True, filter_all_empty: bool = False) -> list[str]:
         """Get a transactionally consistent snapshot of the terminal screen contents."""
         async with Transaction(self.connection):
             line_info = await self.session.async_get_line_info()

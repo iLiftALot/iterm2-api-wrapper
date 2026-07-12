@@ -1,12 +1,12 @@
 from .it2app import App, async_get_app
 from .it2connection import Connection, run_forever, run_until_complete
 from .it2lifecycle import NewSessionMonitor
+from .it2measurement import CoordRange
 from .it2profile import LocalWriteOnlyProfile, PartialProfile, Profile, ProfileProperties, ProfileProperty
 from .it2prompt import (
     Prompt,
     PromptMonitor,
-    async_get_last_prompt,
-    async_get_prompt_by_id,
+    async_get_prompt,
     check_supports_prompt_monitor_modes,
 )
 from .it2session import Session
@@ -50,6 +50,7 @@ __all__ = [
     "AppVarKey",
     "AppVariable",
     "Connection",
+    "CoordRange",
     "LocalWriteOnlyProfile",
     "NewSessionMonitor",
     "PartialProfile",
@@ -81,8 +82,7 @@ __all__ = [
     "WindowVarKey",
     "WindowVariable",
     "async_get_app",
-    "async_get_last_prompt",
-    "async_get_prompt_by_id",
+    "async_get_prompt",
     "check_supports_prompt_monitor_modes",
     "create_iterm_state",
     "iTermAPI",
