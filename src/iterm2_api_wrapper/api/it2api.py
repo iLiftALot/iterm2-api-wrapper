@@ -6,10 +6,11 @@ import os
 import re
 import subprocess
 import sys
-from async_timeout import timeout as _timeout
 from collections.abc import AsyncGenerator
 from types import NoneType
 from typing import TYPE_CHECKING, Literal, cast, overload
+
+from async_timeout import timeout as _timeout
 
 from .._logging import PrettyLog
 from ..errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError

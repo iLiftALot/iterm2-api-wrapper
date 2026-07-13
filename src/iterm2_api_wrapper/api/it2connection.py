@@ -6,7 +6,7 @@ import os
 import sys
 import traceback
 from collections.abc import Callable, Coroutine
-from typing import Any, ClassVar, Concatenate, overload, TypeVar, ParamSpec
+from typing import Any, ClassVar, Concatenate, ParamSpec, TypeVar, overload
 
 from iterm2 import _version, api_pb2, auth  # , connection
 from websockets.asyncio.client import ClientConnection, unix_connect

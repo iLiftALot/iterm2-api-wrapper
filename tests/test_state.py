@@ -17,19 +17,20 @@ from iterm2_api_wrapper.state import (
 )
 from iterm2_api_wrapper.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
 from iterm2_api_wrapper.utils.parser import ParseResult
+
 from .fake import (
-    make_state,
-    call_untyped,
-    patch_attr,
-    as_fake_session,
-    as_fake_connection,
-    as_profile,
+    FakeConnection,
     FakePromptMonitor,
-    FakeTab,
     FakeSession,
+    FakeTab,
     FakeTarget,
     FakeWebsocket,
-    FakeConnection,
+    as_fake_connection,
+    as_fake_session,
+    as_profile,
+    call_untyped,
+    make_state,
+    patch_attr,
 )
 
 

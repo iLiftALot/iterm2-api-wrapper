@@ -1,6 +1,8 @@
 from __future__ import annotations
-from iterm2 import util
+
 from typing import TYPE_CHECKING
+
+from iterm2 import util
 
 
 if TYPE_CHECKING:

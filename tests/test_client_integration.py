@@ -12,6 +12,7 @@ from iterm2_api_wrapper.state import iTermState
 
 from .conftest import RUN_TIMEOUT, log_var
 
+
 T = TypeVar("T")
 
 

@@ -1,5 +1,6 @@
 import sys
-from typing import Literal, cast, overload, TypeVar
+from typing import Literal, TypeVar, cast, overload
+
 from ..typings import StrEnum
 
 

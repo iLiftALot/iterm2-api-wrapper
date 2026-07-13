@@ -17,16 +17,16 @@ format:
 
 lint:
     uv run --active --python=3.10 --group dev ruff check --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
+    uv run --active --python=3.10 --group dev ruff check --select I --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
 
 typecheck:
     uv run --python=3.10 --group dev --group ci pyright ./src ./tests
 
-# Run all the formatting, linting, and testing commands
+# Run all the formatting, linting, and typechecking
 qa:
-    uv run --active --python=3.10 --group dev ruff format .
-    uv run --active --python=3.10 --group dev ruff check . --fix
-    uv run --active --python=3.10 --group dev ruff check --select I --fix .
-    uv run --active --python=3.10 --group dev pytest . --
+    @just format
+    @just lint
+    @just typecheck
 
 test:
     uv run --active --python=3.10 --group dev pytest .

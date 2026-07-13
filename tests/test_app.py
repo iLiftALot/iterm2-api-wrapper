@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from pytest import MonkeyPatch
 
-from iterm2_api_wrapper.api import it2app, Connection
+from iterm2_api_wrapper.api import Connection, it2app
 from iterm2_api_wrapper.api.it2app import App, async_get_app
 
 

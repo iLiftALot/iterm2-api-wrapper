@@ -14,8 +14,8 @@ from typing import Any, cast
 import AppKit as _AppKit
 import ApplicationServices as _ApplicationServices
 import Foundation as _Foundation
-import PyObjCTools.AppHelper as _AppHelper
 import objc as _objc
+import PyObjCTools.AppHelper as _AppHelper
 
 
 # PyObjC framework modules expose most Objective-C classes/constants lazily via

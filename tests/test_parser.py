@@ -1,6 +1,6 @@
 # ruff: noqa: RUF001
 import asyncio
-from typing import cast, Any
+from typing import Any, cast
 
 from iterm2_api_wrapper.utils.parser import Parser
 

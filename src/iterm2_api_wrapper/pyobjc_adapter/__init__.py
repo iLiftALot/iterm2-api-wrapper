@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, TypedDict
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypedDict, TypeVar
 
 from .._logging import PrettyLog
 from .pyobjc_typings import (

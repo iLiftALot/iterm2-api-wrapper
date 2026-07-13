@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Generic, Literal, cast, overload, TypeVar
+from typing import TYPE_CHECKING, Generic, Literal, TypeVar, cast, overload
 
-from iterm2 import capabilities, prompt, rpc, api_pb2
+from iterm2 import api_pb2, capabilities, prompt, rpc
 
 from .it2connection import Connection
 from .it2measurement import CoordRange

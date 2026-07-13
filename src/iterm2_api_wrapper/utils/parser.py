@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from .._logging import PrettyLog
 from ..api.it2measurement import CoordRange
 from ..api.it2transaction import Transaction
-from .._logging import PrettyLog
 
 
 if TYPE_CHECKING:
