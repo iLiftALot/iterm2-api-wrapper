@@ -19,12 +19,13 @@ from .alert import alert_handler, poly_modal_alert_handler, text_input_alert_han
 from .api.it2connection import run_until_complete
 from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
 from .client import create_iterm_client
+from .typings import HexCodeEnum
 
 
 if TYPE_CHECKING:
     from .api import Variable
     from .state import iTermState
-    from .typings import CommandExecutionResult, StrEnum
+    from .typings import CommandExecutionResult, HexCode, StrEnum
 
 
 app = typer.Typer(name="iterm2_api_wrapper")
@@ -48,6 +49,16 @@ VARIABLE_ENUMS_BY_SCOPE: dict[VariableScopeName, type[StrEnum]] = {
     "session": SessionVarEnum,
     "user": UserVarEnum,
 }
+FUNCTION_NAME_COMPLETIONS: tuple[tuple[str, str], ...] = (
+    ("send_command", "Run a shell command in the active iTerm2 session"),
+    ("send_hex_codes", "Send HexCodeEnum control or escape sequence members"),
+    ("get_variable", "Read an iTerm2 variable"),
+    ("show_capabilities", "Show iTerm2 Python API capabilities"),
+    ("alert", "Show a simple alert"),
+    ("text_input_alert", "Show a text input alert"),
+    ("poly_modal_alert", "Show a poly modal alert"),
+    ("all_alerts", "Run all alert examples"),
+)
 
 
 def _strip_kwarg_prefix(value: str, name: str) -> str:
@@ -68,6 +79,19 @@ def _get_arg_value(args: tuple[str, ...] | list[str], name: str, position: int) 
         return _unquote_completion_value(args[position])
 
     return None
+
+
+def _coerce_cli_bool(value: bool | str) -> bool:
+    if isinstance(value, bool):
+        return value
+
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+
+    raise ValueError(f"Expected a boolean value, got {value!r}")
 
 
 _SCOPE_VARIABLE_CACHE: dict[VariableScopeName, list[str]] = {}
@@ -129,6 +153,18 @@ def _complete_get_variable_arg(incomplete: str, ctx: typer.Context) -> list[tupl
     ]
 
 
+def _complete_hex_code_arg(incomplete: str, ctx: typer.Context) -> list[tuple[str, str]]:
+    return [
+        (name, f"Hex code {member.value!r}")
+        for name, member in HexCodeEnum.__members__.items()
+        if name.startswith(incomplete)
+    ]
+
+
+def function_name_completion(incomplete: str) -> list[tuple[str, str]]:
+    return [(name, help_text) for name, help_text in FUNCTION_NAME_COMPLETIONS if name.startswith(incomplete)]
+
+
 def run_coro(coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop) -> T:
     """Run a coroutine in the given event loop and return a Future."""
     return asyncio.run_coroutine_threadsafe(coro, event_loop).result()
@@ -143,9 +179,12 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[s
     func_name: str = ctx.params.get("func_name", "")
     if func_name == "get_variable":
         return _complete_get_variable_arg(incomplete, ctx)
+    if func_name == "send_hex_codes":
+        return _complete_hex_code_arg(incomplete, ctx)
 
     functions: dict[str, CoroutineFn[iTermState, ..., Any]] = {
         "send_command": send_command,
+        "send_hex_codes": send_hex_codes,
         "get_variable": get_variable,
         "show_capabilities": show_capabilities,
         "alert": test_alerts,
@@ -299,22 +338,34 @@ async def send_command(
     return output
 
 
+async def send_hex_codes(
+    state: iTermState,
+    *sequences: HexCode | str,
+    broadcast: bool | str = False,
+    timeout: float | str = 2.0,
+    wait: bool | str = False,
+) -> bool:
+    """Send one or more HexCodeEnum names or raw escape sequences."""
+
+    return await state.send_escape_sequence(
+        *sequences,
+        broadcast=_coerce_cli_bool(broadcast),
+        timeout=float(timeout),
+        wait=_coerce_cli_bool(wait),
+    )
+
+
 @app.command()
 def main(
     func_name: Annotated[
         str,
         typer.Argument(
             ...,
-            help="The function to run: alert, text_input_alert, poly_modal_alert, all_alerts, show_capabilities, get_variable, send_command",
-            autocompletion=lambda: [
-                "send_command",
-                "get_variable",
-                "show_capabilities",
-                "alert",
-                "text_input_alert",
-                "poly_modal_alert",
-                "all_alerts",
-            ],
+            help=(
+                "The function to run: alert, text_input_alert, poly_modal_alert, all_alerts, "
+                "show_capabilities, get_variable, send_command, send_hex_codes"
+            ),
+            autocompletion=function_name_completion,
             metavar="FUNCTION_NAME",
             rich_help_panel="Function Options",
         ),
@@ -376,6 +427,8 @@ def main(
     match func_name:
         case "send_command":
             selected_fn = send_command
+        case "send_hex_codes":
+            selected_fn = send_hex_codes
         case "get_variable":
             selected_fn = get_variable
         case "show_capabilities":

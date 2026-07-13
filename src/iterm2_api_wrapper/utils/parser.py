@@ -150,7 +150,7 @@ class Parser:
 
     async def read_prompt_lines(self) -> list[str]:
         """Read prompt marker lines with overlapping command text removed."""
-        await self.read_prompt() # Ensure self._prompt is not None
+        await self.read_prompt()  # Ensure self._prompt is not None
         if not self.command and self._command_parsed is None:
             await self.read_command_text()
         return self.prompt_lines
@@ -307,7 +307,10 @@ class Parser:
             if first_command_line in line:
                 prefix = line.split(first_command_line, 1)[0].rstrip()
                 lines = [*lines[:index], *([prefix] if prefix else [])]
-                log.debug("Found the line containing the first command line.", {"first_command_line": first_command_line, "prefix": prefix})
+                log.debug(
+                    "Found the line containing the first command line.",
+                    {"first_command_line": first_command_line, "prefix": prefix},
+                )
                 break
 
         log.debug("Returning prompt marker lines:", lines)

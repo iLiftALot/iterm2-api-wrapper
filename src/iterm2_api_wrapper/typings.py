@@ -57,6 +57,15 @@ class HexCodeEnum(StrEnum):
         obj._value_ = chars
         return obj
 
+    @classmethod
+    def resolve(cls, seq: HexCode | str) -> HexCode | str:
+        if isinstance(seq, HexCodeEnum):
+            return str(seq)
+
+        # Resolve a HexCode member name (including aliases) to its bytes.
+        member = HexCodeEnum.__members__.get(seq)
+        return str(member) if member is not None else seq
+
     # ── C0 control bytes (Ctrl-<key>) ────────────────────────────────
     CNTRL_A = 0x01
     """Move to start of line (readline: beginning-of-line)"""
@@ -158,7 +167,7 @@ class HexCodeEnum(StrEnum):
     """Delete (DEL / rubout)"""
     SPACE = 0x20
     """Space"""
-    NULL = 0x00
+    NUL = NULL = 0x00
     """Null byte"""
 
     # ── Meta / Alt sequences (ESC + char) ────────────────────────────
@@ -251,15 +260,6 @@ class HexCodeEnum(StrEnum):
     """\\x1b[23~"""
     F12 = 0x1B5B32347E
     """\\x1b[24~"""
-
-    @classmethod
-    def resolve(cls, seq: HexCode | str) -> HexCode | str:
-        if isinstance(seq, HexCodeEnum):
-            return str(seq)
-
-        # Resolve a HexCode member name (including aliases) to its bytes.
-        member = HexCodeEnum.__members__.get(seq)
-        return str(member) if member is not None else seq
 
 
 # fmt: off
