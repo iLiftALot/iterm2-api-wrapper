@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from iterm2 import capabilities, prompt
+from iterm2 import api_pb2, capabilities, prompt, rpc
 
 from iterm2_api_wrapper.api import it2prompt
 from iterm2_api_wrapper.api.it2prompt import PromptMonitor
@@ -24,38 +24,62 @@ def test_check_supports_prompt_monitor_modes_raises_when_unsupported(monkeypatch
         it2prompt.check_supports_prompt_monitor_modes(cast(Any, object()))
 
 
-def test_async_get_last_prompt_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
+def prompt_response(status_name: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        get_prompt_response=SimpleNamespace(status=api_pb2.GetPromptResponse.Status.Value(status_name))
+    )
+
+
+def test_async_get_prompt_wraps_ok_response(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
-        sentinel = object()
-        captured: list[tuple[Any, str]] = []
+        response = prompt_response("OK")
+        captured: list[tuple[Any, str | None, str | None]] = []
 
-        async def fake(connection: Any, session_id: str) -> object:
-            captured.append((connection, session_id))
-            return sentinel
+        async def fake_rpc(connection: Any, session_id: str | None, prompt_id: str | None) -> Any:
+            captured.append((connection, session_id, prompt_id))
+            return response
 
-        monkeypatch.setattr(prompt, "async_get_last_prompt", fake)
+        def fake_prompt(prompt_proto: object) -> tuple[str, object]:
+            return ("wrapped", prompt_proto)
 
-        result = await it2prompt.async_get_last_prompt(cast(Any, "conn"), "session-1")
-        assert result is sentinel
-        assert captured == [("conn", "session-1")]
+        monkeypatch.setattr(it2prompt.rpc, "async_get_prompt", fake_rpc)
+        monkeypatch.setattr(it2prompt, "Prompt", fake_prompt)
+
+        result = await it2prompt.async_get_prompt(cast(Any, "conn"), "session-1")
+        assert result == ("wrapped", response.get_prompt_response)
+        assert captured == [("conn", "session-1", None)]
 
     asyncio.run(scenario())
 
 
-def test_async_get_prompt_by_id_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_async_get_prompt_by_id_checks_capability(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
-        sentinel = object()
-        captured: list[tuple[Any, str, str]] = []
+        response = prompt_response("PROMPT_UNAVAILABLE")
+        checked: list[Any] = []
 
-        async def fake(connection: Any, session_id: str, prompt_unique_id: str) -> object:
-            captured.append((connection, session_id, prompt_unique_id))
-            return sentinel
+        async def fake_rpc(connection: Any, session_id: str | None, prompt_id: str | None) -> Any:
+            assert (connection, session_id, prompt_id) == ("conn", "session-1", "uid-9")
+            return response
 
-        monkeypatch.setattr(prompt, "async_get_prompt_by_id", fake)
+        monkeypatch.setattr(it2prompt.capabilities, "check_supports_prompt_id", checked.append)
+        monkeypatch.setattr(it2prompt.rpc, "async_get_prompt", fake_rpc)
 
-        result = await it2prompt.async_get_prompt_by_id(cast(Any, "conn"), "session-1", "uid-9")
-        assert result is sentinel
-        assert captured == [("conn", "session-1", "uid-9")]
+        result = await it2prompt.async_get_prompt(cast(Any, "conn"), "session-1", "uid-9")
+        assert result is None
+        assert checked == ["conn"]
+
+    asyncio.run(scenario())
+
+
+def test_async_get_prompt_raises_rpc_exception_for_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        async def fake_rpc(connection: Any, session_id: str | None, prompt_id: str | None) -> Any:
+            return prompt_response("SESSION_NOT_FOUND")
+
+        monkeypatch.setattr(it2prompt.rpc, "async_get_prompt", fake_rpc)
+
+        with pytest.raises(rpc.RPCException, match="SESSION_NOT_FOUND"):
+            await it2prompt.async_get_prompt(cast(Any, "conn"), "missing-session")
 
     asyncio.run(scenario())
 

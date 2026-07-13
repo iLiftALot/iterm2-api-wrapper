@@ -11,7 +11,7 @@ import pytest
 import typer
 
 from iterm2_api_wrapper import cli
-from iterm2_api_wrapper.typings import CommandExecutionResult
+from iterm2_api_wrapper.typings import CommandExecutionResult, HexCodeEnum
 
 
 if TYPE_CHECKING:
@@ -46,6 +46,12 @@ def test_func_to_args_completion_returns_remaining_function_parameters() -> None
     assert cli.func_to_args_completion("", as_ctx(SimpleNamespace(params={"func_name": "missing"}))) == []
 
 
+def test_function_name_completion_includes_hex_command() -> None:
+    assert ("send_hex_codes", "Send HexCodeEnum control or escape sequence members") in cli.function_name_completion(
+        "send"
+    )
+
+
 def test_get_variable_completion_returns_scopes_before_scope_is_known() -> None:
     ctx = as_ctx(SimpleNamespace(params={"func_name": "get_variable", "args": ()}))
 
@@ -70,6 +76,15 @@ def test_get_variable_completion_supports_keyword_style(monkeypatch: pytest.Monk
     completions = cli.func_to_args_completion("variable=p", ctx)
 
     assert completions == [("variable=path", "session variable"), ("variable=profileName", "session variable")]
+
+
+def test_send_hex_codes_completion_uses_hex_code_enum_members() -> None:
+    ctx = as_ctx(SimpleNamespace(params={"func_name": "send_hex_codes", "args": ()}))
+
+    completions = cli.func_to_args_completion("CNTRL_", ctx)
+
+    assert ("CNTRL_C", f"Hex code {HexCodeEnum.CNTRL_C.value!r}") in completions
+    assert ("CNTRL_U", f"Hex code {HexCodeEnum.CNTRL_U.value!r}") in completions
 
 
 def test_variable_values_for_scope_suppresses_completion_probe_output(
@@ -141,6 +156,34 @@ def test_send_command_uses_default_command_and_resolves_path() -> None:
                 "path": str(Path(".").expanduser().resolve()),
                 "broadcast": False,
                 "timeout": 2.0,
+            }
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_send_hex_codes_delegates_to_state_escape_sequence() -> None:
+    class FakeState:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def send_escape_sequence(self, *sequences: str, **kwargs: Any) -> bool:
+            self.calls.append({"sequences": sequences, **kwargs})
+            return True
+
+    async def scenario() -> None:
+        state = FakeState()
+        result = await cli.send_hex_codes(
+            as_state(state), "CNTRL_C", "ESCAPE_B", broadcast="true", timeout="3.5", wait="yes"
+        )
+
+        assert result is True
+        assert state.calls == [
+            {
+                "sequences": ("CNTRL_C", "ESCAPE_B"),
+                "broadcast": True,
+                "timeout": 3.5,
+                "wait": True,
             }
         ]
 
@@ -247,3 +290,35 @@ def test_main_dispatches_selected_function(monkeypatch: pytest.MonkeyPatch) -> N
     cli.main("send_command", ["echo hi"], new_tab=True, profile_name="Default", debug=True)
 
     assert calls == [{"timeout": None, "debug": True, "new_tab": True, "dedicated_profile_name": "Default"}]
+
+
+def test_main_dispatches_send_hex_codes(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeClient:
+        loop = "loop"
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def get_state(self) -> str:
+            return "state"
+
+    async def fake_send_hex_codes(state: str, *sequences: str) -> str:
+        return f"{state}:{','.join(sequences)}"
+
+    def fake_run_coro(coro: Any, event_loop: object) -> str:
+        assert event_loop == "loop"
+        try:
+            coro.close()
+        except AttributeError:
+            pass
+        return "output"
+
+    monkeypatch.setattr(cli, "send_hex_codes", fake_send_hex_codes)
+    monkeypatch.setattr(cli, "create_iterm_client", lambda **kwargs: FakeClient())
+    monkeypatch.setattr(cli, "run_coro", fake_run_coro)
+    monkeypatch.setattr(cli.log, "info", lambda *args, **kwargs: None)
+
+    cli.main("send_hex_codes", ["CNTRL_C"], new_tab=False, profile_name="Default", debug=False)
