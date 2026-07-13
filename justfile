@@ -18,6 +18,9 @@ format:
 lint:
     uv run --active --python=3.10 --group dev ruff check --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
 
+typecheck:
+    uv run --python=3.10 --group dev --group ci pyright ./src ./tests
+
 # Run all the formatting, linting, and testing commands
 qa:
     uv run --active --python=3.10 --group dev ruff format .
