@@ -1,4 +1,3 @@
-environment.toml
 # Under construction files
 \**.py
 
@@ -248,7 +247,10 @@ assets/*
 **/\**.py
 src/iterm2_api_wrapper/triggers.py
 .super-agents/
-.codex/tools/
-.codex/bin/
+# .codex/tools/
+# .codex/bin/
+.codex/*
+!.codex/environments
 trace
 _dev.py
+*.swp

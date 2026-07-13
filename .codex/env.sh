@@ -1,6 +1,0 @@
-export PATH="$PWD/.codex/bin:$PWD/.venv/bin:$PATH"
-export UV_CACHE_DIR="/private/tmp/iterm2-api-wrapper-uv-cache"
-export UV_TOOL_DIR="$PWD/.codex/tools"
-export UV_TOOL_BIN_DIR="$PWD/.codex/bin"
-export IT2_PYTEST_INTEGRATION="0"
-export IT2_DEFAULT_PROFILE="${IT2_DEFAULT_PROFILE:-pyterm-mcp}"
