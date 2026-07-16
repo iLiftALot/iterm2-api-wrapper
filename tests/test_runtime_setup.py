@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 from iterm2_api_wrapper.api import it2runtime
@@ -22,16 +23,22 @@ def test_validate_app_version_checks_capabilities(monkeypatch) -> None:
 def test_bootstrap_and_validate_runtime_can_be_called_sequentially(monkeypatch) -> None:
     calls: list[object] = []
 
-    monkeypatch.setattr(it2runtime, "bootstrap_iterm2_runtime", lambda: calls.append("bootstrap"))
+    async def bootstrap() -> None:
+        calls.append("bootstrap")
+
+    monkeypatch.setattr(it2runtime, "bootstrap_iterm2_runtime", bootstrap)
     monkeypatch.setattr(
         it2runtime, "validate_iterm2_runtime", lambda connection: calls.append(("validate", connection))
     )
 
-    bootstrap = it2runtime.bootstrap_iterm2_runtime()
-    validate = it2runtime.validate_iterm2_runtime("connection")  # pyright: ignore[reportArgumentType]
+    async def scenario() -> None:
+        bootstrap_result = await it2runtime.bootstrap_iterm2_runtime()
+        validate_result = it2runtime.validate_iterm2_runtime("connection")  # pyright: ignore[reportArgumentType]
 
-    assert bootstrap is None
-    assert validate is None
+        assert bootstrap_result is None
+        assert validate_result is None
+
+    asyncio.run(scenario())
     assert calls == ["bootstrap", ("validate", "connection")]
 
 
@@ -106,6 +113,27 @@ def test_enhance_iterm2_imports_returns_early_when_all_present(monkeypatch) -> N
     monkeypatch.setattr("pathlib.Path.read_text", fail_read_text)
 
     assert it2runtime._enhance_iterm2_imports() is None
+
+
+def test_enhance_iterm2_imports_writes_sorted_public_exports(tmp_path, monkeypatch) -> None:
+    import iterm2
+
+    package_root = tmp_path / "__init__.py"
+    package_root.write_text("# package root\n", encoding="utf-8")
+    monkeypatch.delattr(iterm2, "__all__", raising=False)
+    monkeypatch.setattr(iterm2, "__file__", str(package_root))
+    monkeypatch.setattr(iterm2, "testing_manager_export", object(), raising=False)
+    monkeypatch.setattr(iterm2, "_testing_manager_private", object(), raising=False)
+
+    it2runtime._enhance_iterm2_imports()
+
+    contents = package_root.read_text(encoding="utf-8")
+    encoded_exports = contents.split("__all__ = ", 1)[1]
+    exports = json.loads(encoded_exports)
+    assert exports == sorted(exports)
+    assert "testing_manager_export" in exports
+    assert "_testing_manager_private" in exports
+    assert "__file__" not in exports
 
 
 def test_validate_app_version_logs_protocol_version(monkeypatch) -> None:

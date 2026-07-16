@@ -8,7 +8,8 @@ import pytest
 from iterm2 import api_pb2, capabilities, prompt, rpc
 
 from iterm2_api_wrapper.api import it2prompt
-from iterm2_api_wrapper.api.it2prompt import PromptMonitor
+from iterm2_api_wrapper.api.it2measurement import CoordRange
+from iterm2_api_wrapper.api.it2prompt import Prompt, PromptMonitor
 
 
 def test_check_supports_prompt_monitor_modes_passes_when_supported(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -28,6 +29,28 @@ def prompt_response(status_name: str) -> SimpleNamespace:
     return SimpleNamespace(
         get_prompt_response=SimpleNamespace(status=api_pb2.GetPromptResponse.Status.Value(status_name))
     )
+
+
+def test_prompt_range_properties_convert_protobuf_ranges() -> None:
+    proto = api_pb2.GetPromptResponse()
+    proto.output_range.start.x = 1
+    proto.output_range.start.y = 2
+    proto.output_range.end.x = 3
+    proto.output_range.end.y = 4
+    proto.prompt_range.start.x = 5
+    proto.prompt_range.end.x = 6
+    proto.command_range.start.y = 7
+    proto.command_range.end.y = 8
+
+    wrapped = Prompt(proto)
+
+    assert isinstance(wrapped.output_range, CoordRange)
+    assert (wrapped.output_range.start.x, wrapped.output_range.start.y) == (1, 2)
+    assert (wrapped.output_range.end.x, wrapped.output_range.end.y) == (3, 4)
+    assert isinstance(wrapped.prompt_range, CoordRange)
+    assert (wrapped.prompt_range.start.x, wrapped.prompt_range.end.x) == (5, 6)
+    assert isinstance(wrapped.command_range, CoordRange)
+    assert (wrapped.command_range.start.y, wrapped.command_range.end.y) == (7, 8)
 
 
 def test_async_get_prompt_wraps_ok_response(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -108,6 +131,56 @@ def test_refresh_snapshot_updates_current_snapshot() -> None:
         snapshot = await monitor.refresh_snapshot()
         assert snapshot == ["line-1", "line-2"]
         assert monitor.current_snapshot == ["line-1", "line-2"]
+
+    asyncio.run(scenario())
+
+
+def test_prompt_monitor_initializes_upstream_and_snapshot_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[Any, str, list[prompt.PromptMonitor.Mode] | None]] = []
+
+    def base_init(
+        self: object, connection: Any, session_id: str, modes: list[prompt.PromptMonitor.Mode] | None = None
+    ) -> None:
+        calls.append((connection, session_id, modes))
+
+    async def provider() -> list[str]:
+        return ["prompt$"]
+
+    modes = [prompt.PromptMonitor.Mode.PROMPT]
+    monkeypatch.setattr(prompt.PromptMonitor, "__init__", base_init)
+
+    monitor = PromptMonitor(cast(Any, "connection"), "session-1", modes, snapshot_provider=provider)
+
+    assert calls == [("connection", "session-1", modes)]
+    assert monitor.snapshot_provider is provider
+    assert monitor.initial_snapshot is None
+    assert monitor.current_snapshot is None
+
+
+def test_prompt_monitor_enter_captures_initial_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        monitor = cast(PromptMonitor[list[str]], object.__new__(PromptMonitor))
+        calls: list[str] = []
+
+        async def provider() -> list[str]:
+            calls.append("snapshot")
+            return ["prompt$"]
+
+        async def base_enter(self: object) -> object:
+            calls.append("base-enter")
+            return self
+
+        monitor.snapshot_provider = provider
+        monitor.initial_snapshot = []
+        monitor.current_snapshot = []
+        monkeypatch.setattr(prompt.PromptMonitor, "__aenter__", base_enter)
+
+        entered = await monitor.__aenter__()
+
+        assert entered is monitor
+        assert monitor.initial_snapshot == ["prompt$"]
+        assert monitor.current_snapshot == ["prompt$"]
+        assert calls == ["snapshot", "base-enter"]
 
     asyncio.run(scenario())
 

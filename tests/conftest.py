@@ -22,8 +22,8 @@ from rich.text import Text
 
 
 load_dotenv()
-RUN_TIMEOUT = float(os.getenv("ITERM_INTEGRATION_TIMEOUT", "60"))
-log_path_env = os.getenv("ITERM_INTEGRATION_LOG")
+RUN_TIMEOUT = float(os.getenv("IT2_INTEGRATION_TIMEOUT", "60"))
+log_path_env = os.getenv("IT2_INTEGRATION_LOG")
 log_path = (
     Path(log_path_env).expanduser().resolve()
     if log_path_env
@@ -224,7 +224,7 @@ def _terminal_theme_from_itermcolors(path: Path) -> TerminalTheme | None:
 
 
 def _load_iterm_profile() -> dict[str, object] | None:
-    if not (os.getenv("TERM_PROGRAM") == "iTerm.app" or os.getenv("ITERM_PROFILE") or os.getenv("IT2_DEFAULT_PROFILE")):
+    if not (os.getenv("TERM_PROGRAM") == "iTerm.app" or os.getenv("IT2_PROFILE") or os.getenv("IT2_DEFAULT_PROFILE")):
         return None
 
     prefs_path = Path("~/Library/Preferences/com.googlecode.iterm2.plist").expanduser()
@@ -247,7 +247,7 @@ def _load_iterm_profile() -> dict[str, object] | None:
         return None
 
     profile_id = os.getenv("PYTEST_HTML_THEME_PROFILE_ID") or os.getenv("IT2_PROFILE_ID")
-    profile_name = os.getenv("PYTEST_HTML_THEME_PROFILE") or os.getenv("ITERM_PROFILE")
+    profile_name = os.getenv("PYTEST_HTML_THEME_PROFILE") or os.getenv("IT2_PROFILE")
 
     if profile_id:
         for profile in profiles:
@@ -273,7 +273,7 @@ def _load_iterm_profile() -> dict[str, object] | None:
 
 
 def _build_terminal_theme() -> TerminalTheme | None:
-    theme_path = os.getenv("IT2_PYTEST_THEME_PATH")
+    theme_path = os.getenv("PYTEST_THEME_PATH")
     if theme_path:
         console.print(f"[blue]Loading terminal theme from[/blue]:\n{theme_path}")
         path = Path(theme_path).expanduser()
@@ -297,7 +297,7 @@ def _load_html_extra_css() -> str | None:
         if path.is_file():
             return path.read_text(encoding="utf-8")
 
-    theme_path = os.getenv("IT2_PYTEST_THEME_PATH")
+    theme_path = os.getenv("PYTEST_THEME_PATH")
     if theme_path:
         console.print(f"[blue]Loading HTML extra CSS from[/blue]:\n{theme_path}")
         path = Path(theme_path).expanduser()

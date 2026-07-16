@@ -275,3 +275,31 @@ def test_close_shared_client_removes_only_matching_key(monkeypatch: pytest.Monke
         assert shared_clients == {default_key: default_client}
 
     asyncio.run(scenario())
+
+
+def test_close_all_shared_clients_closes_and_clears_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        class ClosableClient:
+            def __init__(self) -> None:
+                self.close_calls = 0
+
+            def close(self) -> None:
+                self.close_calls += 1
+
+        first = ClosableClient()
+        second = ClosableClient()
+        shared_clients = {
+            client_module._shared_client_key(): first,
+            client_module._shared_client_key(service_name="pyterm-mcp", extra_id="session-a"): second,
+        }
+
+        monkeypatch.setattr(client_module, "_shared_clients", shared_clients)
+        monkeypatch.setattr(client_module, "_shared_lock", asyncio.Lock())
+
+        await client_module.close_all_shared_clients()
+
+        assert shared_clients == {}
+        assert first.close_calls == 1
+        assert second.close_calls == 1
+
+    asyncio.run(scenario())

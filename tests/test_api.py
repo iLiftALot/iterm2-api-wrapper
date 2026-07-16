@@ -246,6 +246,17 @@ def test_async_create_initializes_on_running_event_loop(monkeypatch: pytest.Monk
     asyncio.run(scenario())
 
 
+def test_constructor_reads_current_it2_environment_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IT2_DEFAULT_PROFILE", "Environment Profile")
+    monkeypatch.setenv("IT2_DEBUG", "true")
+    monkeypatch.setenv("ITERM_DEBUG", "false")
+
+    api = iTermAPI(auto_initialize=False)
+
+    assert api.profile_name == "Environment Profile"
+    assert api.debug is True
+
+
 def test_sync_constructor_populates_from_api_owned_setup(monkeypatch: pytest.MonkeyPatch) -> None:
     conn = as_connection(SimpleNamespace(loop=None, iterm2_protocol_version=(1, 14)))
     profile = FakeProfile(name="pyterm-mcp", guid="CONFIGURED-GUID")

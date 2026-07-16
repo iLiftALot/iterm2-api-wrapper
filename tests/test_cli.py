@@ -37,6 +37,27 @@ def test_kwarg_conversion_splits_args_and_key_value_pairs() -> None:
     assert kwargs == {"name": "Alice", "path": "/tmp/a=b"}
 
 
+def test_cli_boolean_coercion_accepts_known_values_and_rejects_unknown_values() -> None:
+    assert cli._coerce_cli_bool(True) is True
+    assert cli._coerce_cli_bool("YES") is True
+    assert cli._coerce_cli_bool("off") is False
+
+    with pytest.raises(ValueError, match="Expected a boolean value"):
+        cli._coerce_cli_bool("sometimes")
+
+
+def test_variable_values_for_scope_falls_back_when_dynamic_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    cli._SCOPE_VARIABLE_CACHE.clear()
+    monkeypatch.setattr(cli, "_static_variable_values_for_scope", lambda scope: [f"{scope}.fallback"])
+
+    def fail_create_client(**kwargs: Any) -> object:
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr(cli, "create_iterm_client", fail_create_client)
+
+    assert cli._variable_values_for_scope("session") == ["session.fallback"]
+
+
 def test_func_to_args_completion_returns_remaining_function_parameters() -> None:
     ctx = as_ctx(SimpleNamespace(params={"func_name": "send_command", "args": ("command='",)}))
 

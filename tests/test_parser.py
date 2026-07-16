@@ -2,6 +2,8 @@
 import asyncio
 from typing import Any, cast
 
+import pytest
+
 from iterm2_api_wrapper.utils.parser import Parser
 
 from .fake import SimpleNamespace, as_fake_session, make_state, patch_attr
@@ -20,7 +22,7 @@ def prompt_stub(
     output_range: SimpleNamespace | None = None,
     command_range: SimpleNamespace | None = None,
     prompt_range: SimpleNamespace | None = None,
-    command: str = "echo hi",
+    command: str | None = "echo hi",
 ) -> SimpleNamespace:
     return SimpleNamespace(
         output_range=output_range or coord_range(),
@@ -34,6 +36,71 @@ def prompt_stub(
 async def no_current_prompt(unique_id: str | None = None) -> None:
     del unique_id
     return None
+
+
+def test_parser_requires_extraction_before_result_properties_and_diff() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        parser = Parser(state, cast(Any, prompt_stub()), "echo hi")
+
+        with pytest.raises(RuntimeError, match="output hasn't been extracted"):
+            _ = parser.output
+        with pytest.raises(RuntimeError, match="prompt hasn't been extracted"):
+            _ = parser.prompt
+        with pytest.raises(RuntimeError, match="command text hasn't been extracted"):
+            _ = parser.command_parsed
+        with pytest.raises(RuntimeError, match="initial_snapshot was not passed"):
+            await parser.diff()
+
+    asyncio.run(scenario())
+
+
+def test_parser_read_helpers_extract_and_cache_prompt_and_command() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        parsed_prompt = prompt_stub(
+            prompt_range=coord_range(start_y=0, end_y=1),
+            command_range=coord_range(start_y=1, end_y=2),
+            command=None,
+        )
+        as_fake_session(state.session).contents = [
+            SimpleNamespace(string="prompt$", hard_eol=True),
+            SimpleNamespace(string="echo hi", hard_eol=True),
+        ]
+        parser = Parser(state, cast(Any, parsed_prompt), "echo hi")
+
+        assert await parser.read_prompt() == "prompt$"
+        assert await parser.read_command_text() == "echo hi"
+        assert await parser.read_prompt_lines() == ["prompt$"]
+        assert parser.prompt == "prompt$"
+        assert parser.command_parsed == "echo hi"
+        assert parser.command_expected is True
+
+    asyncio.run(scenario())
+
+
+def test_parser_reads_partial_first_and_last_rows() -> None:
+    async def scenario() -> None:
+        state = make_state(asyncio.get_running_loop())
+        patch_attr(state, "_get_prompt", no_current_prompt)
+        parsed_prompt = prompt_stub(output_range=coord_range(start_x=2, start_y=0, end_x=3, end_y=1))
+        as_fake_session(state.session).contents = [
+            SimpleNamespace(string="xxhello", hard_eol=True),
+            SimpleNamespace(string="byezzz", hard_eol=True),
+        ]
+
+        parser = Parser(state, cast(Any, parsed_prompt), "echo hi")
+
+        assert await parser.read_output() == "hello\nbye"
+
+    asyncio.run(scenario())
+
+
+def test_prompt_marker_lines_handles_missing_or_blank_command() -> None:
+    prompt_text = "line one\nline two"
+
+    assert Parser.prompt_marker_lines(prompt_text, None) == ["line one", "line two"]
+    assert Parser.prompt_marker_lines(prompt_text, "  \n") == ["line one", "line two"]
 
 
 def test_parser_preserves_soft_wraps() -> None:

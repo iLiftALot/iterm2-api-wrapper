@@ -109,7 +109,7 @@ def test_async_ensure_iterm_app_running_launches_and_activates(monkeypatch: pyte
     assert result is app
     assert app.calls == [
         "launch",
-        ("wait", {"timeout_s": pyobjc_adapter.ITERM_NEW_APP_TIMEOUT, "poll_interval_s": 0.5}),
+        ("wait", {"timeout_s": pyobjc_adapter.IT2_NEW_APP_TIMEOUT, "poll_interval_s": 0.5}),
         "container_activate",
         ("activate", 3),
     ]
@@ -130,19 +130,19 @@ def test_async_ensure_iterm_app_running_does_not_launch_running_app(monkeypatch:
     result = asyncio.run(pyobjc_adapter.async_ensure_iterm_app_running(activate=False))
 
     assert result is app
-    assert app.calls == [("wait", {"timeout_s": pyobjc_adapter.ITERM_NEW_APP_TIMEOUT, "poll_interval_s": 0.5})]
+    assert app.calls == [("wait", {"timeout_s": pyobjc_adapter.IT2_NEW_APP_TIMEOUT, "poll_interval_s": 0.5})]
 
 
 def test_get_new_app_timeout_parses_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ITERM_NEW_APP_TIMEOUT", "5.5")
+    monkeypatch.setenv("IT2_NEW_APP_TIMEOUT", "5.5")
     assert pyobjc_adapter._get_new_app_timeout_s() == 5.5
 
     # Negative values clamp to zero.
-    monkeypatch.setenv("ITERM_NEW_APP_TIMEOUT", "-3")
+    monkeypatch.setenv("IT2_NEW_APP_TIMEOUT", "-3")
     assert pyobjc_adapter._get_new_app_timeout_s() == 0.0
 
     # Invalid values fall back to the default.
-    monkeypatch.setenv("ITERM_NEW_APP_TIMEOUT", "not-a-number")
+    monkeypatch.setenv("IT2_NEW_APP_TIMEOUT", "not-a-number")
     monkeypatch.setattr(pyobjc_adapter.log, "warning", lambda *a, **k: None)
     assert pyobjc_adapter._get_new_app_timeout_s() == pyobjc_adapter._DEFAULT_NEW_APP_TIMEOUT_S
 
