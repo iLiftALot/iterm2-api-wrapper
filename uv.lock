@@ -534,7 +534,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "async-timeout", specifier = ">=5.0.1" },
+    { name = "async-timeout", specifier = "==5.0.1" },
     { name = "iterm2", specifier = "==2.20" },
     { name = "py-applescript", marker = "extra == 'applescript'" },
     { name = "pyobjc", specifier = "==12.2.1" },

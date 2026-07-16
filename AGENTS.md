@@ -29,14 +29,14 @@
 | Unit tests | `IT2_PYTEST_INTEGRATION=0 uv run --python=3.10 --group dev pytest` |
 | Focused unit subset | `IT2_PYTEST_INTEGRATION=0 uv run --python=3.10 --group dev pytest tests/test_gateway.py tests/test_client.py` |
 | Integration tests | `IT2_PYTEST_INTEGRATION=1 uv run --python=3.10 --group dev pytest tests/test_client_integration.py` |
-| Typecheck | `uv run --python=3.10 ty check .` |
+| Typecheck | `uv run --python=3.10 --group dev --group ci pyright ./src ./tests` |
 | Build docs | `uv run --python=3.10 --group dev sphinx-build -b html docs docs/_build` |
 
 ## Command Drift
 
 - Current `just` recipes default to `uv run --active --python=3.10 --group dev`, with `test-pyversions` covering 3.10-3.15; `pyproject.toml` has no optional `test` extra, so do not add `--extra test` to new commands.
 - Avoid mutating `just lint`, `just format`, `just qa`, `just build`, and clean recipes unless the user asks: they run Ruff fixes/formatting, remove artifacts, or reinstall tool executables. Prefer the non-mutating direct commands above for audits.
-- `ty check .` currently uses the `ty` executable on PATH rather than a declared project dependency and fails on existing diagnostics in `api/it2api.py`, API wrapper override/runtime patching files, `cli.py`, `errors.py`, `pyobjc_adapter`, `state.py`, and tests.
+- Typechecking uses `pyright`, declared in the `ci` dependency group (`ci = ["ruff", "pyright"]`) and run as `pyright ./src ./tests` by `just typecheck` and `.github/workflows/validate.yml`; the older `ty` executable is no longer used.
 - Docs build exits 0 but emits warnings for missing `iterm2_api_wrapper.setup` / `iterm2_api_wrapper.utils` autodoc imports, `alert.py` docstrings, and the `docs/index.rst` title underline; network-restricted runs can also warn about the Python intersphinx inventory. Treat source `.rst` files as more authoritative than `docs/_build/`.
 
 ## Design Preferences
@@ -53,14 +53,15 @@
 ## Source Map
 
 - `src/iterm2_api_wrapper/client.py`: `iTermClient`, background event loop, gateway injection, state refresh, shared client registry (`get_shared_client`, `close_shared_client`, `close_all_shared_clients`).
-- `src/iterm2_api_wrapper/gateway.py`: `ITermGateway`/`DefaultITermGateway` protocol boundary; lazily imports iTerm2 and `pyobjc_adapter` inside methods so importing the package stays test-friendly off macOS; owns `ITERM_CONNECT_TIMEOUT`.
+- `src/iterm2_api_wrapper/gateway.py`: `ITermGateway`/`DefaultITermGateway` protocol boundary; lazily imports iTerm2 and `pyobjc_adapter` inside methods so importing the package stays test-friendly off macOS; owns `IT2_CONNECT_TIMEOUT`.
 - `src/iterm2_api_wrapper/pyobjc_adapter/`: AppKit/PyObjC runtime boundary (`PyObjcContainer`, `async_ensure_iterm_app_running`, `is_iterm_app_running`) launching/activating iTerm2 via `NSRunningApplication`; `pyobjc_typings.pyi` holds the typed AppKit shims (the sibling `pyobjc_typings.py` only re-exports the untyped PyObjC symbols at runtime).
 - `src/iterm2_api_wrapper/api/it2api.py`: `iTermAPI`, iTerm2 activation/setup, profile lookup, dedicated tagged window/tab/session selection.
 - `src/iterm2_api_wrapper/api/it2runtime.py`: iTerm2 runtime monkeypatch/bootstrap, capability validation, optional `IT2_ENHANCE_IMPORTS` import enhancement.
-- `src/iterm2_api_wrapper/api/it2*.py`: typed wrappers around upstream iTerm2 alert/app/connection/lifecycle/profile/prompt/session/tab/transaction/variable/window APIs (`it2transaction.py` exposes `Transaction`; `it2alert.py` exposes `Alert`, `TextInputAlert`, `PolyModalAlert`).
+- `src/iterm2_api_wrapper/api/it2*.py`: typed wrappers around upstream iTerm2 alert/app/connection/lifecycle/measurement/profile/prompt/session/tab/transaction/variable/window APIs (`it2transaction.py` exposes `Transaction`; `it2alert.py` exposes `Alert`, `TextInputAlert`, `PolyModalAlert`).
 - `src/iterm2_api_wrapper/state.py`: `iTermState`, variable access, escape sending, command execution, prompt/output retrieval for the current resolved state.
 - `src/iterm2_api_wrapper/api/it2connection.py`: custom `Connection` wrapper for current `websockets` behavior and run helpers.
 - `src/iterm2_api_wrapper/typings.py`: shared `TypedDict` setup kwargs, `HexCodeEnum`, `CommandExitCode`, `CommandExecutionStatus`, and `CommandExecutionResult`.
+- `src/iterm2_api_wrapper/utils/parser.py`: `Parser`/`ParseResult` terminal-output parsing helpers kept out of `iTermState` per the module-level-parsing design preference; note `utils/` has no `__init__.py`.
 - `src/iterm2_api_wrapper/errors.py`: `iTermError` base (via `ErrorMeta`) plus `ProfileNotFoundError`, `WindowNotFoundError`, `TabNotFoundError`, `SessionNotFoundError`.
 - `src/iterm2_api_wrapper/cli.py`: Typer dispatcher taking `func_name` plus positional/`key=value` args.
 - `src/iterm2_api_wrapper/alert.py`: async alert command handlers (`alert_handler` and friends) built atop `api/it2alert.py`.
@@ -75,12 +76,12 @@
 - `tests/test_client_integration.py` is opt-in via `IT2_PYTEST_INTEGRATION=1` and requires iTerm2 running with Python API enabled.
 - Test logging writes `logs/pytest.log`, `logs/pytest.html`, and pytest's `trace` debug file; all are ignored artifacts.
 - Importing the top-level package loads `.env` and initializes package logging, so imports can create local log side effects.
-- Runtime/test knobs include `ITERM_CONNECT_TIMEOUT`, `IT2_DEFAULT_PROFILE`, `ITERM_DEBUG`, `IT2_ENHANCE_IMPORTS`, `ITERM_INTEGRATION_TIMEOUT`, `ITERM_INTEGRATION_LOG`, `ITERM_NEW_APP_TIMEOUT`, `IT2_PYTEST_INTEGRATION`, `IT2_APP_PATH`, `IT2_SUITE`, `ITERM2_BUNDLE_ID`, and the legacy misspelled `IT2_EXECTUABLE_PATH`; conftest also reads HTML-report theming knobs `ITERM_PROFILE`, `IT2_PROFILE_ID`, `IT2_PYTEST_THEME_PATH`, `PYTEST_HTML_THEME_PROFILE`, `PYTEST_HTML_THEME_PROFILE_ID`, `PYTEST_HTML_THEME_CSS_PATH`, and `PYTEST_HTML_THEME_CSS`.
+- Runtime/test knobs include `IT2_CONNECT_TIMEOUT`, `IT2_DEFAULT_PROFILE`, `IT2_DEBUG`, `IT2_ENHANCE_IMPORTS`, `IT2_INTEGRATION_TIMEOUT`, `IT2_INTEGRATION_LOG`, `IT2_NEW_APP_TIMEOUT`, `IT2_PYTEST_INTEGRATION`, `IT2_APP_PATH`, `IT2_SUITE`, `IT2_BUNDLE_ID`, and the legacy misspelled `IT2_EXECTUABLE_PATH`; conftest also reads HTML-report theming knobs `IT2_PROFILE`, `IT2_PROFILE_ID`, `PYTEST_THEME_PATH`, `PYTEST_HTML_THEME_PROFILE`, `PYTEST_HTML_THEME_PROFILE_ID`, `PYTEST_HTML_THEME_CSS_PATH`, and `PYTEST_HTML_THEME_CSS`.
 - Live command smoke tests can be run from VS Code's terminal while targeting iTerm2; do not assume the caller's terminal is the target iTerm session.
 - When command behavior changes, validate both a fast command such as `echo final-smoke` and a loose-timeout command such as `sleep 3 && echo HEY && sleep 3 && echo BYE` with `timeout=5.0`.
 
 ## Docs And Artifacts
 
 - Prefer `pyproject.toml`, `justfile`, `.github/workflows/validate.yml`, and source files over stale cookiecutter text in `CONTRIBUTING.md`.
-- `docs/api/setup.rst` and `docs/api/utils.rst` reference modules that are not present in `src/iterm2_api_wrapper`.
+- `docs/api/setup.rst` references a `setup` module that is not present in `src/iterm2_api_wrapper`; `docs/api/utils.rst` now maps to the real `utils/parser.py`, though `utils/` lacks an `__init__.py`, so package-level autodoc of `iterm2_api_wrapper.utils` can still warn.
 - Generated/local artifacts include `docs/_build/`, `dist/`, `logs/`, `trace`, `htmlcov/`, `.coverage`, `.pytest_cache/`, `.ruff_cache/`, `.mypy_cache/`, `.agents/`, `.super-agents/`, `.codex/bin/`, `.codex/tools/`, `assets/*`, wheels, and tarballs.

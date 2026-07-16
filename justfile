@@ -13,14 +13,14 @@ list:
     @just --list
 
 format:
-    uv run --active --python=3.10 --group dev ruff format --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
+    @uv run --active --python=3.10 --group dev --group ci ruff format --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
 
 lint:
-    uv run --active --python=3.10 --group dev ruff check --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
-    uv run --active --python=3.10 --group dev ruff check --select I --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
+    @uv run --active --python=3.10 --group dev --group ci ruff check --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
+    @uv run --active --python=3.10 --group dev --group ci ruff check --select I --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
 
 typecheck:
-    uv run --python=3.10 --group dev --group ci pyright ./src ./tests
+    @uv run --python=3.10 --group dev --group ci pyright ./src ./tests
 
 # Run all the formatting, linting, and typechecking
 qa:
@@ -70,16 +70,16 @@ test-coverage open="false":
 
 # Build and sync the project, useful for checking that packaging is correct
 build:
-    uv sync --active
-    rm -rf build
-    rm -rf dist
-    uv build
-    uv build-backend build-sdist .
-    uv build-backend build-wheel .
-    uv build-backend build-editable .
-    uv sync --active
-    uv tool uninstall iterm2_api_wrapper 2>/dev/null || echo "❌ '{{BOLD + ITALIC + RED}}iterm2_api_wrapper{{NORMAL}}' {{RED}}executable is {{UNDERLINE + BOLD}}not yet installed{{NORMAL}}.\n⏳{{GREEN}}Installing now...{{NORMAL}}"
-    uv tool install . --editable
+    @uv sync --active
+    @rm -rf build
+    @rm -rf dist
+    @uv build
+    @uv build-backend build-sdist .
+    @uv build-backend build-wheel .
+    @uv build-backend build-editable .
+    @uv sync --active
+    @uv tool uninstall iterm2_api_wrapper 2>/dev/null || echo "❌ '{{BOLD + ITALIC + RED}}iterm2_api_wrapper{{NORMAL}}' {{RED}}executable is {{UNDERLINE + BOLD}}not yet installed{{NORMAL}}.\n⏳{{GREEN}}Installing now...{{NORMAL}}"
+    @uv tool install . --editable
 
 VERSION := "$(uv version --active --short)"
 
@@ -137,13 +137,13 @@ clean:
 
 # Build docs
 docs:
-    uv run sphinx-build -b html docs docs/_build
+    @uv run sphinx-build -b html docs docs/_build
 
 # Open docs in browser
 docs-open:
-    open docs/_build/index.html
+    @open docs/_build/index.html
 
 
 # Watch for changes and auto-rebuild (requires sphinx-autobuild)
 docs-watch:
-    uv run sphinx-autobuild docs docs/_build --open-browser
+    @uv run sphinx-autobuild docs docs/_build --open-browser
