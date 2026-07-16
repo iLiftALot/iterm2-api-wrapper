@@ -16,20 +16,21 @@ if TYPE_CHECKING:
 class Prompt(prompt.Prompt):
     _Prompt__proto: api_pb2.GetPromptResponse
 
+    def __init__(self, proto: api_pb2.GetPromptResponse) -> None:
+        super().__init__(proto)
+        self.__proto = proto
+
     @property
     def output_range(self) -> CoordRange:
-        parent_coord_range = super().output_range
-        return CoordRange(parent_coord_range)
+        return CoordRange.from_proto(self.__proto.output_range)
 
     @property
     def prompt_range(self) -> CoordRange:
-        parent_coord_range = super().prompt_range
-        return CoordRange(parent_coord_range)
+        return CoordRange.from_proto(self.__proto.prompt_range)
 
     @property
     def command_range(self) -> CoordRange:
-        parent_coord_range = super().command_range
-        return CoordRange(parent_coord_range)
+        return CoordRange.from_proto(self.__proto.command_range)
 
 
 PromptEvent = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None]
@@ -163,7 +164,7 @@ async def async_get_prompt(
     raise rpc.RPCException(api_pb2.GetPromptResponse.Status.Name(status))
 
 
-def check_supports_prompt_monitor_modes(connection) -> None:
+def check_supports_prompt_monitor_modes(connection: Connection) -> None:
     """Die if you can't monitor multiple prompt monitor modes."""
     if not capabilities.supports_prompt_monitor_modes(connection):
         raise capabilities.AppVersionTooOld(
