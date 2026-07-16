@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 log = PrettyLog.get_logger(__name__)
 
-ITERM2_BUNDLE_ID = os.getenv("ITERM2_BUNDLE_ID", "com.googlecode.iterm2")
+IT2_BUNDLE_ID = os.getenv("IT2_BUNDLE_ID", "com.googlecode.iterm2")
 IT2_EXECTUABLE_PATH = os.getenv("IT2_APP_PATH", None) or os.getenv("IT2_EXECTUABLE_PATH", "/Applications/iTerm.app")
 _DEFAULT_NEW_APP_TIMEOUT_S = 15.0
 _CONNECTION_READY_TIMEOUT_S = 10.0
@@ -73,12 +73,12 @@ def autoreleased(func: Callable[P, R]) -> Callable[P, R]:
 
 
 def _get_new_app_timeout_s() -> float:
-    raw_timeout = os.getenv("ITERM_NEW_APP_TIMEOUT", _DEFAULT_NEW_APP_TIMEOUT_S)
+    raw_timeout = os.getenv("IT2_NEW_APP_TIMEOUT", _DEFAULT_NEW_APP_TIMEOUT_S)
 
     try:
         return max(0.0, float(raw_timeout))
     except ValueError:
-        log.warning(f"Invalid ITERM_NEW_APP_TIMEOUT={raw_timeout!r}; using {_DEFAULT_NEW_APP_TIMEOUT_S:.1f}s.")
+        log.warning(f"Invalid IT2_NEW_APP_TIMEOUT={raw_timeout!r}; using {_DEFAULT_NEW_APP_TIMEOUT_S:.1f}s.")
         return _DEFAULT_NEW_APP_TIMEOUT_S
 
 
@@ -99,7 +99,7 @@ def _log_launch_completion(running_app: NSRunningApplication | None, error: Exce
     )
 
 
-ITERM_NEW_APP_TIMEOUT = _get_new_app_timeout_s()
+IT2_NEW_APP_TIMEOUT = _get_new_app_timeout_s()
 
 
 def _activation_options() -> Literal[1]:
@@ -109,7 +109,7 @@ def _activation_options() -> Literal[1]:
 async def _wait_for_finished_application(
     app_container: PyObjcContainer,
     *,
-    timeout_s: float = ITERM_NEW_APP_TIMEOUT,
+    timeout_s: float = IT2_NEW_APP_TIMEOUT,
     poll_interval_s: float = _POLL_INTERVAL_S,
 ) -> NSRunningApplication:
     """Wait until macOS reports an iTerm2 instance has finished launching."""
@@ -143,7 +143,7 @@ class PyObjcContainer:
         self.config = NSWorkspaceOpenConfiguration.alloc().init()
 
         if self.bundle_id is None and self.executable_path is None:
-            self.bundle_id = ITERM2_BUNDLE_ID
+            self.bundle_id = IT2_BUNDLE_ID
             self.executable_path = IT2_EXECTUABLE_PATH
 
         iterm_url = self._resolve_application_url()
@@ -268,7 +268,7 @@ class PyObjcContainer:
 
 
 @autoreleased
-def is_iterm_app_running(bundle_id: str = ITERM2_BUNDLE_ID) -> bool:
+def is_iterm_app_running(bundle_id: str = IT2_BUNDLE_ID) -> bool:
     return bool(NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_id))
 
 
@@ -288,7 +288,7 @@ def _create_app_container() -> PyObjcContainer:
 
 
 async def async_ensure_iterm_app_running(
-    *, activate: bool = False, timeout_s: float = ITERM_NEW_APP_TIMEOUT, poll_interval_s: float = _POLL_INTERVAL_S
+    *, activate: bool = False, timeout_s: float = IT2_NEW_APP_TIMEOUT, poll_interval_s: float = _POLL_INTERVAL_S
 ) -> NSRunningApplication:
     app_container = _create_app_container()
     if not app_container.running_iterm_apps:

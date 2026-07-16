@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 app = typer.Typer(name="iterm2_api_wrapper")
 log = PrettyLog.get_logger(__name__)
 T = TypeVar("T")
-R = TypeVar("R", bound=Any)
+R = TypeVar("R")
 P = ParamSpec("P")
 CoroutineFn = Callable[Concatenate[T, P], Coroutine[Any, Any, R]]
 VariableScopeName = Literal["iterm2", "window", "tab", "session", "user"]
@@ -411,7 +411,7 @@ def main(
             "-d/-D",
             default_factory=lambda: False,
             help="Enable debug logging.",
-            envvar="ITERM_DEBUG",
+            envvar="IT2_DEBUG",
             metavar="DEBUG?",
             rich_help_panel="iTerm Setup Options",
         ),

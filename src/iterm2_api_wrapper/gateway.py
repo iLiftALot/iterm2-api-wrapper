@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 def _debug_enabled(debug: bool | None) -> bool:
     if debug is not None:
         return debug
-    return os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true"}
+    return os.getenv("IT2_DEBUG", "false").strip().lower() in {"1", "true"}
 
 
 StateTAny = TypeVar("StateTAny")
@@ -52,7 +52,7 @@ class RefreshableState(Protocol[StateTAny]):
     def refresh_from(self, new_state: StateTAny) -> None: ...
 
 
-_ENV_CONNECT_TIMEOUT = "ITERM_CONNECT_TIMEOUT"
+_ENV_CONNECT_TIMEOUT = "IT2_CONNECT_TIMEOUT"
 _DEFAULT_CONNECT_TIMEOUT_S = 10.0
 
 # Transient errors while iTerm2 is launching and its API socket isn't ready yet.
@@ -71,7 +71,7 @@ def _get_connect_timeout_s() -> float:
     This is intentionally *separate* from `iTermClient(timeout=...)` so we don't
     hang forever when iTerm2 isn't installed or its Python API is disabled.
 
-    Override via the `ITERM_CONNECT_TIMEOUT` environment variable.
+    Override via the `IT2_CONNECT_TIMEOUT` environment variable.
     """
     raw = os.getenv(_ENV_CONNECT_TIMEOUT)
 

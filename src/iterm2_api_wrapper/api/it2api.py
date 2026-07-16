@@ -70,7 +70,7 @@ class iTermAPI:
         self.service_name = service_name or "iterm-api"
         self.extra_id = extra_id
         self.new_tab = new_tab
-        self.debug = debug or os.getenv("ITERM_DEBUG", "false").strip().lower() in {"1", "true"}
+        self.debug = debug or os.getenv("IT2_DEBUG", "false").strip().lower() in {"1", "true"}
         self.activate = activate
         self.profile_properties = profile_properties
 
