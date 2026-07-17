@@ -87,8 +87,8 @@ async def poly_modal_alert_handler(
     window_id: str | None = None,
     button_names: list[str] | None = None,
     checkboxes: list[tuple[str, Literal[0, 1]]] | None = None,
-    comboboxes: tuple[list[str], str | None] | None = None,
-    text_fields: tuple[list[str], list[str]] | None = None,
+    combobox: tuple[list[str], str | None] | None = None,
+    text_field: tuple[str, str] | None = None,
 ):
     """Shows the poly modal alert.
 
@@ -104,10 +104,10 @@ async def poly_modal_alert_handler(
     :type button_names: list[str] | None
     :param checkboxes: A list of tuples each containing the label and default value (0 or 1) of each checkbox.
     :type checkboxes: list[tuple[str, Literal[0, 1]]] | None
-    :param comboboxes: A tuple containing the list of values and the default value for the combobox.
-    :type comboboxes: tuple[list[str], str | None] | None
-    :param text_fields: A tuple containing a list of placeholder values and a symmetrical list of default values.
-    :type text_fields: tuple[list[str], list[str]] | None
+    :param combobox: A tuple containing the list of values and the default value for the combobox.
+    :type combobox: tuple[list[str], str | None] | None
+    :param text_field: A tuple containing a placeholder value and a default value.
+    :type text_field: tuple[str, str] | None
 
     :returns:
         A :class:`~iterm2.alert.PolyModalResult` object containing values corresponding to the UI elements that were added:
@@ -126,21 +126,21 @@ async def poly_modal_alert_handler(
     """
     alert_instance = PolyModalAlert(title=title, subtitle=subtitle, window_id=window_id)
 
-    for btn in button_names or []:
-        alert_instance.add_button(btn)
+    for name in button_names or []:
+        alert_instance.add_button(name)
 
     for cb_label, cb_default in checkboxes or []:
         alert_instance.add_checkbox_item(cb_label, cb_default)
 
-    if comboboxes is not None:
-        cb_items, cb_default = comboboxes
+    if combobox is not None:
+        cb_items, cb_default = combobox
         combobox_caller = partial(alert_instance.add_combobox, items=cb_items)
         if cb_default is not None:
             combobox_caller.keywords["default"] = cb_default
         combobox_caller()
 
-    placeholders, default_values = text_fields or ([], [])
-    for placeholder, default_value in zip(placeholders, default_values, strict=True):
+    if text_field is not None:
+        placeholder, default_value = text_field
         alert_instance.add_text_field(placeholder, default_value)
 
     response = await alert_instance.async_run(connection=connection)
@@ -177,11 +177,8 @@ poly_modal_alert = await poly_modal_alert_handler(
     window_id=global_state.window.window_id,
     button_names=["OK", "Cancel"],
     checkboxes=[("Option 1", 0), ("Option 2", 1)],
-    comboboxes=(["Choice 1", "Choice 2", "Choice 3"], "Choice 2"),
-    text_fields=(
-        ["Field 1", "Field 2", "Field 3"],
-        ["Default Value 1", "Default Value 2", "Default Value 3"],
-    ),
+    combobox=(["Choice 1", "Choice 2", "Choice 3"], "Choice 2"),
+    text_field=(("Field Placeholder", "Default Value")),
 )
 """
 

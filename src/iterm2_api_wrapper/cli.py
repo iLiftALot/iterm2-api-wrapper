@@ -235,12 +235,11 @@ async def test_poly_modal_alert(state: iTermState) -> alert.PolyModalResult:
         window_id=state.window.window_id,
         button_names=["OK", "Cancel"],
         checkboxes=[("Option 1", 0), ("Option 2", 1), ("Option 3", 0), ("Option 4", 1)],
-        comboboxes=(["Choice 1", "Choice 2", "Choice 3"], "Choice 2"),
-        text_fields=(["Field 1", "Field 2", "Field 3"], ["Default Value 1", "Default Value 2", "Default Value 3"]),
+        combobox=(["Choice 1", "Choice 2", "Choice 3"], "Choice 2"),
+        text_field=(("Field Placeholder", "Default Value")),
     )
 
-    log.info("Poly Modal Alert Response: \n")
-    log.info(poly_modal_alert)
+    log.info("Poly Modal Alert Response:\n", poly_modal_alert)
     return poly_modal_alert
 
 
@@ -333,7 +332,7 @@ async def inject(state: iTermState, text: str) -> str:
 
 
 async def send_command(
-    state: iTermState, command: str | None = None, path: str | None = None, timeout: float = 120.0
+    state: iTermState, command: str | None = None, path: str | None = None, timeout: float = 5.0
 ) -> CommandExecutionResult:
     """Send a command to the iTerm2 session."""
 
