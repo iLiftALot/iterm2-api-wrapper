@@ -87,7 +87,7 @@ async def poly_modal_alert_handler(
     window_id: str | None = None,
     button_names: list[str] | None = None,
     checkboxes: list[tuple[str, Literal[0, 1]]] | None = None,
-    comboboxes: list[tuple[list[str], str | None]] | None = None,
+    comboboxes: tuple[list[str], str | None] | None = None,
     text_fields: tuple[list[str], list[str]] | None = None,
 ):
     """Shows the poly modal alert.
@@ -104,8 +104,8 @@ async def poly_modal_alert_handler(
     :type button_names: list[str] | None
     :param checkboxes: A list of tuples each containing the label and default value (0 or 1) of each checkbox.
     :type checkboxes: list[tuple[str, Literal[0, 1]]] | None
-    :param comboboxes: A list of tuples each containing the list of values and the default value for each combobox.
-    :type comboboxes: list[tuple[list[str], str | None]] | None
+    :param comboboxes: A tuple containing the list of values and the default value for the combobox.
+    :type comboboxes: tuple[list[str], str | None] | None
     :param text_fields: A tuple containing a list of placeholder values and a symmetrical list of default values.
     :type text_fields: tuple[list[str], list[str]] | None
 
@@ -132,10 +132,11 @@ async def poly_modal_alert_handler(
     for cb_label, cb_default in checkboxes or []:
         alert_instance.add_checkbox_item(cb_label, cb_default)
 
-    for combobox in comboboxes or []:
-        combobox_caller = partial(alert_instance.add_combobox, items=combobox[0])
-        if combobox[1] is not None:
-            combobox_caller.keywords["default"] = combobox[1]
+    if comboboxes is not None:
+        cb_items, cb_default = comboboxes
+        combobox_caller = partial(alert_instance.add_combobox, items=cb_items)
+        if cb_default is not None:
+            combobox_caller.keywords["default"] = cb_default
         combobox_caller()
 
     placeholders, default_values = text_fields or ([], [])
