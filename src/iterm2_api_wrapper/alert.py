@@ -19,11 +19,22 @@ async def alert_handler(
     """Shows the modal alert.
 
     :param connection: The connection to use.
-    :returns: The index of the selected button, plus 1000. If no buttons
-    were defined
-        then a single button, "OK", is automatically added.
+    :type connection: :class:`Connection`
+    :param title: The title of the alert.
+    :type title: str
+    :param subtitle: The subtitle of the alert.
+    :type subtitle: str
+    :param window_id: The :class:`~iterm2.Window` ID that the alert should appear in.
+    :type window_id: str
+    :param button_names: The names of the buttons.
+    :type button_names: list[str] | None
 
-    :raises iterm2.rpc.RPCException: if the alert could not be shown.
+    :returns:
+        The index of the selected button, plus 1000.
+        If no buttons were defined then a single button, "OK", is automatically added.
+    :rtype: int
+
+    :raises :class:`~iterm2.rpc.RPCException`: if the alert could not be shown.
     """
 
     alert_instance = Alert(title=title, subtitle=subtitle, window_id=window_id)
@@ -40,11 +51,24 @@ async def text_input_alert_handler(
     placeholder: str,
     default_value: str,
     window_id: str | None = None,
-):
+) -> str | None:
     """Shows the modal alert.
 
     :param connection: The connection to use.
+    :type connection: :class:`Connection`
+    :param title: The title of the alert.
+    :type title: str
+    :param subtitle: The subtitle of the alert.
+    :type subtitle: str
+    :param placeholder: The placeholder for the text box.
+    :type placeholder: str
+    :param default_value: The default value of the text box.
+    :type default_value: str
+    :param window_id: The :class:`~iterm2.Window` ID that the alert should appear in.
+    :type window_id: str | None
+
     :returns: The string entered, or None if the alert was canceled.
+    :rtype: str | None
 
     :raises iterm2.rpc.RPCException: if something goes wrong.
     """
@@ -63,26 +87,43 @@ async def poly_modal_alert_handler(
     window_id: str | None = None,
     button_names: list[str] | None = None,
     checkboxes: list[tuple[str, Literal[0, 1]]] | None = None,
-    comboboxes: tuple[list[str], str | None] | None = None,
+    comboboxes: list[tuple[list[str], str | None]] | None = None,
     text_fields: tuple[list[str], list[str]] | None = None,
 ):
     """Shows the poly modal alert.
 
     :param connection: The connection to use.
-    :returns: A PolyModalResult object containing values corresponding to
-    the UI elements that were added
-        - the label of clicked button
-        - text entered into the field input
-        - selected combobox text ('' if combobox was present but nothing
-        selected)
-        - array of checked checkbox labels.
-    If no buttons were defined
-        then a single button, "OK", is automatically added
-            and "button" will be absent from PolyModalResult.
+    :type connection: :class:`Connection`
+    :param title: The title of the alert.
+    :type title: str
+    :param subtitle: The subtitle of the alert.
+    :type subtitle: str
+    :param window_id: The :class:`~iterm2.Window` ID that the alert should appear in.
+    :type window_id: str | None
+    :param button_names: The names of the buttons.
+    :type button_names: list[str] | None
+    :param checkboxes: A list of tuples each containing the label and default value (0 or 1) of each checkbox.
+    :type checkboxes: list[tuple[str, Literal[0, 1]]] | None
+    :param comboboxes: A list of tuples each containing the list of values and the default value for each combobox.
+    :type comboboxes: list[tuple[list[str], str | None]] | None
+    :param text_fields: A tuple containing a list of placeholder values and a symmetrical list of default values.
+    :type text_fields: tuple[list[str], list[str]] | None
 
-    :raises iterm2.rpc.RPCException: if something goes wrong.
+    :returns:
+        A :class:`~iterm2.alert.PolyModalResult` object containing values corresponding to the UI elements that were added:
+
+        - The label of clicked button
+        - Text entered into the field input
+        - Selected combobox text ('' if combobox was present but nothing selected)
+        - Array of checked checkbox labels.
+
+        If no buttons were defined then a single button, "OK", is automatically added and "button"
+        will be absent from PolyModalResult.
+    :rtype: :class:`~iterm2.alert.PolyModalResult`
+
+    :raises :class:`~iterm2.rpc.RPCException`: if something goes wrong.
+    :raises ValueError: if the text field placeholders and default values are not the same length.
     """
-
     alert_instance = PolyModalAlert(title=title, subtitle=subtitle, window_id=window_id)
 
     for btn in button_names or []:
@@ -91,16 +132,15 @@ async def poly_modal_alert_handler(
     for cb_label, cb_default in checkboxes or []:
         alert_instance.add_checkbox_item(cb_label, cb_default)
 
-    if comboboxes is not None:
-        combobox_caller = partial(alert_instance.add_combobox, items=comboboxes[0])
-        if comboboxes[1] is not None:
-            combobox_caller.keywords["default"] = comboboxes[1]
+    for combobox in comboboxes or []:
+        combobox_caller = partial(alert_instance.add_combobox, items=combobox[0])
+        if combobox[1] is not None:
+            combobox_caller.keywords["default"] = combobox[1]
         combobox_caller()
 
-    if text_fields is not None:
-        placeholders, default_values = text_fields
-        for placeholder, default_value in zip(placeholders, default_values, strict=True):
-            alert_instance.add_text_field(placeholder, default_value)
+    placeholders, default_values = text_fields or ([], [])
+    for placeholder, default_value in zip(placeholders, default_values, strict=True):
+        alert_instance.add_text_field(placeholder, default_value)
 
     response = await alert_instance.async_run(connection=connection)
     return response
@@ -162,8 +202,8 @@ async def main():
     if _conn is None:
         _conn = await Connection.async_create()
 
-        protocol_version = _conn.iterm2_protocol_version
-        print(f"\nConnection created with protocol version {protocol_version[0]}.{protocol_version[1]}")
+        major_v, minor_v = _conn.iterm2_protocol_version
+        print(f"\nConnection created with protocol version {major_v}.{minor_v}")
 
     if _app is None:
         _app = await async_get_app(_conn, True)
