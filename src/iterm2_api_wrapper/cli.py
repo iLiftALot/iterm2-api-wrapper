@@ -8,6 +8,7 @@ from collections.abc import Callable, Coroutine
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from shlex import quote
 from types import FunctionType
 from typing import TYPE_CHECKING, Annotated, Any, Concatenate, Literal, ParamSpec, TypeVar
 
@@ -52,6 +53,7 @@ VARIABLE_ENUMS_BY_SCOPE: dict[VariableScopeName, type[StrEnum]] = {
 FUNCTION_NAME_COMPLETIONS: tuple[tuple[str, str], ...] = (
     ("send_command", "Run a shell command in the active iTerm2 session"),
     ("send_hex_codes", "Send HexCodeEnum control or escape sequence members"),
+    ("inject", "Inject text into the active session via printf"),
     ("get_variable", "Read an iTerm2 variable"),
     ("show_capabilities", "Show iTerm2 Python API capabilities"),
     ("alert", "Show a simple alert"),
@@ -185,6 +187,7 @@ def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[s
     functions: dict[str, CoroutineFn[iTermState, ..., Any]] = {
         "send_command": send_command,
         "send_hex_codes": send_hex_codes,
+        "inject": inject,
         "get_variable": get_variable,
         "show_capabilities": show_capabilities,
         "alert": test_alerts,
@@ -321,6 +324,14 @@ async def get_variable(
             raise RuntimeError(f"Unknown variable scope: {scope}")
 
 
+async def inject(state: iTermState, text: str) -> str:
+    """Inject text into the active session as a printf command."""
+
+    text_injection = quote(text)
+    await state.session.async_inject(text_injection.encode())
+    return text_injection
+
+
 async def send_command(
     state: iTermState, command: str | None = None, path: str | None = None, timeout: float = 120.0
 ) -> CommandExecutionResult:
@@ -363,7 +374,7 @@ def main(
             ...,
             help=(
                 "The function to run: alert, text_input_alert, poly_modal_alert, all_alerts, "
-                "show_capabilities, get_variable, send_command, send_hex_codes"
+                "show_capabilities, get_variable, send_command, send_hex_codes, inject"
             ),
             autocompletion=function_name_completion,
             metavar="FUNCTION_NAME",
@@ -424,11 +435,14 @@ def main(
     selected_fn: CoroutineFn[iTermState, ..., Any]
     fn_args, fn_kwargs = kwarg_conversion(tuple(args or []))
     log.info(f"{fn_args=}\n{fn_kwargs=}")
+
     match func_name:
         case "send_command":
             selected_fn = send_command
         case "send_hex_codes":
             selected_fn = send_hex_codes
+        case "inject":
+            selected_fn = inject
         case "get_variable":
             selected_fn = get_variable
         case "show_capabilities":
