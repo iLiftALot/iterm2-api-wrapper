@@ -100,9 +100,7 @@ def test_dynamic_profile_rejects_conflicting_parent_identifiers() -> None:
         )
 
 
-def test_dynamic_profile_async_create_polls_until_registered(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_dynamic_profile_async_create_polls_until_registered(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     async def scenario() -> None:
         dynamic_profile = DynamicProfile(_connection(), "iterm2-api-test")
         calls: list[tuple[list[str] | None, object]] = []
