@@ -3,12 +3,18 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, cast, get_args
 
 import pytest
 from iterm2 import api_pb2, rpc
 
-from iterm2_api_wrapper.api.it2profile import DynamicProfile, PartialProfile, Profile, ProfileProperties
+from iterm2_api_wrapper.api.it2profile import (
+    DynamicProfile,
+    PartialProfile,
+    Profile,
+    ProfileProperties,
+    ProfilePropertyKey,
+)
 
 
 if TYPE_CHECKING:
@@ -144,7 +150,9 @@ def test_dynamic_profile_async_create_returns_existing_profile(monkeypatch: pyte
 
         async def fake_list_profiles(connection: Connection, guids: list[str] | None, properties: object):
             calls.append((guids, properties))
-            return _profiles_response({"Guid": dynamic_profile.guid, "Name": "iterm2-api-test"})
+            return _profiles_response(
+                {"Guid": dynamic_profile.guid, "Name": "iterm2-api-test", "Is Dynamic Profile": 1}
+            )
 
         monkeypatch.setattr(rpc, "async_list_profiles", fake_list_profiles)
 
@@ -155,3 +163,7 @@ def test_dynamic_profile_async_create_returns_existing_profile(monkeypatch: pyte
         assert calls == [([dynamic_profile.guid], None)]
 
     asyncio.run(scenario())
+
+
+def test_profile_property_key_covers_every_profile_property() -> None:
+    assert set(get_args(ProfilePropertyKey)) == set(ProfileProperties.__annotations__)

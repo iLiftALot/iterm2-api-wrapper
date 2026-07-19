@@ -30,7 +30,7 @@ class iTermError(BaseException, metaclass=ErrorMeta):
         if sys.version_info >= (3, 11):
             self.add_note("\n\n*****NOTE*****\n\n" + self.msg.format(*args, **kwargs))
         else:
-            note = "\n\n*****NOTE*****\n\n" + self.msg.format(*args, **kwargs)
+            note = "\n" + self.msg.format(*args, **kwargs)
             if getattr(self, "__notes__", None) is not None and isinstance(self.__notes__, list):
                 self.__notes__.append(note)
             else:
@@ -39,15 +39,28 @@ class iTermError(BaseException, metaclass=ErrorMeta):
 
 class ProfileNotFoundError(iTermError):
     msg = """
-    Profile with name '{name}' not found. Available profiles:\n{profiles}
+    Profile with name '{target_profile_name}' not found. Available profiles:\n{profile_data}
     """.strip()
 
     def __init__(
-        self, *, target_profile_name: str, profile_data: dict[str, PartialProfile] | dict[str, Profile]
+        self,
+        *,
+        msg: str | None = None,
+        target_profile_name: str,
+        profile_data: dict[str, PartialProfile] | dict[str, Profile],
     ) -> None:
-        super().__init__(
-            name=target_profile_name, profiles="\n".join([f"- {name} ({p.guid})" for name, p in profile_data.items()])
+        if msg:
+            type(self).msg = msg
+
+        known_names = list(profile_data.keys())
+        known_guids = [p.guid for _, p in profile_data.items()]
+
+        max_name_length = max(map(len, known_names), default=0)
+        pretty_profile_list = "\n".join(
+            [f"- {name}{' ' * (max_name_length - len(name) + 1)}{guid}" for name, guid in zip(known_names, known_guids)]
         )
+
+        super().__init__(target_profile_name=target_profile_name, profile_data=pretty_profile_list)
 
 
 class WindowNotFoundError(iTermError):

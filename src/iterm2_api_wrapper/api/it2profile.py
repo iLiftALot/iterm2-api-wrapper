@@ -25,13 +25,14 @@ from uuid import NAMESPACE_URL, uuid5
 
 from iterm2 import BadGUIDException, capabilities, profile, rpc
 
-from ..errors import ProfileNotFoundError
+from ..errors import ProfileNotFoundError, SessionNotFoundError
+from .it2app import async_get_app
 
 
 if sys.version_info >= (3, 12):
-    from typing import NotRequired, Required
+    from typing import NotRequired
 else:
-    from typing_extensions import NotRequired, Required
+    from typing_extensions import NotRequired
 
 
 if TYPE_CHECKING:
@@ -146,8 +147,8 @@ StatusBarLayout = TypedDict(
     {"advanced configuration": StatusBarAdvancedConfiguration, "components": list[StatusBarComponent]},
 )
 
-ProfileProperties = TypedDict(
-    "ProfileProperties",
+ProfilePropertiesNoIdentifiers = TypedDict(
+    "ProfilePropertiesNoIdentifiers",
     {
         "ASCII Anti Aliased": BoolInt,
         "ASCII Ligatures": BoolInt,
@@ -296,7 +297,7 @@ ProfileProperties = TypedDict(
         "Foreground Color (Dark)": ProfileColor,
         "Foreground Color (Light)": ProfileColor,
         "Function Key": int,
-        "Guid": str,
+        # "Guid": str,
         "Harmonize 256 Colors": BoolInt,
         "Harmonize 256 Colors (Dark)": BoolInt,
         "Harmonize 256 Colors (Light)": BoolInt,
@@ -349,7 +350,7 @@ ProfileProperties = TypedDict(
         "Mouse Reporting allow clicks and drags": BoolInt,
         "Mouse Reporting allow mouse wheel": BoolInt,
         "Movement Keys Scroll Outside Interactive Apps": BoolInt,
-        "Name": str,
+        # "Name": str,
         "Non Ascii Font": str,
         "Non-ASCII Anti Aliased": BoolInt,
         "Non-ASCII Ligatures": BoolInt,
@@ -468,6 +469,22 @@ ProfileProperties = TypedDict(
     },
     total=False,
 )
+
+
+class _OptionalProfileIdentity(TypedDict, total=False):
+    Name: str
+    Guid: str
+
+
+class ProfileProperties(ProfilePropertiesNoIdentifiers, _OptionalProfileIdentity):
+    """A partial profile property mapping.
+
+    Every property, including Name and Guid, is optional. This type is suitable
+    for patches, function arguments, partial RPC results, and session-local
+    profile updates.
+    """
+
+
 ProfilePropertyKey = Literal[
     "ASCII Anti Aliased",
     "ASCII Ligatures",
@@ -733,6 +750,8 @@ ProfilePropertyKey = Literal[
     "Status Bar Layout",
     "Subtitle",
     "Suppress Alerts in Active Session",
+    "Tab Color",
+    "Tab Color (Dark)",
     "Tab Color (Light)",
     "Tags",
     "Terminal Type",
@@ -746,6 +765,9 @@ ProfilePropertyKey = Literal[
     "Treat Option as Alt",
     "Triggers",
     "Triggers Use Interpolated Strings",
+    "Underline Color",
+    "Underline Color (Dark)",
+    "Underline Color (Light)",
     "Unicode Normalization",
     "Unicode Version",
     "Unlimited Scrollback",
@@ -782,24 +804,66 @@ ProfilePropertyKey = Literal[
     "Working Directory",
 ]
 
-_DynamicProfilePropertyExtras = TypedDict(
-    "_DynamicProfilePropertyExtras",
+_DynamicProfileDefinitionExtras = TypedDict(
+    "_DynamicProfileDefinitionExtras",
     {
         "Dynamic Profile Parent GUID": str,
         "Dynamic Profile Parent Name": str,
-        "Dynamic Profile Filename": str,
         "Rewritable": bool,
+    },
+    total=False,
+)
+_DynamicProfileRuntimeExtras = TypedDict(
+    "_DynamicProfileRuntimeExtras",
+    {
+        "Dynamic Profile Filename": str,
         "Is Dynamic Profile": BoolInt,
     },
     total=False,
 )
 
+DynamicProfilePropertyKey = Literal[
+    "Guid",
+    "Name",
+    "Rewritable",
+    "Dynamic Profile Parent GUID",
+    "Dynamic Profile Parent Name",
+    "Dynamic Profile Filename",
+    "Is Dynamic Profile",
+]
 
-class DynamicProfileProperties(ProfileProperties, _DynamicProfilePropertyExtras, total=False): ...
+
+class DynamicProfileProperties(ProfileProperties, _DynamicProfileDefinitionExtras):
+    """A partial dynamic-profile property mapping.
+
+    Every key is optional. This type is suitable for function parameters,
+    patches, and incomplete dynamic-profile data.
+    """
 
 
-class DynamicProfilesPayload(TypedDict, total=False):
-    Profiles: Required[list[DynamicProfileProperties]]
+class DynamicProfileRuntimeProperties(DynamicProfileProperties, _DynamicProfileRuntimeExtras):
+    """Dynamic-profile properties returned by iTerm2 at runtime.
+
+    This includes runtime-only metadata that must not be persisted in a
+    DynamicProfiles JSON file.
+    """
+
+
+class DynamicProfileDefinition(ProfilePropertiesNoIdentifiers, _DynamicProfileDefinitionExtras):
+    """A complete JSON-writable dynamic-profile definition.
+
+    Name and Guid are the only universally required dynamic-profile fields.
+    Every inherited profile property remains optional.
+    """
+
+    Name: str
+    Guid: str
+
+
+class DynamicProfilesPayload(TypedDict):
+    """The complete wrapper-managed DynamicProfiles JSON document."""
+
+    Profiles: list[DynamicProfileDefinition]
 
 
 DEFAULT_PARTIAL_PROFILE_PROPERTIES = ("Guid", "Name")
@@ -829,6 +893,8 @@ class LocalWriteOnlyProfile(profile.LocalWriteOnlyProfile):
 
 class Profile(profile.Profile):
     _Profile__props: ProfileProperties
+    connection: Connection
+    session_id: str | None
 
     def __init__(
         self,
@@ -856,11 +922,14 @@ class Profile(profile.Profile):
 
     @property
     def guid(self) -> str:
-        return cast(str, super().guid)
+        value = self._simple_get("Guid")
+        if not isinstance(value, str):
+            raise BadGUIDException()
+        return value
 
     @property
     def original_guid(self) -> str:
-        return super().original_guid or self.guid
+        return self._simple_get("Original Guid") or self.guid
 
     @staticmethod
     async def all_guids(connection: Connection) -> set[str]:
@@ -878,6 +947,62 @@ class Profile(profile.Profile):
         profiles = await Profile.async_get(connection)
         return {p.name: p for p in profiles}
 
+    async def async_local_update(self, properties: ProfileProperties) -> Profile:
+        """Apply temporary property overrides to this profile's live session.
+
+        This changes only the session-local copy of the profile. It does not
+        modify the underlying shared or dynamic profile definition.
+
+        :raises ValueError: If this is a shared profile rather than a
+            session-backed profile.
+        :raises SessionNotFoundError: If the original session no longer exists.
+        :returns: The session's freshly queried profile after applying the
+            overrides.
+        """
+        session_id = self.session_id
+        if session_id is None:
+            raise ValueError(
+                "async_local_update() requires a session-backed Profile. "
+                "Obtain the profile from Session.async_get_profile() before "
+                "applying a session-local update."
+            )
+
+        app = await async_get_app(self.connection, create_if_needed=True)
+        session = app.get_session_by_id(session_id)
+        if session is None:
+            raise SessionNotFoundError(session_id)
+
+        local_profile = LocalWriteOnlyProfile(properties)
+        await session.async_set_profile_properties(local_profile)
+        return await session.async_get_profile()
+
+    @staticmethod
+    async def async_update(
+        connection: Connection,
+        profile_name: str,
+        *,
+        properties: ProfilePropertiesNoIdentifiers | None = None,
+        remove_properties: Sequence[ProfilePropertyKey] = (),
+    ) -> Profile:
+        """Patch an existing wrapper-managed dynamic profile.
+
+        Properties not supplied remain unchanged. Properties named in
+        ``remove_properties`` are removed from the explicit dynamic-profile
+        definition and therefore inherit from the profile's parent.
+
+        :param connection: The active iTerm2 connection.
+        :param profile_name: The original wrapper-managed profile name used to
+            derive its deterministic GUID.
+        :param properties: Properties to add or replace.
+        :param remove_properties: Explicit properties to remove.
+        :returns: The freshly queried profile after iTerm2 observes the update.
+        """
+        dynamic_profile = DynamicProfile(connection, profile_name)
+        return await dynamic_profile.async_update(
+            properties=properties,
+            remove_properties=remove_properties,
+        )
+
     @staticmethod
     async def async_create(
         connection: Connection,
@@ -885,9 +1010,9 @@ class Profile(profile.Profile):
         *,
         parent_profile_name: str | None = None,
         parent_profile_guid: str | None = None,
-        properties: ProfileProperties | None = None,
+        properties: ProfilePropertiesNoIdentifiers | None = None,
     ) -> Profile:
-        """Creates a new *dynamic* iTerm2 profile."""
+        """Creates a new [***dynamic***](https://iterm2.com/documentation-dynamic-profiles.html) iTerm2 profile."""
         if parent_profile_guid is not None:
             dynamic_profile = DynamicProfile(
                 connection,
@@ -980,6 +1105,29 @@ class PartialProfile(Profile):
         await rpc.async_set_default_profile(self.connection, self.guid)
 
 
+def _load_dynamic_profiles_payload(path: Path) -> DynamicProfilesPayload:
+    raw: object = json.loads(path.read_text(encoding="utf-8"))
+
+    if not isinstance(raw, dict):
+        raise ValueError(f"Dynamic profile document must be a JSON object: {path}")
+
+    profiles = raw.get("Profiles")
+    if not isinstance(profiles, list):
+        raise ValueError(f"Dynamic profile document must contain a Profiles list: {path}")
+
+    for index, definition in enumerate(profiles):
+        if not isinstance(definition, dict):
+            raise ValueError(f"Dynamic profile entry {index} must be a JSON object: {path}")
+
+        if not isinstance(definition.get("Name"), str):
+            raise ValueError(f"Dynamic profile entry {index} must contain a string Name: {path}")
+
+        if not isinstance(definition.get("Guid"), str):
+            raise ValueError(f"Dynamic profile entry {index} must contain a string Guid: {path}")
+
+    return cast(DynamicProfilesPayload, raw)
+
+
 class DynamicProfile:
     """Creates an iTerm2 dynamic profile."""
 
@@ -995,6 +1143,18 @@ class DynamicProfile:
     PROFILE_LOAD_INITIAL_DELAY = 0.05
     PROFILE_LOAD_MAX_DELAY = 0.5
 
+    _PROTECTED_UPDATE_PROPERTIES: frozenset[DynamicProfilePropertyKey] = frozenset(
+        {
+            "Guid",
+            "Name",
+            "Rewritable",
+            "Dynamic Profile Parent GUID",
+            "Dynamic Profile Parent Name",
+            "Dynamic Profile Filename",
+            "Is Dynamic Profile",
+        }
+    )
+
     @overload
     def __init__(
         self,
@@ -1003,7 +1163,7 @@ class DynamicProfile:
         *,
         parent_profile_guid: str,
         parent_profile_name: None = ...,
-        properties: ProfileProperties | None = None,
+        properties: ProfilePropertiesNoIdentifiers | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -1013,7 +1173,7 @@ class DynamicProfile:
         *,
         parent_profile_name: str,
         parent_profile_guid: None = ...,
-        properties: ProfileProperties | None = None,
+        properties: ProfilePropertiesNoIdentifiers | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -1023,7 +1183,7 @@ class DynamicProfile:
         *,
         parent_profile_name: None = ...,
         parent_profile_guid: None = ...,
-        properties: ProfileProperties | None = None,
+        properties: ProfilePropertiesNoIdentifiers | None = None,
     ) -> None: ...
     def __init__(
         self,
@@ -1032,7 +1192,7 @@ class DynamicProfile:
         *,
         parent_profile_guid: str | None = None,
         parent_profile_name: str | None = None,
-        properties: ProfileProperties | None = None,
+        properties: ProfilePropertiesNoIdentifiers | None = None,
     ) -> None:
         if parent_profile_guid is not None and parent_profile_name is not None:
             raise ValueError("Specify either parent_profile_guid or parent_profile_name, not both.")
@@ -1041,15 +1201,13 @@ class DynamicProfile:
         self.__profile_name = profile_name
         self.__parent_guid = parent_profile_guid
         self.__parent_name = parent_profile_name or "Default"
-        self.__props = cast(DynamicProfileProperties, dict(properties or {}))
-
-        self.__props.update(
-            {
-                "Name": profile_name,
-                "Guid": self.guid,
-                "Rewritable": True,
-            }
-        )
+        self.__requested_properties: ProfilePropertiesNoIdentifiers = {**(properties or {})}
+        self.__props: DynamicProfileDefinition = {
+            **self.__requested_properties,
+            "Name": profile_name,
+            "Guid": self.guid,
+            "Rewritable": True,
+        }
 
         if self.__parent_guid is not None:
             self.__props["Dynamic Profile Parent GUID"] = self.__parent_guid
@@ -1066,10 +1224,10 @@ class DynamicProfile:
 
     @property
     def payload(self) -> DynamicProfilesPayload:
-        dynamic_profiles: list[DynamicProfileProperties] = [self.__props]
+        dynamic_profiles: list[DynamicProfileDefinition] = [self.__props]
 
         if self.DYNAMIC_PROFILE_PATH.exists():
-            previous_dynamic_profiles: DynamicProfilesPayload = json.loads(self.DYNAMIC_PROFILE_PATH.read_text())
+            previous_dynamic_profiles = _load_dynamic_profiles_payload(self.DYNAMIC_PROFILE_PATH)
             dynamic_profiles.extend(
                 [
                     dynamic_profile
@@ -1112,12 +1270,45 @@ class DynamicProfile:
 
         return parent_profile
 
+    async def async_update(
+        self,
+        *,
+        properties: ProfilePropertiesNoIdentifiers | None = None,
+        remove_properties: Sequence[ProfilePropertyKey] = (),
+    ) -> Profile:
+        """Patch an existing wrapper-managed dynamic profile.
+
+        Properties not mentioned by either argument remain unchanged. Keys in
+        ``remove_properties`` are removed from the dynamic-profile definition and
+        therefore inherit their values from the profile's parent.
+
+        The profile's Name, Guid, parent selection, and Rewritable setting are not
+        changed by this operation.
+
+        Returns the freshly queried profile after iTerm2 has observed the requested
+        changes.
+
+        Raises:
+            ProfileNotFoundError:
+                The profile is not currently registered in iTerm2.
+            ValueError:
+                The profile is not owned by this wrapper's dynamic-profile file, a
+                protected property was requested, or the same property was both set
+                and removed.
+            TimeoutError:
+                iTerm2 did not expose the requested property state before the
+                profile-load timeout expired.
+        """
+        raise NotImplementedError("Dynamic profile updating has not been implemented.")
+
     async def async_create(self) -> Profile:
         """Create an iTerm2 profile."""
         current_guid = self.guid
         profiles = await Profile.async_get(self.__connection, [current_guid])
-        if profiles:
-            return profiles[0]
+        if profiles and bool(profiles[0].all_properties.get("Is Dynamic Profile", 0)) is True:
+            return await self.async_update(
+                properties=self.__requested_properties,
+            )
 
         payload = self.payload
         self.DYNAMIC_PROFILES_DIRECTORY.mkdir(parents=True, exist_ok=True)
@@ -1152,3 +1343,15 @@ class DynamicProfile:
 
             await asyncio.sleep(min(delay, remaining))
             delay = min(delay * 2, cls.PROFILE_LOAD_MAX_DELAY)
+
+    @staticmethod
+    async def _wait_for_profile_update(
+        connection: Connection,
+        guid: str,
+        profile_name: str,
+        *,
+        expected_properties: ProfileProperties,
+        removed_properties: set[ProfilePropertyKey],
+    ) -> Profile:
+        """Wait until iTerm2 exposes the requested dynamic-profile changes."""
+        raise NotImplementedError("Waiting for dynamic profile updates has not been implemented.")

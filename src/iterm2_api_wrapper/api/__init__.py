@@ -2,7 +2,7 @@ from .it2app import App, async_get_app
 from .it2connection import Connection, run_forever, run_until_complete
 from .it2lifecycle import NewSessionMonitor
 from .it2measurement import CoordRange
-from .it2profile import LocalWriteOnlyProfile, PartialProfile, Profile, ProfileProperties, ProfileProperty
+from .it2profile import LocalWriteOnlyProfile, PartialProfile, Profile, ProfileProperties, ProfilePropertyLike
 from .it2prompt import (
     Prompt,
     PromptMonitor,
@@ -56,7 +56,7 @@ __all__ = [
     "PartialProfile",
     "Profile",
     "ProfileProperties",
-    "ProfileProperty",
+    "ProfilePropertyLike",
     "Prompt",
     "PromptMonitor",
     "Session",

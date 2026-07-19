@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, TypedDict
 if TYPE_CHECKING:
     from .api.it2app import App
     from .api.it2connection import Connection
-    from .api.it2profile import Profile
+    from .api.it2profile import Profile, ProfileProperties
     from .api.it2session import Session
     from .api.it2tab import Tab
     from .api.it2window import Window
@@ -35,6 +35,8 @@ class iTermStateSetupKwargs(TypedDict, total=False):
     """Whether to enable debug logging."""
     activate: bool
     """Whether to bring iTerm2 to the foreground during setup."""
+    profile_properties: ProfileProperties
+    """Custom properties for the profile."""
 
 
 class iTermStateKwargs(TypedDict, total=True):
