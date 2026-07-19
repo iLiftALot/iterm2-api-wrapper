@@ -3,10 +3,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-import os
 import re
 import shlex
-import tempfile
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from functools import wraps
@@ -22,6 +20,8 @@ from .api.it2prompt import PromptMonitor, async_get_prompt, prompt
 from .api.it2transaction import Transaction
 from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
 from .typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
+from .utils.loop_manager import LoopManager
+from .utils.marked_command import MarkedCommand
 from .utils.parser import Parser, ParseResult
 
 
@@ -160,176 +160,6 @@ class User:
         }
 
         return all_user_vars
-
-
-class LoopManager:
-    """Resolve and reconcile the event loop that owns an :class:`iTermState`."""
-
-    def __init__(self, state: iTermState):
-        self._state = state
-
-    @staticmethod
-    def _usable_loop(loop: asyncio.AbstractEventLoop | None) -> asyncio.AbstractEventLoop | None:
-        if loop is None or loop.is_closed():
-            return None
-        return loop
-
-    def _discard_loop(self, loop: asyncio.AbstractEventLoop) -> None:
-        if self._state._event_loop is loop:
-            self._state._event_loop = None
-        if self._state.connection.loop is loop:
-            self._state.connection.loop = None
-
-    def _reconcile_loop(self) -> asyncio.AbstractEventLoop | None:
-        state_loop = self._usable_loop(self._state._event_loop)
-        connection_loop = self._usable_loop(self._state.connection.loop)
-
-        if state_loop is None and self._state._event_loop is not None:
-            self._state._event_loop = None
-        if connection_loop is None and self._state.connection.loop is not None:
-            self._state.connection.loop = None
-
-        loop = state_loop or connection_loop
-        if loop is None:
-            return None
-
-        self._state._event_loop = loop
-        self._state.connection.loop = loop
-        return loop
-
-    def require_loop(self) -> asyncio.AbstractEventLoop:
-        loop = self._reconcile_loop()
-        if loop is None:
-            raise RuntimeError("No usable iTerm event loop is available on this state.")
-
-        if not loop.is_running():
-            raise RuntimeError("The iTerm event loop is not running; recreate or refresh the client.")
-
-        return loop
-
-    def _on_correct_loop(self) -> bool:
-        loop = self.loop
-        if loop is None or not loop.is_running():
-            return False
-
-        try:
-            return asyncio.get_running_loop() is loop
-        except RuntimeError:
-            return False
-
-    @property
-    def loop(self) -> asyncio.AbstractEventLoop | None:
-        """Get and reconcile the event loop associated with this state."""
-        return self._reconcile_loop()
-
-
-class MarkedCommand:
-    """Creates synthetic iTerm2 shell-integration marks for non-shell-integrated shells."""
-
-    LEGACY_BEFORE_PROMPT = r"\e]133;A\a"
-    LEGACY_AFTER_PROMPT = r"\e]133;B\a"
-    LEGACY_BEFORE_OUTPUT = r"\e]133;C\a"
-    LEGACY_AFTER_OUTPUT = r"\e]133;D;%d\a"
-
-    BEFORE_PROMPT = r"\e]133;A;aid={aid}\a"
-    AFTER_PROMPT = r"\e]133;B;aid={aid}\a"
-    BEFORE_OUTPUT = r"\e]133;C;aid={aid}\a"
-    AFTER_OUTPUT = r"\e]133;D;%d;aid={aid}\a"
-
-    def __init__(self, command: str, *, command_label: str | None = None, prompt: str = "iterm2-api-wrapper> ") -> None:
-        self.command = command
-        self.label = command if command_label is None else command_label
-        self.prompt = prompt
-
-        self.aid = f"iterm2-api-wrapper-{os.getpid()}-{id(self):x}"
-        self.script_path = Path(tempfile.gettempdir()) / f"iterm2_marked_{os.getpid()}_{id(self)}.zsh"
-        self.source_command = f"source {shlex.quote(str(self.script_path))}"
-        self._closed = False
-
-        self._generate_script()
-
-    @property
-    def before_prompt_mark(self) -> str:
-        return self.BEFORE_PROMPT.format(aid=self.aid)
-
-    @property
-    def after_prompt_mark(self) -> str:
-        return self.AFTER_PROMPT.format(aid=self.aid)
-
-    @property
-    def before_output_mark(self) -> str:
-        return self.BEFORE_OUTPUT.format(aid=self.aid)
-
-    @property
-    def after_output_mark(self) -> str:
-        return self.AFTER_OUTPUT.format(aid=self.aid)
-
-    @property
-    def execution_label(self) -> str:
-        return shlex.quote(self.label)
-
-    @property
-    def execution_prompt(self) -> str:
-        return f"{self.before_prompt_mark}{self.prompt}{self.after_prompt_mark}"
-
-    @property
-    def script_body(self) -> str:
-        before_prompt = shlex.quote(self.execution_prompt)
-        before_output = shlex.quote(self.before_output_mark)
-        after_output = shlex.quote(self.after_output_mark)
-        return "\n".join(
-            (
-                "# Generated by iterm2-api-wrapper. Safe to delete.",
-                "emulate -L zsh",
-                "setopt local_traps",
-                "local __iterm_status=0",
-                f"printf {before_prompt}",
-                f"printf '%s\\n' {self.execution_label}",
-                f"printf {before_output}",
-                "{",
-                f"  {self.command}",
-                "} always {",
-                "  __iterm_status=$?",
-                f'  printf {after_output} "$__iterm_status"',
-                "}",
-                'return "$__iterm_status"',
-                "",
-            )
-        )
-
-    def _generate_script(self) -> None:
-        """Write a marked command script to a local temp file."""
-        self.script_path.write_text(self.script_body, encoding="utf-8")
-        self.script_path.chmod(0o600)
-
-    def cleanup(self) -> None:
-        """Best-effort cleanup for the generated marked command script."""
-        if self._closed:
-            return
-
-        self._closed = True
-        try:
-            self.script_path.unlink(missing_ok=True)
-        except OSError:
-            log.error("Failed to remove marked command script", {"script_path": str(self.script_path)})
-
-    def __enter__(self) -> MarkedCommand:
-        return self
-
-    def __exit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
-        self.cleanup()
-
-    def __del__(self) -> None:
-        """Safety net only. Deterministic cleanup should happen via context manager."""
-        self.cleanup()
-
-    def __str__(self) -> str:
-        return self.source_command
-
-    def __repr__(self) -> str:
-        return (
-            f"MarkedCommand(command={self.command!r}, label={self.label!r}, prompt={self.prompt!r}, aid={self.aid!r})"
-        )
 
 
 @dataclass
@@ -582,7 +412,27 @@ class iTermState:
     # --------------------------------------------------
 
     @_validate_state
-    async def on_state_loop(self, coro_factory: Coroutine[None, None, T]) -> T:
+    async def exec(self, coro_factory: Coroutine[None, None, T]) -> T:
+        """Execute a iTerm2-source function on the state loop.
+
+        Ensures that the function runs on the current state loop so that
+        the process doesn't hang.
+
+        ---
+
+        :example:
+
+            ```python
+            await state.exec(state.session.async_inject(...))
+            ```
+
+        ---
+
+        :param coro_factory: The function to run in :class:`Coroutine` form.
+        :type coro_factory: Coroutine[None, None, T]
+        :return: The return-type of the function passed.
+        :rtype: T
+        """
         return await coro_factory
 
     @overload
@@ -1044,7 +894,7 @@ class iTermState:
             "(prompt retrieval capabilities are unavailable).\nWould you like to load shell integration now?\n",
             window_id=self.window.window_id,
             button_names=["Yes", "No"],
-            text_fields=(["/path/to/.iterm2_shell_integration.{zsh,bash,fish}"], [str(si_path)]),
+            text_field=("/path/to/.iterm2_shell_integration.{zsh,bash,fish}", str(si_path)),
         )
         should_load_shell_integration: bool = skip_confirm is True
 

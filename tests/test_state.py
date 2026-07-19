@@ -17,6 +17,7 @@ from iterm2_api_wrapper.state import (
     iTermState,
 )
 from iterm2_api_wrapper.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
+from iterm2_api_wrapper.utils import marked_command as marked_command_module
 from iterm2_api_wrapper.utils.parser import ParseResult
 
 from .fake import (
@@ -282,7 +283,7 @@ def test_marked_command_script_body_wraps_command_with_shell_integration_marks()
 
 
 def test_marked_command_context_manager_cleans_up_script(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(state_module.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(marked_command_module.tempfile, "gettempdir", lambda: str(tmp_path))
 
     with MarkedCommand("echo hi") as marked:
         script_path = marked.script_path
@@ -358,7 +359,7 @@ def test_run_command_without_shell_integration_sources_marked_script_and_cleans_
         patch_attr(state, "_wait_for_prompt", wait_for_prompt)
         patch_attr(state, "_run_parser", run_parser)
         monkeypatch.setattr(asyncio, "sleep", no_sleep)
-        monkeypatch.setattr(state_module.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(marked_command_module.tempfile, "gettempdir", lambda: str(tmp_path))
 
         result = await state.run_command("pwd", path="/new", broadcast=False, timeout=4.0)
 
