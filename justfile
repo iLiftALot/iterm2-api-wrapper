@@ -56,7 +56,7 @@ test-args *ARGS:
 # Run all the tests, but on failure, drop into the debugger
 test-debug *ARGS:
     @echo "Running with arg: {{ARGS}}"
-    uv run --active --python=3.10 --group dev pytest --pdb --maxfail=10 --pdbcls=IPython.terminal.debugger:TerminalPdb {{ARGS}}
+    @uv run --active --python=3.10 --group dev pytest --pdb --maxfail=10 --pdbcls=IPython.terminal.debugger:TerminalPdb {{ARGS}}
 
 # Run coverage, and build to HTML
 [arg("open", long, short="o", value="true", help="Open HTML report?")]
@@ -147,3 +147,11 @@ docs-open:
 # Watch for changes and auto-rebuild (requires sphinx-autobuild)
 docs-watch:
     @uv run sphinx-autobuild docs docs/_build --open-browser
+
+
+ipython *ARGS:
+    #!/usr/bin/env zsh
+    if [[ -n "{{ARGS}}" ]]; then
+        echo "Received additional arguments: {{ARGS}}"
+    fi
+    uv run --group=dev ipython3 --profile {{env("IPYTHON_PROFILE", "default")}} {{ARGS}}

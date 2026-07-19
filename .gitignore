@@ -1,6 +1,3 @@
-# Under construction files
-\**.py
-
 # Virtual environments
 .venv
 .env
@@ -234,23 +231,17 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Codex
+.codex/*
+!.codex/environments
 
-# TEMPORARY FILES FOR RELEASE PACKAGE ONLY - TO BE REMOVED LATER
-# docs/
+# Under construction files
+**/\**.py
+
+# Misc
 iterm2_api_wrapper-*.tar.gz
 iterm2_api_wrapper-*.whl
 assets/*
-# README.md
-# AGENTS.md
-# CLAUDE.md
 .agent*/
-**/\**.py
-src/iterm2_api_wrapper/triggers.py
-.super-agents/
-# .codex/tools/
-# .codex/bin/
-.codex/*
-!.codex/environments
 trace
-_dev.py
 *.swp

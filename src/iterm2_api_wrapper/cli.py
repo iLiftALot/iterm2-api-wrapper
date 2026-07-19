@@ -53,7 +53,7 @@ VARIABLE_ENUMS_BY_SCOPE: dict[VariableScopeName, type[StrEnum]] = {
 FUNCTION_NAME_COMPLETIONS: tuple[tuple[str, str], ...] = (
     ("send_command", "Run a shell command in the active iTerm2 session"),
     ("send_hex_codes", "Send HexCodeEnum control or escape sequence members"),
-    ("inject", "Inject text into the active session via printf"),
+    ("inject", "Inject text into the active session."),
     ("get_variable", "Read an iTerm2 variable"),
     ("show_capabilities", "Show iTerm2 Python API capabilities"),
     ("alert", "Show a simple alert"),
