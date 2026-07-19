@@ -376,6 +376,7 @@ def test_create_iterm_state_builds_state_from_api_context(monkeypatch: pytest.Mo
                 "new_tab": True,
                 "debug": True,
                 "activate": False,
+                "profile_properties": None,
             }
         ]
 

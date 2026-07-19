@@ -13,19 +13,30 @@ contains the properties that have been explicitly set for that profile.
 
 from __future__ import annotations
 
+import asyncio
+import getpass
+import json
 import sys
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, cast
+from collections.abc import Sequence
+from dataclasses import InitVar, dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, cast, overload
+from uuid import NAMESPACE_URL, uuid5
 
-from iterm2 import profile
+from iterm2 import BadGUIDException, capabilities, profile, rpc
+
+from ..errors import ProfileNotFoundError
 
 
 if sys.version_info >= (3, 12):
-    from typing import NotRequired
+    from typing import NotRequired, Required
 else:
-    from typing_extensions import NotRequired
+    from typing_extensions import NotRequired, Required
 
 
 if TYPE_CHECKING:
+    from iterm2.api_pb2 import ServerOriginatedMessage
+
     from .it2connection import Connection
 
 
@@ -457,8 +468,6 @@ ProfileProperties = TypedDict(
     },
     total=False,
 )
-
-
 ProfilePropertyKey = Literal[
     "ASCII Anti Aliased",
     "ASCII Ligatures",
@@ -773,10 +782,44 @@ ProfilePropertyKey = Literal[
     "Working Directory",
 ]
 
+_DynamicProfilePropertyExtras = TypedDict(
+    "_DynamicProfilePropertyExtras",
+    {
+        "Dynamic Profile Parent GUID": str,
+        "Dynamic Profile Parent Name": str,
+        "Dynamic Profile Filename": str,
+        "Rewritable": bool,
+        "Is Dynamic Profile": BoolInt,
+    },
+    total=False,
+)
 
-class ProfileProperty(Protocol):
-    key: ProfilePropertyKey
+
+class DynamicProfileProperties(ProfileProperties, _DynamicProfilePropertyExtras, total=False): ...
+
+
+class DynamicProfilesPayload(TypedDict, total=False):
+    Profiles: Required[list[DynamicProfileProperties]]
+
+
+DEFAULT_PARTIAL_PROFILE_PROPERTIES = ("Guid", "Name")
+
+
+class ProfilePropertyLike(Protocol):
+    key: ProfilePropertyKey | str
     json_value: str
+
+
+@dataclass
+class ProfileProperty:
+    key: ProfilePropertyKey | str
+    json_value: str
+
+    json_auto_convert: InitVar[bool] = True
+
+    def __post_init__(self, json_auto_convert: bool) -> None:
+        if json_auto_convert is True:
+            self.json_value = json.dumps(self.json_value)
 
 
 class LocalWriteOnlyProfile(profile.LocalWriteOnlyProfile):
@@ -785,13 +828,31 @@ class LocalWriteOnlyProfile(profile.LocalWriteOnlyProfile):
 
 
 class Profile(profile.Profile):
-    def __init__(self, session_id: str, connection: Connection, profile_property_list: list[ProfileProperty]):
+    _Profile__props: ProfileProperties
+
+    def __init__(
+        self,
+        session_id: str | None,
+        connection: Connection,
+        profile_properties: ProfileProperties | Sequence[ProfilePropertyLike],
+    ) -> None:
+        profile_property_list: list[ProfilePropertyLike]
+
+        if isinstance(profile_properties, Sequence):
+            profile_property_list = list(profile_properties)
+        else:
+            profile_property_list = [
+                ProfileProperty(key=k, json_value=json.dumps(v), json_auto_convert=False)
+                for k, v in profile_properties.items()
+            ]
+
         super().__init__(session_id, connection, profile_property_list)
+        self.__props = self._Profile__props
 
     @property
     def all_properties(self) -> ProfileProperties:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Returns the internal property dictionary, typed by iTerm2 key name."""
-        return cast(ProfileProperties, super().all_properties)
+        return cast(ProfileProperties, dict(self.__props))
 
     @property
     def guid(self) -> str:
@@ -799,38 +860,295 @@ class Profile(profile.Profile):
 
     @property
     def original_guid(self) -> str:
-        return cast(str, super().original_guid)
+        return super().original_guid or self.guid
+
+    @staticmethod
+    async def all_guids(connection: Connection) -> set[str]:
+        profiles = await PartialProfile.async_query(connection, properties=["Guid"])
+        return {p.guid for p in profiles}
+
+    @staticmethod
+    async def all_names(connection: Connection) -> set[str]:
+        profiles = await PartialProfile.async_query(connection, properties=["Name"])
+        return {p.name for p in profiles}
+
+    @staticmethod
+    async def to_dict(connection: Connection) -> dict[str, Profile]:
+        """Returns a dictionary containing profile names as keys with their corresponding :class:`Profile` object."""
+        profiles = await Profile.async_get(connection)
+        return {p.name: p for p in profiles}
+
+    @staticmethod
+    async def async_create(
+        connection: Connection,
+        profile_name: str,
+        *,
+        parent_profile_name: str | None = None,
+        parent_profile_guid: str | None = None,
+        properties: ProfileProperties | None = None,
+    ) -> Profile:
+        """Creates a new *dynamic* iTerm2 profile."""
+        if parent_profile_guid is not None:
+            dynamic_profile = DynamicProfile(
+                connection,
+                profile_name,
+                parent_profile_guid=parent_profile_guid,
+                properties=properties,
+            )
+        elif parent_profile_name is not None:
+            dynamic_profile = DynamicProfile(
+                connection,
+                profile_name,
+                parent_profile_name=parent_profile_name,
+                properties=properties,
+            )
+        else:
+            dynamic_profile = DynamicProfile(
+                connection,
+                profile_name,
+                properties=properties,
+            )
+
+        return await dynamic_profile.async_create()
 
     @staticmethod
     async def async_get(connection: Connection, guids: list[str] | None = None) -> list[Profile]:  # pyright: ignore[reportIncompatibleMethodOverride]
-        return cast(list[Profile], await profile.Profile.async_get(connection, guids))
+        """Fetches all profiles with the specified GUIDs.
+
+        :param guids: The profiles to get, or if `None` then all will be
+            returned.
+
+        :returns: A list of :class:`Profile` objects.
+        """
+        response: ServerOriginatedMessage = await rpc.async_list_profiles(connection, guids, None)
+        profiles: list[Profile] = [
+            Profile(None, connection, cast(list[ProfilePropertyLike], response_profile.properties))
+            for response_profile in response.list_profiles_response.profiles
+        ]
+        return profiles
 
     @staticmethod
     async def async_get_default(connection: Connection) -> Profile:
-        return cast(Profile, await profile.Profile.async_get_default(connection))
+        """Returns the default profile."""
+        capabilities.check_supports_get_default_profile(connection)
+        result: ServerOriginatedMessage = await rpc.async_get_default_profile(connection)
+        guid: str = result.preferences_response.results[0].get_default_profile_result.guid
+        profiles = await Profile.async_get(connection, [guid])
+        return profiles[0]
 
 
-class PartialProfile(profile.PartialProfile):
-    def __init__(self, session_id: str, connection: Connection, profile_property_list: list[ProfileProperty]):
-        super().__init__(session_id, connection, profile_property_list)
+class PartialProfile(Profile):
+    """
+    Represents a profile that has only a subset of fields available for
+    reading.
+    """
+
+    @staticmethod
+    async def async_query(
+        connection: Connection,
+        guids: list[str] | None = None,
+        properties: Sequence[str] | None = DEFAULT_PARTIAL_PROFILE_PROPERTIES,
+    ) -> list[PartialProfile]:
+        response: ServerOriginatedMessage = await rpc.async_list_profiles(connection, guids, properties)
+        return [
+            PartialProfile(None, connection, response_profile.properties)
+            for response_profile in response.list_profiles_response.profiles
+        ]
+
+    async def async_get_full_profile(self) -> Profile:
+        if not self.guid:
+            raise BadGUIDException()
+
+        response: ServerOriginatedMessage = await rpc.async_list_profiles(self.connection, [self.guid], None)
+
+        if len(response.list_profiles_response.profiles) != 1:
+            raise BadGUIDException()
+
+        return Profile(None, self.connection, response.list_profiles_response.profiles[0].properties)
+
+    @staticmethod
+    async def async_get_default(
+        connection: Connection, properties: Sequence[str] | None = DEFAULT_PARTIAL_PROFILE_PROPERTIES
+    ) -> PartialProfile:
+        capabilities.check_supports_get_default_profile(connection)
+        result: ServerOriginatedMessage = await rpc.async_get_default_profile(connection)
+        guid: str = result.preferences_response.results[0].get_default_profile_result.guid
+        profiles = await PartialProfile.async_query(connection, [guid], properties)
+        return profiles[0]
+
+    async def async_make_default(self) -> None:
+        await rpc.async_set_default_profile(self.connection, self.guid)
+
+
+class DynamicProfile:
+    """Creates an iTerm2 dynamic profile."""
+
+    UUID_NAME = "com.{USER}.{NAME}/profile"
+    ITERM2_DIRECTORY = Path.home() / "Library" / "Application Support" / "iTerm2"
+    DYNAMIC_PROFILES_DIRECTORY = ITERM2_DIRECTORY / "DynamicProfiles"
+    DYNAMIC_PROFILE_PATH = DYNAMIC_PROFILES_DIRECTORY / "iterm2-api-wrapper.json"
+    # Stage the completed JSON outside the watched DynamicProfiles directory,
+    # then atomically move it into place.
+    STAGING_PATH = ITERM2_DIRECTORY / ".iterm2-api-wrapper.json.tmp"
+
+    PROFILE_LOAD_TIMEOUT = 5.0
+    PROFILE_LOAD_INITIAL_DELAY = 0.05
+    PROFILE_LOAD_MAX_DELAY = 0.5
+
+    @overload
+    def __init__(
+        self,
+        connection: Connection,
+        profile_name: str,
+        *,
+        parent_profile_guid: str,
+        parent_profile_name: None = ...,
+        properties: ProfileProperties | None = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        connection: Connection,
+        profile_name: str,
+        *,
+        parent_profile_name: str,
+        parent_profile_guid: None = ...,
+        properties: ProfileProperties | None = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        connection: Connection,
+        profile_name: str,
+        *,
+        parent_profile_name: None = ...,
+        parent_profile_guid: None = ...,
+        properties: ProfileProperties | None = None,
+    ) -> None: ...
+    def __init__(
+        self,
+        connection: Connection,
+        profile_name: str,
+        *,
+        parent_profile_guid: str | None = None,
+        parent_profile_name: str | None = None,
+        properties: ProfileProperties | None = None,
+    ) -> None:
+        if parent_profile_guid is not None and parent_profile_name is not None:
+            raise ValueError("Specify either parent_profile_guid or parent_profile_name, not both.")
+
+        self.__connection = connection
+        self.__profile_name = profile_name
+        self.__parent_guid = parent_profile_guid
+        self.__parent_name = parent_profile_name or "Default"
+        self.__props = cast(DynamicProfileProperties, dict(properties or {}))
+
+        self.__props.update(
+            {
+                "Name": profile_name,
+                "Guid": self.guid,
+                "Rewritable": True,
+            }
+        )
+
+        if self.__parent_guid is not None:
+            self.__props["Dynamic Profile Parent GUID"] = self.__parent_guid
+        else:
+            self.__props["Dynamic Profile Parent Name"] = self.__parent_name
 
     @property
-    def all_properties(self) -> ProfileProperties:  # pyright: ignore[reportIncompatibleMethodOverride]
-        """Returns the internal property dictionary, typed by iTerm2 key name."""
-        return cast(ProfileProperties, super().all_properties)
+    def guid(self) -> str:
+        """Utilizes UUID5 to provide repeatable GUIDs."""
+        user = getpass.getuser()
+        name_link_fmt = self.__profile_name.replace(" ", "_").lower()
+        uuid_name = self.UUID_NAME.format(USER=user, NAME=name_link_fmt)
+        return str(uuid5(NAMESPACE_URL, uuid_name)).upper()
+
+    @property
+    def payload(self) -> DynamicProfilesPayload:
+        dynamic_profiles: list[DynamicProfileProperties] = [self.__props]
+
+        if self.DYNAMIC_PROFILE_PATH.exists():
+            previous_dynamic_profiles: DynamicProfilesPayload = json.loads(self.DYNAMIC_PROFILE_PATH.read_text())
+            dynamic_profiles.extend(
+                [
+                    dynamic_profile
+                    for dynamic_profile in previous_dynamic_profiles.get("Profiles", [])
+                    if dynamic_profile.get("Guid") != self.guid
+                ]
+            )
+
+        return {"Profiles": dynamic_profiles}
+
+    async def parent(self) -> Profile:
+        """Return the profile that this dynamic profile inherits from."""
+        err_msg = (
+            f"The specified parent of '{self.__profile_name}' ({self.guid}), '{{target_profile_name}}', "
+            "was not found... Known profiles:\n{{profile_data}}"
+        )
+        profiles = await Profile.async_get(
+            self.__connection, [self.__parent_guid] if self.__parent_guid is not None else None
+        )
+
+        if self.__parent_guid is not None:
+            if profiles:
+                return profiles[0]
+
+            raise ProfileNotFoundError(
+                msg=err_msg,
+                target_profile_name=self.__parent_guid,
+                profile_data=(await Profile.to_dict(self.__connection)),
+            )
+
+        profile_data = {profile.name: profile for profile in profiles}
+        parent_profile = profile_data.get(self.__parent_name)
+
+        if parent_profile is None:
+            raise ProfileNotFoundError(
+                msg=err_msg,
+                target_profile_name=self.__parent_name,
+                profile_data=profile_data,
+            )
+
+        return parent_profile
+
+    async def async_create(self) -> Profile:
+        """Create an iTerm2 profile."""
+        current_guid = self.guid
+        profiles = await Profile.async_get(self.__connection, [current_guid])
+        if profiles:
+            return profiles[0]
+
+        payload = self.payload
+        self.DYNAMIC_PROFILES_DIRECTORY.mkdir(parents=True, exist_ok=True)
+        self.STAGING_PATH.write_text(
+            json.dumps(payload, indent=4) + "\n",
+            encoding="utf-8",
+        )
+        self.STAGING_PATH.replace(self.DYNAMIC_PROFILE_PATH)
+
+        return await self._wait_for_profile(self.__connection, current_guid, self.__profile_name)
 
     @staticmethod
-    async def async_get(connection: Connection, guids: list[str] | None = None) -> list[PartialProfile]:  # pyright: ignore[reportIncompatibleMethodOverride]
-        return cast(list[PartialProfile], await profile.PartialProfile.async_get(connection, guids))
+    async def _wait_for_profile(connection: Connection, guid: str, profile_name: str) -> Profile:
+        """Wait until iTerm2 registers a newly written dynamic profile."""
+        cls = DynamicProfile
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + cls.PROFILE_LOAD_TIMEOUT
+        delay = cls.PROFILE_LOAD_INITIAL_DELAY
 
-    @staticmethod
-    async def async_get_default(connection: Connection, properties: list[str] | None = None) -> PartialProfile:
-        properties = properties or ["Guid", "Name"]
-        return cast(PartialProfile, await profile.PartialProfile.async_get_default(connection, properties))
+        while True:
+            profiles = await Profile.async_get(connection, [guid])
+            if profiles:
+                return profiles[0]
 
-    @staticmethod
-    async def async_query(  # pyright: ignore[reportIncompatibleMethodOverride]
-        connection: Connection, guids: list[str] | None = None, properties: list[str] | None = None
-    ) -> list[PartialProfile]:
-        properties = properties or ["Guid", "Name"]
-        return cast(list[PartialProfile], await profile.PartialProfile.async_query(connection, guids, properties))
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"iTerm2 did not register dynamic profile "
+                    f"'{profile_name}' (GUID {guid}) within "
+                    f"{cls.PROFILE_LOAD_TIMEOUT:.1f} seconds."
+                )
+
+            await asyncio.sleep(min(delay, remaining))
+            delay = min(delay * 2, cls.PROFILE_LOAD_MAX_DELAY)

@@ -126,6 +126,7 @@ class iTermAPI:
         new_tab: bool = False,
         debug: bool | None = None,
         activate: bool = True,
+        profile_properties: ProfileProperties | None = None,
     ) -> iTermAPI:
         api = cls(
             profile_name=profile_name,
@@ -136,6 +137,7 @@ class iTermAPI:
             new_tab=new_tab,
             debug=debug,
             activate=activate,
+            profile_properties=profile_properties,
         )
         api.loop = asyncio.get_running_loop()
         await api._initialize()
@@ -512,13 +514,14 @@ class iTermAPI:
             await session.async_set_buried(False)
             await session.async_activate(select_tab=False, order_window_front=False)
 
-        async def _configure_profile() -> None:
+        async def _configure_profile(session: Session) -> None:
             if self.profile_properties is not None:
+                log.debug("Configuring custom profile properties:", self.profile_properties)
                 self.profile = await self.configure_profile(session, self.profile_properties)
                 self.profile_name = self.profile.name
                 self._profile_cache[self.profile_name] = self.profile
 
-        await _configure_profile()
+        await _configure_profile(session)
         return session
 
     async def create_window(self, *, profile_name: str | None = None, command: str | None = None) -> Window | None:
@@ -936,6 +939,7 @@ async def create_iterm_state(
         new_tab=kwargs.get("new_tab", False),
         debug=kwargs.get("debug"),
         activate=kwargs.get("activate", False),
+        profile_properties=kwargs.get("profile_properties"),
     )
 
     from iterm2_api_wrapper.state import iTermState
