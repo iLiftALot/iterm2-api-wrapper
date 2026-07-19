@@ -536,7 +536,7 @@ class iTermAPI:
         profile: Profile | PartialProfile | None = None,
         *,
         with_session: Literal[True],
-        timeout: float = 30.0,
+        timeout: float = 10.0,
     ) -> tuple[Tab, Session]: ...
     @overload
     async def create_tab(
@@ -545,7 +545,7 @@ class iTermAPI:
         profile: Profile | PartialProfile | None = None,
         *,
         with_session: Literal[False],
-        timeout: float = 30.0,
+        timeout: float = 10.0,
     ) -> Tab: ...
     @overload
     async def create_tab(
@@ -554,7 +554,7 @@ class iTermAPI:
         profile: Profile | PartialProfile | None = None,
         *,
         with_session: bool = False,
-        timeout: float = 30.0,
+        timeout: float = 10.0,
     ) -> Tab: ...
     async def create_tab(
         self,
@@ -562,7 +562,7 @@ class iTermAPI:
         profile: Profile | PartialProfile | None = None,
         *,
         with_session: bool = False,
-        timeout: float = 30.0,
+        timeout: float = 10.0,
     ) -> tuple[Tab, Session] | Tab:
         tab, session = await self._create_tab_get_with_session(window, profile, timeout=timeout)
         if with_session is True:
@@ -570,7 +570,7 @@ class iTermAPI:
         return tab
 
     async def _create_tab_get_with_session(
-        self, window: Window | None = None, profile: Profile | PartialProfile | None = None, *, timeout: float = 30.0
+        self, window: Window | None = None, profile: Profile | PartialProfile | None = None, *, timeout: float = 10.0
     ) -> tuple[Tab, Session]:
         connection = await self.get_connection()
         window = window or await self.get_window()
@@ -932,10 +932,10 @@ async def create_iterm_state(
     class owns all setup logic; this helper only unwraps the populated state.
     """
     api = await iTermAPI.async_create(
-        connection_instance=connection_instance,
         profile_name=kwargs.get("dedicated_profile_name"),
         service_name=kwargs.get("service_name"),
         extra_id=kwargs.get("extra_id"),
+        connection_instance=connection_instance,
         new_tab=kwargs.get("new_tab", False),
         debug=kwargs.get("debug"),
         activate=kwargs.get("activate", False),

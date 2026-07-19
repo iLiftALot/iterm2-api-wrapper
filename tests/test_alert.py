@@ -130,8 +130,8 @@ def test_poly_modal_alert_handler_wires_all_optional_controls(monkeypatch: pytes
             window_id="window-1",
             button_names=["OK"],
             checkboxes=[("Remember", 1)],
-            comboboxes=(["One", "Two"], "Two"),
-            text_fields=(["First", "Last"], ["Ada", "Lovelace"]),
+            combobox=(["One", "Two"], "Two"),
+            text_field=("First Name", "Ada"),
         )
     )
 
@@ -150,7 +150,7 @@ def test_poly_modal_alert_handler_combobox_without_default(monkeypatch: pytest.M
 
     result = asyncio.run(
         alert_module.poly_modal_alert_handler(
-            title="Title", subtitle="Subtitle", connection=as_connection("connection"), comboboxes=(["A", "B"], None)
+            title="Title", subtitle="Subtitle", connection=as_connection("connection"), combobox=(["A", "B"], None)
         )
     )
 
@@ -190,6 +190,6 @@ def test_poly_modal_alert_handler_rejects_mismatched_text_fields(monkeypatch: py
                 title="Title",
                 subtitle="Subtitle",
                 connection=as_connection("connection"),
-                text_fields=(["Only one"], ["one", "two"]),
+                text_field=("Only one", "one"),
             )
         )

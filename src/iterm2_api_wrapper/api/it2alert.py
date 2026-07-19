@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from iterm2 import alert
-from iterm2.connection import Connection
 
 
 if TYPE_CHECKING:
@@ -13,15 +12,15 @@ if TYPE_CHECKING:
 
 
 class Alert(alert.Alert):
-    async def async_run(self, connection: Connection) -> int:  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def async_run(self, connection: Connection | IT2Connection) -> int:
         return await super().async_run(cast("IT2Connection", connection))
 
 
 class TextInputAlert(alert.TextInputAlert):
-    async def async_run(self, connection: Connection) -> str | None:
+    async def async_run(self, connection: Connection | IT2Connection) -> str | None:
         return await super().async_run(cast("IT2Connection", connection))
 
 
 class PolyModalAlert(alert.PolyModalAlert):
-    async def async_run(self, connection: Connection) -> alert.PolyModalResult:
+    async def async_run(self, connection: Connection | IT2Connection) -> alert.PolyModalResult:
         return await super().async_run(cast("IT2Connection", connection))
