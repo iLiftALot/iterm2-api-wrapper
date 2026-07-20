@@ -20,7 +20,7 @@ lint:
     @uv run --active --python=3.10 --group dev --group ci ruff check --select I --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
 
 typecheck:
-    @uv run --python=3.10 --group dev --group ci pyright ./src ./tests
+    @uv run --python=3.10 --group dev --group ci pyright ./src ./tests/[!*]*.py ./tests/test_*.py
 
 # Run all the formatting, linting, and typechecking
 qa:

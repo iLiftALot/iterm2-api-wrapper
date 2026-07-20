@@ -19,9 +19,12 @@ else:
     App = Connection = PartialProfile = Profile = Session = Tab = Window = object
 
 
-class FakeResponse:
+class FakeNotificationResponse:
     class notification_response:
+        import iterm2.api_pb2
+
         status = 0  # == iterm2.api_pb2.NotificationResponse.Status.Value("OK")
+        _s = iterm2.api_pb2.NotificationResponse.Status.Value("OK")
 
     def HasField(self, field: str) -> bool:
         return False if field == "error" else True
@@ -35,8 +38,8 @@ class FakeConnection:
     async def async_send_message(self, *_) -> None:
         return
 
-    async def async_dispatch_until_id(self, *_) -> FakeResponse:
-        return FakeResponse()
+    async def async_dispatch_until_id(self, *_) -> FakeNotificationResponse:
+        return FakeNotificationResponse()
 
 
 class FakeWebsocket:

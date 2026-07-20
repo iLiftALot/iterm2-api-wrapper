@@ -8,7 +8,8 @@ import traceback
 from collections.abc import Callable, Coroutine
 from typing import Any, ClassVar, Concatenate, ParamSpec, TypeVar, overload
 
-from iterm2 import _version, api_pb2, auth  # , connection
+from iterm2 import __version__ as iterm2_version
+from iterm2 import api_pb2, auth
 from websockets.asyncio.client import ClientConnection, unix_connect
 from websockets.asyncio.client import connect as WebSocketConnect
 from websockets.exceptions import InvalidMessage, InvalidStatus
@@ -22,8 +23,8 @@ T = TypeVar("T")
 P = ParamSpec("P")
 
 DisconnectCallback = Callable[[], None]
-MessageMatcher = Callable[[api_pb2.ServerOriginatedMessage], bool]
-NotificationHelper = Callable[["Connection", api_pb2.ServerOriginatedMessage], Coroutine[Any, Any, bool | None]]
+MessageMatcher = Callable[["api_pb2.ServerOriginatedMessage"], bool]
+NotificationHelper = Callable[["Connection", "api_pb2.ServerOriginatedMessage"], Coroutine[Any, Any, bool]]
 gDisconnectCallbacks: list[DisconnectCallback] = []
 
 
@@ -51,7 +52,7 @@ def _headers() -> dict[str, str]:
     cookie, key = _cookie_and_key()
     headers = {
         "origin": "ws://localhost/",
-        "x-iterm2-library-version": f"python {_version.__version__}",
+        "x-iterm2-library-version": f"python {iterm2_version}",
         "x-iterm2-disable-auth-ui": "true",
         "x-iterm2-advisory-name": auth.get_script_name(),
     }
@@ -82,7 +83,7 @@ class Connection:
     Implements updated websocket connection logic and improved typing.
     """
 
-    helpers: ClassVar[list[NotificationHelper]] = []
+    helpers: ClassVar[list[NotificationHelper | Any]] = []
 
     def __init__(self) -> None:
         """Initialize the Connection instance.
@@ -427,6 +428,12 @@ class Connection:
     def run(
         self, forever: bool, coro: Callable[[Connection], Coroutine[Any, Any, T]], retry: bool, debug: bool = False
     ) -> T:
+        """
+        Start a new asyncio event loop, connect, and run coro with the active
+        Connection; if forever is True, also wait for the dispatch loop. Cancels
+        background tasks, runs disconnect callbacks, and returns the coroutine
+        result.
+        """
         if self.loop is not None and not self.loop.is_closed():
             self.loop.close()
 

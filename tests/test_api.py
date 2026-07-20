@@ -246,6 +246,14 @@ def test_async_create_initializes_on_running_event_loop(monkeypatch: pytest.Monk
     asyncio.run(scenario())
 
 
+def test_explicit_debug_false_overrides_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IT2_DEBUG", "true")
+
+    api = iTermAPI(auto_initialize=False, debug=False)
+
+    assert api.debug is False
+
+
 def test_constructor_reads_current_it2_environment_names(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IT2_DEFAULT_PROFILE", "Environment Profile")
     monkeypatch.setenv("IT2_DEBUG", "true")

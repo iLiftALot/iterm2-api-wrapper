@@ -14,6 +14,7 @@ from async_timeout import timeout as _timeout
 
 from .._logging import PrettyLog
 from ..errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
+from ..utils.runtime_setup import validate_iterm2_runtime
 from .it2app import App, async_get_app
 from .it2connection import Connection
 from .it2lifecycle import NewSessionMonitor
@@ -69,7 +70,7 @@ class iTermAPI:
         self.service_name = service_name or "iterm-api"
         self.extra_id = extra_id
         self.new_tab = new_tab
-        self.debug = debug or os.getenv("IT2_DEBUG", "false").strip().lower() in {"1", "true"}
+        self.debug = debug if debug is not None else os.getenv("IT2_DEBUG", "false").strip().lower() in {"1", "true"}
         self.activate = activate
         self.profile_properties = profile_properties
 
@@ -145,7 +146,6 @@ class iTermAPI:
     async def _initialize(self) -> None:
         self._configure_logging()
 
-        from .. import validate_iterm2_runtime
         from ..pyobjc_adapter import async_ensure_iterm_app_running
 
         await async_ensure_iterm_app_running(activate=self.activate)

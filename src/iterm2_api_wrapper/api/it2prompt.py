@@ -157,12 +157,15 @@ async def async_get_prompt(
 
     if prompt_id:
         capabilities.check_supports_prompt_id(connection)
+
     response: api_pb2.ServerOriginatedMessage = await rpc.async_get_prompt(connection, session_id, prompt_id)
     status: api_pb2.GetPromptResponse._Status.ValueType = response.get_prompt_response.status
     if status == api_pb2.GetPromptResponse.Status.Value("OK"):  # 0
         return Prompt(response.get_prompt_response)
+
     if status == api_pb2.GetPromptResponse.Status.Value("PROMPT_UNAVAILABLE"):  # 3
         return None
+
     raise rpc.RPCException(api_pb2.GetPromptResponse.Status.Name(status))
 
 

@@ -100,8 +100,15 @@ def test_iterm2_protocol_version_returns_zero_without_response() -> None:
     assert conn.iterm2_protocol_version == (0, 0)
 
 
+# def test_notification_helper_registry_is_shared_with_upstream() -> None:
+#     import iterm2.connection as upstream_connection
+
+#     assert Connection.helpers is upstream_connection.Connection.helpers
+
+
 def test_register_helper_appends_and_rejects_none() -> None:
     original = list(Connection.helpers)
+
     try:
 
         async def helper(connection: Connection, message: Any) -> bool:
