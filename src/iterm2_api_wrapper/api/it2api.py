@@ -145,6 +145,7 @@ class iTermAPI:
     async def _initialize(self) -> None:
         self._configure_logging()
 
+        from .. import validate_iterm2_runtime
         from ..pyobjc_adapter import async_ensure_iterm_app_running
 
         await async_ensure_iterm_app_running(activate=self.activate)
@@ -153,6 +154,8 @@ class iTermAPI:
             raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
 
         self._connection = await self.get_connection()
+        validate_iterm2_runtime(self._connection)
+
         self._app = await self.get_app()
         self.profile = await self.get_profile()
 

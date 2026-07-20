@@ -166,6 +166,7 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
             await _ensure_iterm_app_ready(activate=activate)
 
             connect_timeout_s = _get_connect_timeout_s()
+
             try:
                 conn = await _async_create_connection_with_retry(Connection, timeout_s=connect_timeout_s)
             except TimeoutError as exc:

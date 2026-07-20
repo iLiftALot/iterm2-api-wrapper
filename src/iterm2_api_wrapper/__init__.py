@@ -31,10 +31,11 @@ if TYPE_CHECKING:
 
 
 _BOOTSTRAPPED: bool = False
+_BRIDGED: bool = False
 
 
-def validate_iterm2_runtime(connection: _Connection) -> None:
-    global _BOOTSTRAPPED
+def validate_iterm2_runtime(connection: _Connection | None = None) -> None:
+    global _BOOTSTRAPPED, _BRIDGED
 
     if _BOOTSTRAPPED is True:
         return
@@ -94,11 +95,17 @@ def validate_iterm2_runtime(connection: _Connection) -> None:
         major_version, minor_version = connection.iterm2_protocol_version
         logger.debug(f":check: iTerm protocol version {major_version}.{minor_version} >= {1.6}", emoji=True)
 
-    enhance_it2_imports()
-    install_it2_connection_bridge()
-    check_it2_versioning(connection)
+    if _BRIDGED is False:
+        enhance_it2_imports()
+        install_it2_connection_bridge()
+        _BRIDGED = True
 
-    _BOOTSTRAPPED = True
+    if connection is not None:
+        check_it2_versioning(connection)
+        _BOOTSTRAPPED = True
+
+
+validate_iterm2_runtime()
 
 
 __all__ = [
