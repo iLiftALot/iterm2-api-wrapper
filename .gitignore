@@ -245,3 +245,5 @@ assets/*
 .agent*/
 trace
 *.swp
+tests/_dev.py
+src/iterm2_api_wrapper/triggers.py

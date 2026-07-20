@@ -32,8 +32,8 @@ class Point(util.Point):
         return Point(proto.x, proto.y)
 
 
-def _point_from(point: PointLike) -> util.Point:
-    if isinstance(point, util.Point):
+def _point_from(point: PointLike) -> Point:
+    if isinstance(point, Point):
         return point
 
     return Point(point.x, point.y)
@@ -68,6 +68,16 @@ class CoordRange(util.CoordRange):
             end_point = _point_from(end)
 
         super().__init__(start_point, end_point)
+        self.__start = start_point
+        self.__end = end_point
+
+    @property
+    def start(self) -> Point:
+        return self.__start
+
+    @property
+    def end(self) -> Point:
+        return self.__end
 
     @staticmethod
     def from_proto(proto: Global___CoordRange) -> CoordRange:

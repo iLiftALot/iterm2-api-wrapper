@@ -153,6 +153,7 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
     """
 
     async def create_state(self, **kwargs: Any) -> iTermState:
+        from . import validate_iterm2_runtime
         from .api.it2api import create_iterm_state
         from .api.it2connection import Connection
 
@@ -176,6 +177,10 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
                     f"(waited {connect_timeout_s:.1f}s; set {_ENV_CONNECT_TIMEOUT} to increase)"
                 ) from exc
 
+            # Install the upstream-to-wrapper Connection bridge before any App
+            # or monitor subscription is registered on this connection.
+            validate_iterm2_runtime(conn)
+
             return await create_iterm_state(conn, activate=False, **kwargs)
 
 
@@ -191,6 +196,7 @@ class SetupCoroGateway(ITermGateway[StateTRefreshable]):
         self._setup_coro: Callable[..., Awaitable[StateTRefreshable]] = setup_coro
 
     async def create_state(self, **kwargs: Any) -> StateTRefreshable:
+        from . import validate_iterm2_runtime
         from .api.it2connection import Connection
 
         it2_suite = kwargs.pop("it2_suite", None)
@@ -203,6 +209,7 @@ class SetupCoroGateway(ITermGateway[StateTRefreshable]):
             await _ensure_iterm_app_ready(activate=activate)
 
             connect_timeout_s = _get_connect_timeout_s()
+
             try:
                 conn = await _async_create_connection_with_retry(Connection, timeout_s=connect_timeout_s)
             except TimeoutError as exc:
@@ -211,5 +218,10 @@ class SetupCoroGateway(ITermGateway[StateTRefreshable]):
                     "Ensure iTerm2 is running and its Python API is enabled. "
                     f"(waited {connect_timeout_s:.1f}s; set {_ENV_CONNECT_TIMEOUT} to increase)"
                 ) from exc
+
+            # Setup coroutines may construct App objects or subscribe to iTerm2
+            # notifications directly, so bridge the connection before invoking
+            # the caller-owned setup function.
+            validate_iterm2_runtime(conn)
 
             return await self._setup_coro(conn, **kwargs)
