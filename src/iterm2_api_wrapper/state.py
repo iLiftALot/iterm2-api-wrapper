@@ -581,6 +581,14 @@ class iTermState:
                 return False
 
     @_validate_state
+    async def get_selection(self) -> str:
+        selection_factory = await self.session.async_get_selection()
+        selection_text = await selection_factory.async_get_string(
+            self.connection, self.session.session_id, self.session.grid_size.width
+        )
+        return selection_text
+
+    @_validate_state
     async def run_command(
         self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 10.0
     ) -> CommandExecutionResult:
