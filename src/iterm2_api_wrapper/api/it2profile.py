@@ -1105,27 +1105,81 @@ class PartialProfile(Profile):
         await rpc.async_set_default_profile(self.connection, self.guid)
 
 
-def _load_dynamic_profiles_payload(path: Path) -> DynamicProfilesPayload:
-    raw: object = json.loads(path.read_text(encoding="utf-8"))
+def process_dynamic_profiles_payload(
+    dynamic_profile_path: Path,
+    staging_path: Path,
+    *,
+    payload: DynamicProfilesPayload | None = None,
+) -> DynamicProfilesPayload:
+    """Read or atomically publish a wrapper-managed dynamic-profile payload.
 
-    if not isinstance(raw, dict):
-        raise ValueError(f"Dynamic profile document must be a JSON object: {path}")
+    When ``payload`` is omitted, read and validate the existing JSON document
+    without modifying either file.
 
-    profiles = raw.get("Profiles")
-    if not isinstance(profiles, list):
-        raise ValueError(f"Dynamic profile document must contain a Profiles list: {path}")
+    When ``payload`` is supplied, validate it, write the completed JSON to
+    ``staging_path``, and atomically replace ``dynamic_profile_path``.
 
-    for index, definition in enumerate(profiles):
-        if not isinstance(definition, dict):
-            raise ValueError(f"Dynamic profile entry {index} must be a JSON object: {path}")
+    The validator intentionally enforces the payload envelope and the
+    universally required dynamic-profile identity fields. The hundreds of
+    optional profile-property value shapes remain governed by the typed input
+    contracts.
+    """
+    path = dynamic_profile_path
 
-        if not isinstance(definition.get("Name"), str):
-            raise ValueError(f"Dynamic profile entry {index} must contain a string Name: {path}")
+    def _validate_dynamic_profiles_payload(
+        raw_payload: object,
+    ) -> DynamicProfilesPayload:
+        if not isinstance(raw_payload, dict):
+            raise ValueError(f"Cannot process dynamic profiles because '{path}' must contain a top-level JSON object.")
 
-        if not isinstance(definition.get("Guid"), str):
-            raise ValueError(f"Dynamic profile entry {index} must contain a string Guid: {path}")
+        raw_profiles = raw_payload.get("Profiles")
+        if not isinstance(raw_profiles, list):
+            raise ValueError(f"Cannot process dynamic profiles because '{path}' must contain a 'Profiles' array.")
 
-    return cast(DynamicProfilesPayload, raw)
+        for index, definition in enumerate(raw_profiles):
+            if not isinstance(definition, dict):
+                raise ValueError(f"Dynamic profile entry {index} in '{path}' must be a JSON object.")
+
+            if not isinstance(definition.get("Name"), str):
+                raise ValueError(f"Dynamic profile entry {index} in '{path}' must contain a string 'Name'.")
+
+            if not isinstance(definition.get("Guid"), str):
+                raise ValueError(f"Dynamic profile entry {index} in '{path}' must contain a string 'Guid'.")
+
+        return cast(DynamicProfilesPayload, raw_payload)
+
+    def _extract_dynamic_profiles_payload() -> DynamicProfilesPayload:
+        if not path.exists():
+            raise ValueError(f"Cannot read a wrapper-managed dynamic-profile payload because '{path}' does not exist.")
+
+        try:
+            raw_payload: object = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Cannot process dynamic profiles because '{path}' does not contain valid JSON: {exc}"
+            ) from exc
+
+        return _validate_dynamic_profiles_payload(raw_payload)
+
+    def _write_dynamic_profiles_payload(
+        validated_payload: DynamicProfilesPayload,
+    ) -> DynamicProfilesPayload:
+        """Atomically publish a complete wrapper-managed payload."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staging_path.parent.mkdir(parents=True, exist_ok=True)
+
+        staging_path.write_text(
+            json.dumps(validated_payload, indent=4) + "\n",
+            encoding="utf-8",
+        )
+        staging_path.replace(path)
+        return validated_payload
+
+    if payload is None:
+        return _extract_dynamic_profiles_payload()
+
+    validated_payload = _validate_dynamic_profiles_payload(payload)
+    return _write_dynamic_profiles_payload(validated_payload)
 
 
 class DynamicProfile:
@@ -1224,10 +1278,14 @@ class DynamicProfile:
 
     @property
     def payload(self) -> DynamicProfilesPayload:
+        """Manufactures the payload from the current class context."""
         dynamic_profiles: list[DynamicProfileDefinition] = [self.__props]
 
         if self.DYNAMIC_PROFILE_PATH.exists():
-            previous_dynamic_profiles = _load_dynamic_profiles_payload(self.DYNAMIC_PROFILE_PATH)
+            previous_dynamic_profiles = process_dynamic_profiles_payload(
+                self.DYNAMIC_PROFILE_PATH,
+                self.STAGING_PATH,
+            )
             dynamic_profiles.extend(
                 [
                     dynamic_profile
@@ -1270,6 +1328,54 @@ class DynamicProfile:
 
         return parent_profile
 
+    @staticmethod
+    async def _parent_for_definition(
+        connection: Connection,
+        definition: DynamicProfileDefinition,
+    ) -> Profile:
+        """Resolve the effective parent recorded in a persisted definition.
+
+        Parent resolution must use the definition currently stored on disk rather
+        than the constructor arguments on ``self``. ``Profile.async_update()``
+        reconstructs ``DynamicProfile`` from the deterministic profile name alone,
+        while the persisted definition may inherit from a non-default parent.
+
+        If neither parent selector is present, iTerm2 uses the default profile.
+        """
+        parent_guid = definition.get("Dynamic Profile Parent GUID")
+        parent_name = definition.get("Dynamic Profile Parent Name")
+
+        if parent_guid is not None and not isinstance(parent_guid, str):
+            raise ValueError(f"Dynamic profile parent GUID must be a string, not {type(parent_guid).__name__}.")
+
+        if parent_name is not None and not isinstance(parent_name, str):
+            raise ValueError(f"Dynamic profile parent name must be a string, not {type(parent_name).__name__}.")
+
+        # iTerm2 gives the GUID selector priority. If it does not resolve and a
+        # name selector is also present, it attempts the name selector next.
+        if parent_guid:
+            profiles = await Profile.async_get(
+                connection,
+                [parent_guid],
+            )
+            if profiles:
+                return profiles[0]
+
+        if parent_name:
+            profile_data = await Profile.to_dict(connection)
+            parent_profile = profile_data.get(parent_name)
+            if parent_profile is not None:
+                return parent_profile
+
+        if parent_guid is None and parent_name is None:
+            return await Profile.async_get_default(connection)
+
+        profile_data = await Profile.to_dict(connection)
+        raise ProfileNotFoundError(
+            target_profile_name=parent_guid or parent_name or "<default>",
+            profile_data=profile_data,
+        )
+
     async def async_update(
         self,
         *,
@@ -1279,46 +1385,194 @@ class DynamicProfile:
         """Patch an existing wrapper-managed dynamic profile.
 
         Properties not mentioned by either argument remain unchanged. Keys in
-        ``remove_properties`` are removed from the dynamic-profile definition and
-        therefore inherit their values from the profile's parent.
+        ``remove_properties`` are removed from the explicit dynamic-profile
+        definition and therefore inherit their values from the profile's parent.
 
-        The profile's Name, Guid, parent selection, and Rewritable setting are not
-        changed by this operation.
+        The profile's Name, Guid, parent selection, Rewritable setting, and
+        runtime-only dynamic-profile metadata cannot be changed by this operation.
 
-        Returns the freshly queried profile after iTerm2 has observed the requested
-        changes.
-
-        Raises:
-            ProfileNotFoundError:
-                The profile is not currently registered in iTerm2.
-            ValueError:
-                The profile is not owned by this wrapper's dynamic-profile file, a
-                protected property was requested, or the same property was both set
-                and removed.
-            TimeoutError:
-                iTerm2 did not expose the requested property state before the
-                profile-load timeout expired.
+        :param properties: Ordinary profile properties to add or replace. Dynamic
+            profile identity and metadata are intentionally excluded by the type.
+        :param remove_properties: Explicit ordinary profile properties to remove.
+        :returns: The freshly queried profile after iTerm2 observes the update.
+        :raises ProfileNotFoundError: If the deterministic profile GUID is not
+            currently registered in iTerm2.
+        :raises ValueError: If the profile is not a dynamic profile owned by this
+            wrapper, the wrapper JSON does not contain it, protected fields are
+            supplied, or a property is both set and removed.
+        :raises TimeoutError: If iTerm2 does not expose the requested state before
+            the profile-load timeout expires.
         """
-        raise NotImplementedError("Dynamic profile updating has not been implemented.")
+        expected_properties: ProfilePropertiesNoIdentifiers = {**(properties or {})}
+        expected_keys: set[str] = set(expected_properties)
+
+        removed_properties_set: set[ProfilePropertyKey] = set(remove_properties)
+        removed_keys: set[str] = set(removed_properties_set)
+
+        overlapping_keys = sorted(expected_keys & removed_keys)
+        if overlapping_keys:
+            raise ValueError(
+                "Properties cannot be both set and removed in the same update: " + ", ".join(overlapping_keys)
+            )
+
+        protected_keys = sorted(self._PROTECTED_UPDATE_PROPERTIES & (expected_keys | removed_keys))
+        if protected_keys:
+            raise ValueError(
+                "Dynamic-profile identity and metadata properties cannot be "
+                "updated or removed: " + ", ".join(protected_keys)
+            )
+
+        current_guid = self.guid
+        current_profiles = await Profile.async_get(
+            self.__connection,
+            [current_guid],
+        )
+        if not current_profiles:
+            raise ProfileNotFoundError(
+                target_profile_name=self.__profile_name,
+                profile_data=await Profile.to_dict(self.__connection),
+            )
+
+        current_profile = current_profiles[0]
+        runtime_properties = cast(
+            DynamicProfileRuntimeProperties,
+            current_profile.all_properties,
+        )
+        runtime_source = runtime_properties.get("Dynamic Profile Filename")
+
+        if not isinstance(runtime_source, str):
+            raise ValueError(
+                f"Profile '{self.__profile_name}' ({current_guid}) is registered in iTerm2 but is not a dynamic profile."
+            )
+
+        runtime_source_path = Path(runtime_source).expanduser().resolve()
+        managed_source_path = self.DYNAMIC_PROFILE_PATH.expanduser().resolve()
+        if runtime_source_path != managed_source_path:
+            raise ValueError(
+                f"Dynamic profile '{self.__profile_name}' ({current_guid}) is "
+                f"managed by '{runtime_source_path}', not by this wrapper's "
+                f"'{managed_source_path}'."
+            )
+
+        payload = process_dynamic_profiles_payload(
+            self.DYNAMIC_PROFILE_PATH,
+            self.STAGING_PATH,
+        )
+        dynamic_profiles = payload["Profiles"]
+
+        target_index = next(
+            (
+                index
+                for index, dynamic_profile in enumerate(dynamic_profiles)
+                if dynamic_profile["Guid"] == current_guid
+            ),
+            None,
+        )
+        if target_index is None:
+            raise ValueError(
+                f"Dynamic profile '{self.__profile_name}' ({current_guid}) is "
+                f"not present in this wrapper's "
+                f"'{self.DYNAMIC_PROFILE_PATH}'."
+            )
+
+        current_definition = dynamic_profiles[target_index]
+
+        # Removing a property from a dynamic-profile definition does not normally
+        # remove it from Profile.all_properties. iTerm2 merges the parent profile into
+        # the dynamic profile before exposing it through ListProfiles. Capture the
+        # parent's effective values so convergence polling can verify inheritance.
+        inherited_properties: ProfileProperties = {}
+        if removed_properties_set:
+            parent_profile = await self._parent_for_definition(
+                self.__connection,
+                current_definition,
+            )
+            inherited_properties = parent_profile.all_properties
+
+        updated_values: dict[str, Any] = dict(current_definition)
+
+        for key in removed_properties_set:
+            updated_values.pop(key, None)
+
+        updated_values.update(expected_properties)
+
+        # DynamicProfileDefinition requires these two keys. The source definition
+        # passed boundary validation, and the protected-field checks above prevent
+        # callers from removing or replacing them. Reassigning them here makes that
+        # invariant explicit at the cast boundary.
+        updated_values["Name"] = current_definition["Name"]
+        updated_values["Guid"] = current_definition["Guid"]
+
+        updated_definition = cast(
+            DynamicProfileDefinition,
+            updated_values,
+        )
+
+        if updated_definition != current_definition:
+            # Replace the entry in place. Order matters when one dynamic profile
+            # inherits from another profile in the same DynamicProfiles file.
+            dynamic_profiles[target_index] = updated_definition
+
+            process_dynamic_profiles_payload(
+                self.DYNAMIC_PROFILE_PATH,
+                self.STAGING_PATH,
+                payload=payload,
+            )
+
+        return await self._wait_for_profile_update(
+            self.__connection,
+            current_guid,
+            self.__profile_name,
+            expected_properties=expected_properties,
+            removed_properties=removed_properties_set,
+            inherited_properties=inherited_properties,
+        )
 
     async def async_create(self) -> Profile:
-        """Create an iTerm2 profile."""
+        """Create or update this wrapper-managed dynamic profile.
+
+        If iTerm2 already exposes the deterministic GUID as a dynamic profile,
+        delegate to ``async_update`` so wrapper ownership is validated before the
+        existing definition is changed.
+
+        A deterministic-GUID collision with a non-dynamic profile is rejected
+        instead of being incorrectly reported as successful.
+        """
         current_guid = self.guid
-        profiles = await Profile.async_get(self.__connection, [current_guid])
-        if profiles and bool(profiles[0].all_properties.get("Is Dynamic Profile", 0)) is True:
-            return await self.async_update(
-                properties=self.__requested_properties,
+        profiles = await Profile.async_get(
+            self.__connection,
+            [current_guid],
+        )
+
+        if profiles:
+            runtime_properties = cast(
+                DynamicProfileRuntimeProperties,
+                profiles[0].all_properties,
+            )
+
+            if bool(runtime_properties.get("Is Dynamic Profile", 0)):
+                return await self.async_update(
+                    properties=self.__requested_properties,
+                )
+
+            raise ValueError(
+                f"Cannot create dynamic profile '{self.__profile_name}' "
+                f"because its deterministic GUID ({current_guid}) is already "
+                "registered to a non-dynamic profile."
             )
 
         payload = self.payload
-        self.DYNAMIC_PROFILES_DIRECTORY.mkdir(parents=True, exist_ok=True)
-        self.STAGING_PATH.write_text(
-            json.dumps(payload, indent=4) + "\n",
-            encoding="utf-8",
+        process_dynamic_profiles_payload(
+            self.DYNAMIC_PROFILE_PATH,
+            self.STAGING_PATH,
+            payload=payload,
         )
-        self.STAGING_PATH.replace(self.DYNAMIC_PROFILE_PATH)
 
-        return await self._wait_for_profile(self.__connection, current_guid, self.__profile_name)
+        return await self._wait_for_profile(
+            self.__connection,
+            current_guid,
+            self.__profile_name,
+        )
 
     @staticmethod
     async def _wait_for_profile(connection: Connection, guid: str, profile_name: str) -> Profile:
@@ -1350,8 +1604,67 @@ class DynamicProfile:
         guid: str,
         profile_name: str,
         *,
-        expected_properties: ProfileProperties,
+        expected_properties: ProfilePropertiesNoIdentifiers,
         removed_properties: set[ProfilePropertyKey],
+        inherited_properties: ProfileProperties,
     ) -> Profile:
-        """Wait until iTerm2 exposes the requested dynamic-profile changes."""
-        raise NotImplementedError("Waiting for dynamic profile updates has not been implemented.")
+        """Wait until iTerm2 exposes the requested dynamic-profile changes.
+
+        Explicitly set properties must equal their requested values.
+
+        Properties removed from the persisted definition must equal their
+        effective parent values. If the parent does not expose a removed property,
+        the updated dynamic profile must also omit it.
+        """
+        cls = DynamicProfile
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + cls.PROFILE_LOAD_TIMEOUT
+        delay = cls.PROFILE_LOAD_INITIAL_DELAY
+
+        expected_values: dict[str, Any] = dict(expected_properties)
+        inherited_values: dict[str, Any] = dict(inherited_properties)
+        missing = object()
+
+        while True:
+            profiles = await Profile.async_get(
+                connection,
+                [guid],
+            )
+            if profiles:
+                current_profile = profiles[0]
+                current_values: dict[str, Any] = dict(current_profile.all_properties)
+
+                expected_values_match = all(
+                    current_values.get(key, missing) == value for key, value in expected_values.items()
+                )
+
+                removed_values_inherited = all(
+                    current_values.get(key, missing) == inherited_values.get(key, missing) for key in removed_properties
+                )
+
+                if expected_values_match and removed_values_inherited:
+                    return current_profile
+
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                expected_summary = (
+                    ", ".join(f"{key}={value!r}" for key, value in sorted(expected_values.items())) or "<none>"
+                )
+                inherited_summary = (
+                    ", ".join(
+                        (f"{key}={inherited_values[key]!r}" if key in inherited_values else f"{key}=<absent>")
+                        for key in sorted(removed_properties)
+                    )
+                    or "<none>"
+                )
+
+                raise TimeoutError(
+                    f"iTerm2 did not apply updates to dynamic profile "
+                    f"'{profile_name}' (GUID {guid}) within "
+                    f"{cls.PROFILE_LOAD_TIMEOUT:.1f} seconds. "
+                    f"Expected explicit properties: {expected_summary}. "
+                    f"Expected inherited properties: {inherited_summary}."
+                )
+
+            await asyncio.sleep(min(delay, remaining))
+            delay = min(delay * 2, cls.PROFILE_LOAD_MAX_DELAY)

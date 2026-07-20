@@ -14,11 +14,13 @@ from iterm2_api_wrapper.api.it2profile import (
     Profile,
     ProfileProperties,
     ProfilePropertyKey,
+    process_dynamic_profiles_payload,
 )
 
 
 if TYPE_CHECKING:
     from iterm2_api_wrapper.api.it2connection import Connection
+    from iterm2_api_wrapper.api.it2profile import DynamicProfilesPayload
 
 
 def _connection() -> Connection:
@@ -143,27 +145,275 @@ def test_dynamic_profile_async_create_polls_until_registered(monkeypatch: pytest
     asyncio.run(scenario())
 
 
-def test_dynamic_profile_async_create_returns_existing_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dynamic_profile_async_create_returns_existing_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     async def scenario() -> None:
-        dynamic_profile = DynamicProfile(_connection(), "iterm2-api-test")
+        dynamic_profile = DynamicProfile(
+            _connection(),
+            "iterm2-api-test",
+        )
         calls: list[tuple[list[str] | None, object]] = []
 
-        async def fake_list_profiles(connection: Connection, guids: list[str] | None, properties: object):
+        dynamic_profiles_directory = tmp_path / "DynamicProfiles"
+        dynamic_profile_path = dynamic_profiles_directory / "iterm2-api-wrapper.json"
+        staging_path = tmp_path / ".iterm2-api-wrapper.json.tmp"
+
+        dynamic_profiles_directory.mkdir(parents=True)
+        dynamic_profile_path.write_text(
+            json.dumps(
+                {
+                    "Profiles": [
+                        {
+                            "Name": "iterm2-api-test",
+                            "Guid": dynamic_profile.guid,
+                            "Rewritable": True,
+                            "Dynamic Profile Parent Name": "Default",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        async def fake_list_profiles(
+            connection: Connection,
+            guids: list[str] | None,
+            properties: object,
+        ):
             calls.append((guids, properties))
             return _profiles_response(
-                {"Guid": dynamic_profile.guid, "Name": "iterm2-api-test", "Is Dynamic Profile": 1}
+                {
+                    "Guid": dynamic_profile.guid,
+                    "Name": "iterm2-api-test",
+                    "Is Dynamic Profile": 1,
+                    "Dynamic Profile Filename": str(dynamic_profile_path),
+                }
             )
 
-        monkeypatch.setattr(rpc, "async_list_profiles", fake_list_profiles)
+        monkeypatch.setattr(
+            DynamicProfile,
+            "DYNAMIC_PROFILES_DIRECTORY",
+            dynamic_profiles_directory,
+        )
+        monkeypatch.setattr(
+            DynamicProfile,
+            "DYNAMIC_PROFILE_PATH",
+            dynamic_profile_path,
+        )
+        monkeypatch.setattr(
+            DynamicProfile,
+            "STAGING_PATH",
+            staging_path,
+        )
+        monkeypatch.setattr(
+            rpc,
+            "async_list_profiles",
+            fake_list_profiles,
+        )
 
-        # An already-registered dynamic profile delegates to async_update, which is
-        # intentionally unimplemented for now.
-        with pytest.raises(NotImplementedError, match="Dynamic profile updating"):
-            await dynamic_profile.async_create()
+        profile = await dynamic_profile.async_create()
 
-        assert calls == [([dynamic_profile.guid], None)]
+        assert isinstance(profile, Profile)
+        assert profile.guid == dynamic_profile.guid
+
+        # async_create existence query, async_update ownership query, and
+        # convergence query.
+        assert calls == [([dynamic_profile.guid], None)] * 3
 
     asyncio.run(scenario())
+
+
+def test_dynamic_profile_async_update_removal_converges_to_parent_value(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        connection = _connection()
+        dynamic_profile = DynamicProfile(
+            connection,
+            "iterm2-api-test",
+            parent_profile_guid="PARENT-GUID",
+        )
+
+        dynamic_profiles_directory = tmp_path / "DynamicProfiles"
+        dynamic_profile_path = dynamic_profiles_directory / "iterm2-api-wrapper.json"
+        staging_path = tmp_path / ".iterm2-api-wrapper.json.tmp"
+
+        dynamic_profiles_directory.mkdir(parents=True)
+        dynamic_profile_path.write_text(
+            json.dumps(
+                {
+                    "Profiles": [
+                        {
+                            "Name": "iterm2-api-test",
+                            "Guid": dynamic_profile.guid,
+                            "Rewritable": True,
+                            "Dynamic Profile Parent GUID": "PARENT-GUID",
+                            "Badge Text": "explicit-child-value",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        target_profile_queries = 0
+        calls: list[tuple[list[str] | None, object]] = []
+
+        async def fake_list_profiles(
+            rpc_connection: Connection,
+            guids: list[str] | None,
+            properties: object,
+        ):
+            nonlocal target_profile_queries
+
+            assert rpc_connection is connection
+            calls.append((guids, properties))
+
+            if guids == ["PARENT-GUID"]:
+                return _profiles_response(
+                    {
+                        "Guid": "PARENT-GUID",
+                        "Name": "Parent",
+                        "Badge Text": "inherited-parent-value",
+                    }
+                )
+
+            if guids == [dynamic_profile.guid]:
+                target_profile_queries += 1
+
+                if target_profile_queries == 1:
+                    # The dynamic profile before iTerm2 reloads the updated
+                    # definition.
+                    return _profiles_response(
+                        {
+                            "Guid": dynamic_profile.guid,
+                            "Name": "iterm2-api-test",
+                            "Badge Text": "explicit-child-value",
+                            "Is Dynamic Profile": 1,
+                            "Dynamic Profile Filename": str(dynamic_profile_path),
+                        }
+                    )
+
+                # After reload, the explicit key is absent from the JSON
+                # definition, but the effective profile inherits the parent's
+                # value.
+                return _profiles_response(
+                    {
+                        "Guid": dynamic_profile.guid,
+                        "Name": "iterm2-api-test",
+                        "Badge Text": "inherited-parent-value",
+                        "Is Dynamic Profile": 1,
+                        "Dynamic Profile Filename": str(dynamic_profile_path),
+                    }
+                )
+
+            raise AssertionError(f"Unexpected profile query: {guids!r}")
+
+        monkeypatch.setattr(
+            DynamicProfile,
+            "DYNAMIC_PROFILES_DIRECTORY",
+            dynamic_profiles_directory,
+        )
+        monkeypatch.setattr(
+            DynamicProfile,
+            "DYNAMIC_PROFILE_PATH",
+            dynamic_profile_path,
+        )
+        monkeypatch.setattr(
+            DynamicProfile,
+            "STAGING_PATH",
+            staging_path,
+        )
+        monkeypatch.setattr(
+            rpc,
+            "async_list_profiles",
+            fake_list_profiles,
+        )
+
+        profile = await dynamic_profile.async_update(
+            remove_properties=("Badge Text",),
+        )
+
+        assert profile.all_properties.get("Badge Text") == ("inherited-parent-value")
+
+        persisted_payload = json.loads(dynamic_profile_path.read_text(encoding="utf-8"))
+        persisted_definition = persisted_payload["Profiles"][0]
+
+        assert "Badge Text" not in persisted_definition
+        assert persisted_definition["Name"] == "iterm2-api-test"
+        assert persisted_definition["Guid"] == dynamic_profile.guid
+        assert persisted_definition["Rewritable"] is True
+        assert persisted_definition["Dynamic Profile Parent GUID"] == ("PARENT-GUID")
+
+        assert calls == [
+            ([dynamic_profile.guid], None),
+            (["PARENT-GUID"], None),
+            ([dynamic_profile.guid], None),
+        ]
+        assert not staging_path.exists()
+
+    asyncio.run(scenario())
+
+
+def test_process_dynamic_profiles_payload_read_mode_does_not_write(
+    tmp_path: Path,
+) -> None:
+    dynamic_profile_path = tmp_path / "DynamicProfiles" / "iterm2-api-wrapper.json"
+    staging_path = tmp_path / ".iterm2-api-wrapper.json.tmp"
+    dynamic_profile_path.parent.mkdir(parents=True)
+
+    expected_payload = {
+        "Profiles": [
+            {
+                "Name": "iterm2-api-test",
+                "Guid": "GUID-1",
+            }
+        ]
+    }
+    original_json = json.dumps(expected_payload, indent=4) + "\n"
+    dynamic_profile_path.write_text(
+        original_json,
+        encoding="utf-8",
+    )
+
+    payload = process_dynamic_profiles_payload(
+        dynamic_profile_path,
+        staging_path,
+    )
+
+    assert payload == expected_payload
+    assert dynamic_profile_path.read_text(encoding="utf-8") == original_json
+    assert not staging_path.exists()
+
+
+def test_process_dynamic_profiles_payload_atomically_publishes_payload(
+    tmp_path: Path,
+) -> None:
+    dynamic_profile_path = tmp_path / "DynamicProfiles" / "iterm2-api-wrapper.json"
+    staging_path = tmp_path / ".iterm2-api-wrapper.json.tmp"
+
+    payload: DynamicProfilesPayload = {
+        "Profiles": [
+            {
+                "Name": "iterm2-api-test",
+                "Guid": "GUID-1",
+                "Rewritable": True,
+            }
+        ]
+    }
+
+    result = process_dynamic_profiles_payload(
+        dynamic_profile_path,
+        staging_path,
+        payload=payload,
+    )
+
+    assert result == payload
+    assert json.loads(dynamic_profile_path.read_text(encoding="utf-8")) == payload
+    assert not staging_path.exists()
 
 
 def test_profile_property_key_covers_every_profile_property() -> None:
