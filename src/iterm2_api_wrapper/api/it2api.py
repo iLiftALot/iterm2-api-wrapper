@@ -146,7 +146,7 @@ class iTermAPI:
         self._configure_logging()
 
         from ..pyobjc_adapter import async_ensure_iterm_app_running
-        
+
         await async_ensure_iterm_app_running(activate=self.activate)
 
         if not self._check_api_enabled():

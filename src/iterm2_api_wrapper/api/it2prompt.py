@@ -11,6 +11,7 @@ from .it2measurement import CoordRange
 
 if TYPE_CHECKING:
     from iterm2 import Connection as IT2Connection
+
     from ..gateway import _Connection
 
 

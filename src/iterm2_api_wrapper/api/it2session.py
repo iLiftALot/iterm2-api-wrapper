@@ -8,8 +8,8 @@ from .it2profile import Profile
 
 
 if TYPE_CHECKING:
-    from .it2tab import Tab
     from .it2selection import Selection
+    from .it2tab import Tab
 
 
 class Session(session.Session):

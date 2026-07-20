@@ -1,10 +1,12 @@
-from iterm2 import selection
 from typing import TYPE_CHECKING, cast
+
+from iterm2 import selection
 
 
 if TYPE_CHECKING:
-    from .it2connection import Connection
     from iterm2 import Connection as IT2Connection
+
+    from .it2connection import Connection
 
 
 class Selection(selection.Selection):
