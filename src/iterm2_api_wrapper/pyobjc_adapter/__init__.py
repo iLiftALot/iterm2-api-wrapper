@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 log = PrettyLog.get_logger(__name__)
 
 IT2_BUNDLE_ID = os.getenv("IT2_BUNDLE_ID", "com.googlecode.iterm2")
-IT2_EXECTUABLE_PATH = os.getenv("IT2_APP_PATH", None) or os.getenv("IT2_EXECTUABLE_PATH", "/Applications/iTerm.app")
+IT2_APP_PATH = os.getenv("IT2_APP_PATH", "/Applications/iTerm.app")
 _DEFAULT_NEW_APP_TIMEOUT_S = 15.0
 _CONNECTION_READY_TIMEOUT_S = 10.0
 _POLL_INTERVAL_S = 0.5
@@ -144,7 +144,7 @@ class PyObjcContainer:
 
         if self.bundle_id is None and self.executable_path is None:
             self.bundle_id = IT2_BUNDLE_ID
-            self.executable_path = IT2_EXECTUABLE_PATH
+            self.executable_path = IT2_APP_PATH
 
         iterm_url = self._resolve_application_url()
 
