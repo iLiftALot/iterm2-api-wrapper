@@ -22,6 +22,7 @@ NOOPT = __
 
 class it2runtime:
     _BOOTSTRAPPED = False
+    _BRIDGED = False
 
     check_supports_prompt_monitor_modes = staticmethod(NOOPT)
     check_supports_get_default_profile = staticmethod(NOOPT)
@@ -50,6 +51,7 @@ class it2runtime:
 
 @pytest.fixture
 def reset_bootstrapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(iterm2_api_wrapper, "_BRIDGED", False)
     monkeypatch.setattr(iterm2_api_wrapper, "_BOOTSTRAPPED", False)
 
 
@@ -116,7 +118,7 @@ def test_bootstrap_runs_once_and_skips_enhance_by_default(monkeypatch: pytest.Mo
 
 
 def test_install_connection_bridge_points_upstream_at_wrapper(
-    monkeypatch: pytest.MonkeyPatch, reset_bootstrapped: None
+    monkeypatch: pytest.MonkeyPatch, reset_bootstrapped
 ) -> None:
     import iterm2
     import iterm2.connection as upstream_connection
@@ -176,7 +178,7 @@ def test_enhance_it2_imports_returns_early_when_all_present(monkeypatch: pytest.
 
 
 def test_enhance_iterm2_imports_writes_sorted_public_exports(
-    tmp_path, monkeypatch: pytest.MonkeyPatch, reset_bootstrapped: None
+    tmp_path, monkeypatch: pytest.MonkeyPatch, reset_bootstrapped
 ) -> None:
     import iterm2
 
@@ -201,7 +203,7 @@ def test_enhance_iterm2_imports_writes_sorted_public_exports(
     assert "__file__" not in exports
 
 
-def test_validate_app_version_logs_protocol_version(monkeypatch: pytest.MonkeyPatch, reset_bootstrapped: None) -> None:
+def test_validate_app_version_logs_protocol_version(monkeypatch: pytest.MonkeyPatch, reset_bootstrapped) -> None:
     import iterm2
 
     # Keep enhance_it2_imports from appending __all__ to the installed iterm2 package.
