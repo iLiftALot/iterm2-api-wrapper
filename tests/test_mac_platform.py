@@ -186,6 +186,7 @@ def test_wait_for_finished_application_times_out() -> None:
 
 class FakeConnection:
     loop: asyncio.AbstractEventLoop | None = None
+    iterm2_protocol_version: tuple[int, int] = (1, 14)
 
     async def async_create(self) -> Connection:
         return cast("Connection", object())

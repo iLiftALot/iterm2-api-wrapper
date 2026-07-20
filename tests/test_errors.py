@@ -49,8 +49,9 @@ def test_profile_not_found_error_lists_available_profiles() -> None:
 
     note = _note_text(exc_info.value)
     assert "Missing" in note
-    assert "- Default (GUID-1)" in note
-    assert "- Dev (GUID-2)" in note
+    # Names are padded so GUIDs align to the longest name + 1.
+    assert "- Default GUID-1" in note
+    assert "- Dev     GUID-2" in note
 
 
 def test_window_tab_session_errors_embed_profile_name() -> None:

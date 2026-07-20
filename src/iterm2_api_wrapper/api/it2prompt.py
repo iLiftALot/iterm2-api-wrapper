@@ -11,6 +11,7 @@ from .it2measurement import CoordRange
 
 if TYPE_CHECKING:
     from iterm2 import Connection as IT2Connection
+    from ..gateway import _Connection
 
 
 class Prompt(prompt.Prompt):
@@ -56,7 +57,7 @@ class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
     @overload
     def __init__(
         self: PromptMonitor[None],
-        connection: Connection,
+        connection: _Connection,
         session_id: str,
         modes: list[prompt.PromptMonitor.Mode] | None = None,
         *,
@@ -65,7 +66,7 @@ class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
     @overload
     def __init__(
         self: PromptMonitor[SnapshotT],  # pyright: ignore[reportInvalidTypeVarUse]
-        connection: Connection,
+        connection: _Connection,
         session_id: str,
         modes: list[prompt.PromptMonitor.Mode] | None = None,
         *,
@@ -74,7 +75,7 @@ class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
 
     def __init__(
         self,
-        connection: Connection,
+        connection: _Connection,
         session_id: str,
         modes: list[prompt.PromptMonitor.Mode] | None = None,
         *,
@@ -164,7 +165,7 @@ async def async_get_prompt(
     raise rpc.RPCException(api_pb2.GetPromptResponse.Status.Name(status))
 
 
-def check_supports_prompt_monitor_modes(connection: Connection) -> None:
+def check_supports_prompt_monitor_modes(connection: _Connection) -> None:
     """Die if you can't monitor multiple prompt monitor modes."""
     if not capabilities.supports_prompt_monitor_modes(connection):
         raise capabilities.AppVersionTooOld(

@@ -9,6 +9,7 @@ from .it2profile import Profile
 
 if TYPE_CHECKING:
     from .it2tab import Tab
+    from .it2selection import Selection
 
 
 class Session(session.Session):
@@ -23,6 +24,9 @@ class Session(session.Session):
                 self._Session__session_id, self.connection, response.get_profile_property_response.properties
             )
         raise rpc.RPCException(api_pb2.GetProfilePropertyResponse.Status.Name(status))
+
+    async def async_get_selection(self) -> Selection:
+        return cast("Selection", await super().async_get_selection())
 
     @property
     def tab(self) -> Tab | None:

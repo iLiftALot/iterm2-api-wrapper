@@ -78,6 +78,7 @@ def test_async_create_connection_with_retry_retries_reset_errors() -> None:
     class ResetThenSucceeds:
         attempts = 0
         loop: asyncio.AbstractEventLoop | None = None
+        iterm2_protocol_version: tuple[int, int] = (1, 14)
 
         @classmethod
         async def async_create(cls) -> Connection:

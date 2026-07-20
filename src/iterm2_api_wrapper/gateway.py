@@ -33,6 +33,8 @@ class _Connection(Protocol):
 
     @classmethod
     async def async_create(cls) -> Connection: ...
+    @property
+    def iterm2_protocol_version(self) -> tuple[int, int]: ...
 
 
 class RefreshableState(Protocol[StateTAny]):
@@ -153,7 +155,6 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
     async def create_state(self, **kwargs: Any) -> iTermState:
         from .api.it2api import create_iterm_state
         from .api.it2connection import Connection
-        from .api.it2runtime import bootstrap_iterm2_runtime
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
@@ -162,7 +163,6 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
         PrettyLog.get_logger("iterm2_api_wrapper").set_level("DEBUG" if debug else "INFO", propagate=True)
 
         with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
-            await bootstrap_iterm2_runtime()
             await _ensure_iterm_app_ready(activate=activate)
 
             connect_timeout_s = _get_connect_timeout_s()
@@ -191,7 +191,6 @@ class SetupCoroGateway(ITermGateway[StateTRefreshable]):
 
     async def create_state(self, **kwargs: Any) -> StateTRefreshable:
         from .api.it2connection import Connection
-        from .api.it2runtime import bootstrap_iterm2_runtime
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
@@ -200,7 +199,6 @@ class SetupCoroGateway(ITermGateway[StateTRefreshable]):
         PrettyLog.get_logger("iterm2_api_wrapper").set_level("DEBUG" if debug else "INFO", propagate=True)
 
         with _temporary_iterm_env(it2_suite=it2_suite, it2_app_path=it2_app_path):
-            await bootstrap_iterm2_runtime()
             await _ensure_iterm_app_ready(activate=activate)
 
             connect_timeout_s = _get_connect_timeout_s()

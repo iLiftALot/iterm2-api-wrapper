@@ -14,6 +14,7 @@ class FlakyConnection:
 
     attempts = 0
     loop: asyncio.AbstractEventLoop | None = None
+    iterm2_protocol_version: tuple[int, int] = (1, 14)
 
     @classmethod
     async def async_create(cls) -> Any:
@@ -26,6 +27,7 @@ class FlakyConnection:
 class AlwaysRefusesConnection:
     attempts = 0
     loop: asyncio.AbstractEventLoop | None = None
+    iterm2_protocol_version: tuple[int, int] = (1, 14)
 
     @classmethod
     async def async_create(cls) -> Any:
@@ -36,6 +38,7 @@ class AlwaysRefusesConnection:
 class FatalConnection:
     attempts = 0
     loop: asyncio.AbstractEventLoop | None = None
+    iterm2_protocol_version: tuple[int, int] = (1, 14)
 
     @classmethod
     async def async_create(cls) -> Any:

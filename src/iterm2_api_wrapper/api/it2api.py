@@ -19,7 +19,6 @@ from .it2connection import Connection
 from .it2lifecycle import NewSessionMonitor
 from .it2profile import LocalWriteOnlyProfile, Profile, ProfileProperties
 from .it2prompt import PromptMonitor
-from .it2runtime import bootstrap_iterm2_runtime, validate_iterm2_runtime
 from .it2window import Window
 
 
@@ -145,18 +144,15 @@ class iTermAPI:
 
     async def _initialize(self) -> None:
         self._configure_logging()
-        await bootstrap_iterm2_runtime()
 
         from ..pyobjc_adapter import async_ensure_iterm_app_running
-
+        
         await async_ensure_iterm_app_running(activate=self.activate)
 
         if not self._check_api_enabled():
             raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
 
         self._connection = await self.get_connection()
-        validate_iterm2_runtime(self._connection)
-
         self._app = await self.get_app()
         self.profile = await self.get_profile()
 

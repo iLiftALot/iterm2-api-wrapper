@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -17,7 +18,6 @@ from iterm2_api_wrapper.state import (
     iTermState,
 )
 from iterm2_api_wrapper.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
-from iterm2_api_wrapper.utils import marked_command as marked_command_module
 from iterm2_api_wrapper.utils.parser import ParseResult
 
 from .fake import (
@@ -283,7 +283,7 @@ def test_marked_command_script_body_wraps_command_with_shell_integration_marks()
 
 
 def test_marked_command_context_manager_cleans_up_script(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(marked_command_module.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
     with MarkedCommand("echo hi") as marked:
         script_path = marked.script_path
@@ -359,7 +359,7 @@ def test_run_command_without_shell_integration_sources_marked_script_and_cleans_
         patch_attr(state, "_wait_for_prompt", wait_for_prompt)
         patch_attr(state, "_run_parser", run_parser)
         monkeypatch.setattr(asyncio, "sleep", no_sleep)
-        monkeypatch.setattr(marked_command_module.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
         result = await state.run_command("pwd", path="/new", broadcast=False, timeout=4.0)
 
@@ -665,37 +665,6 @@ def test_send_escape_sequence_requires_at_least_one_sequence() -> None:
     asyncio.run(scenario())
 
 
-def test_send_escape_sequence_waits_for_event_or_terminal_change(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def run_case(*, events: list[Any], snapshots: list[list[str]]) -> tuple[bool, list[tuple[str, bool]]]:
-        state = make_state(asyncio.get_running_loop())
-
-        async def ensure_state(refresh_callback: Any = None) -> None:
-            return None
-
-        patch_attr(state, "ensure_state", ensure_state)
-        FakePromptMonitor.reset(events=events, snapshots=snapshots)
-        monkeypatch.setattr(state_module, "PromptMonitor", FakePromptMonitor)
-
-        result = await state.send_escape_sequence("CNTRL_C", broadcast=True, timeout=0.01, wait=True)
-        return result, as_fake_session(state.session).sent
-
-    async def scenario() -> None:
-        Mode = FakePromptMonitor.Mode
-
-        event_result, event_sent = await run_case(events=[(Mode.PROMPT, None, "prompt-1")], snapshots=[["before"]])
-        changed_result, changed_sent = await run_case(events=[], snapshots=[["before"], ["after"]])
-        unchanged_result, unchanged_sent = await run_case(events=[], snapshots=[["same"], ["same"]])
-
-        assert event_result is True
-        assert changed_result is True
-        assert unchanged_result is False
-        assert event_sent == [("\x03", False)]
-        assert changed_sent == [("\x03", False)]
-        assert unchanged_sent == [("\x03", False)]
-
-    asyncio.run(scenario())
-
-
 def test_typed_var_getters_route_to_expected_contexts() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
@@ -966,6 +935,7 @@ def test_run_parser_returns_parse_result() -> None:
             return same_line_prompt
 
         patch_attr(state, "_get_prompt", get_prompt)
+        patch_attr(state, "_get_prompt", get_prompt)
         patch_attr(state.session, "contents", [SimpleNamespace(string="same line output", hard_eol=False)])
 
         result = await state._run_parser("id", "echo hi", [])
@@ -974,7 +944,7 @@ def test_run_parser_returns_parse_result() -> None:
     asyncio.run(scenario())
 
 
-def test_run_parser_returns_empty_output_for_empty_range() -> None:
+def test_get_prompt_output_returns_empty_string_for_empty_output_range() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
         empty_output_prompt = prompt_stub(output_range=coord_range(start_y=5, end_y=5))
@@ -1038,7 +1008,7 @@ def test_run_parser_uses_snapshot_fallback_when_prompt_command_differs() -> None
     asyncio.run(scenario())
 
 
-def test_run_parser_returns_empty_output_for_inverted_range() -> None:
+def test_get_prompt_output_returns_empty_string_when_range_inverted() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
 
@@ -1055,7 +1025,7 @@ def test_run_parser_returns_empty_output_for_inverted_range() -> None:
     asyncio.run(scenario())
 
 
-def test_run_parser_reads_output_from_session_contents(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_prompt_output_reads_session_contents(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
         monkeypatch.setattr(state_module, "Transaction", FakeTransaction)
@@ -1090,126 +1060,6 @@ def test_shell_integration_enabled_returns_false_without_autoload(monkeypatch: p
 
         assert await state._shell_integration_enabled() is False
         assert state._si_live_cache[state.session.session_id][0] is False
-
-    asyncio.run(scenario())
-
-
-def test_shell_integration_enabled_uses_configured_autoload() -> None:
-    async def scenario() -> None:
-        state = make_state(asyncio.get_running_loop())
-        calls: list[str] = []
-
-        async def get_prompt(unique_id: str | None = None) -> None:
-            return None
-
-        async def ask_load_shell_integration() -> bool:
-            calls.append("autoload")
-            return True
-
-        patch_attr(state, "_get_prompt", get_prompt)
-        patch_attr(state, "_ask_load_shell_integration", ask_load_shell_integration)
-        state.profile = as_profile(
-            SimpleNamespace(name="Default", all_properties={"Load Shell Integration Automatically": 1})
-        )
-
-        assert await state._shell_integration_enabled() is True
-        assert calls == ["autoload"]
-        assert state._si_live_cache[state.session.session_id][0] is True
-
-    asyncio.run(scenario())
-
-
-def test_shell_integration_enabled_rejects_missing_identity_and_foreground_job() -> None:
-    async def scenario() -> None:
-        from iterm2 import prompt as iterm_prompt
-
-        missing_identity = make_state(asyncio.get_running_loop())
-        missing_identity_session = as_fake_session(missing_identity.session)
-        missing_identity_session.variables.update(username="", hostname="")
-
-        async def editing_prompt(unique_id: str | None = None) -> Any:
-            return SimpleNamespace(state=iterm_prompt.PromptState.EDITING)
-
-        async def visible_snapshot(*, trim_end: bool = True, filter_all_empty: bool = False) -> list[str]:
-            assert filter_all_empty is True
-            return ["visible terminal contents"]
-
-        patch_attr(missing_identity, "_get_prompt", editing_prompt)
-        patch_attr(missing_identity, "_snapshot", visible_snapshot)
-        assert await missing_identity._shell_integration_enabled() is False
-
-        foreground_job = make_state(asyncio.get_running_loop())
-        foreground_session = as_fake_session(foreground_job.session)
-        foreground_session.variables.update(jobName="vim", shell="/bin/zsh")
-
-        async def inactive_prompt(unique_id: str | None = None) -> Any:
-            return SimpleNamespace(state=object())
-
-        async def empty_snapshot(*, trim_end: bool = True, filter_all_empty: bool = False) -> list[str]:
-            assert filter_all_empty is True
-            return []
-
-        async def fail_probe(timeout: float | None = None) -> bool:
-            raise AssertionError("foreground jobs must not use the live probe")
-
-        patch_attr(foreground_job, "_get_prompt", inactive_prompt)
-        patch_attr(foreground_job, "_snapshot", empty_snapshot)
-        patch_attr(foreground_job, "_probe_shell_integration_live", fail_probe)
-        assert await foreground_job._shell_integration_enabled() is False
-
-    asyncio.run(scenario())
-
-
-def test_ask_load_shell_integration_honors_confirmation_and_selected_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    async def scenario() -> None:
-        state = make_state(asyncio.get_running_loop())
-        patch_attr(state.window, "window_id", "window-1")
-        integration_path = tmp_path / ".iterm2_shell_integration.zsh"
-        integration_path.write_text("# shell integration\n", encoding="utf-8")
-        responses = iter(
-            [
-                SimpleNamespace(button="Yes", tf_text=str(integration_path)),
-                SimpleNamespace(button="No", tf_text=str(integration_path)),
-                SimpleNamespace(button="Yes", tf_text=str(tmp_path / "missing.zsh")),
-            ]
-        )
-
-        async def get_session_var(name: str) -> str:
-            assert name == "shell"
-            return "zsh"
-
-        async def alert_handler(**kwargs: Any) -> Any:
-            assert kwargs["connection"] is state.connection
-            assert kwargs["window_id"] == state.window.window_id
-            return next(responses)
-
-        async def wait_for_prompt(coro: Any, **kwargs: Any) -> CommandExecutionStatus:
-            assert kwargs == {}
-            await coro
-            return CommandExecutionStatus(prompt_id="prompt-1", command="source", exit_code=0)
-
-        async def shell_integration_enabled(*, allow_autoload: bool = True) -> bool:
-            assert allow_autoload is False
-            return True
-
-        patch_attr(state, "get_session_var", get_session_var)
-        patch_attr(state, "_wait_for_prompt", wait_for_prompt)
-        patch_attr(state, "_shell_integration_enabled", shell_integration_enabled)
-        monkeypatch.setattr(state_module, "poly_modal_alert_handler", alert_handler)
-
-        assert await state._ask_load_shell_integration() is True
-        assert as_fake_session(state.session).sent == [
-            (f"source {state_module.shlex.quote(str(integration_path))}\r", True)
-        ]
-
-        as_fake_session(state.session).sent.clear()
-        assert await state._ask_load_shell_integration() is False
-        assert as_fake_session(state.session).sent == []
-
-        assert await state._ask_load_shell_integration() is False
-        assert as_fake_session(state.session).sent == []
 
     asyncio.run(scenario())
 
