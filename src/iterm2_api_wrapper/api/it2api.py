@@ -941,7 +941,7 @@ async def create_iterm_state(
         profile_properties=kwargs.get("profile_properties"),
     )
 
-    from iterm2_api_wrapper.state import iTermState
+    from ..state import iTermState
 
     state = iTermState(
         connection=await api.get_connection(),
