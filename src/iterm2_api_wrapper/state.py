@@ -582,10 +582,8 @@ class iTermState:
 
     @_validate_state
     async def get_selection(self) -> str:
-        selection_factory = await self.session.async_get_selection()
-        selection_text = await selection_factory.async_get_string(
-            self.connection, self.session.session_id, self.session.grid_size.width
-        )
+        selection_instance = await self.session.async_get_selection()
+        selection_text = await self.session.async_get_selection_text(selection_instance)
         return selection_text
 
     @_validate_state
