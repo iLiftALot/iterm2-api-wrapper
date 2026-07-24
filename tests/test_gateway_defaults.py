@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 
 from iterm2_api_wrapper import gateway as gateway_module
+from iterm2_api_wrapper import runtime_setup as runtime_setup_module
 from iterm2_api_wrapper.api.it2connection import Connection
 from iterm2_api_wrapper.gateway import (
     DefaultITermGateway,
@@ -110,6 +111,9 @@ def test_default_gateway_creates_state_with_lazy_runtime_dependencies(monkeypatc
     async def fake_setup(connection: str, *, activate: bool, **kwargs: Any) -> FakeState:
         return FakeState(connection=connection, kwargs={**kwargs, "activate": activate})
 
+    def fake_validate_runtime(connection: str) -> None:
+        calls.append(("validate", connection))
+
     import iterm2_api_wrapper.api.it2api as api_module
     import iterm2_api_wrapper.api.it2connection as connection_module
 
@@ -118,11 +122,12 @@ def test_default_gateway_creates_state_with_lazy_runtime_dependencies(monkeypatc
     monkeypatch.setattr(gateway_module, "_async_create_connection_with_retry", fake_create_connection)
     monkeypatch.setattr(connection_module, "Connection", object)
     monkeypatch.setattr(api_module, "create_iterm_state", fake_setup)
+    monkeypatch.setattr(runtime_setup_module, "validate_iterm2_runtime", fake_validate_runtime)
 
     result = asyncio.run(DefaultITermGateway().create_state(debug=True))
 
     assert result == FakeState(connection="connection", kwargs={"debug": True, "activate": False})
-    assert calls == [("ensure_app", True), ("connect", 0.25)]
+    assert calls == [("ensure_app", True), ("connect", 0.25), ("validate", "connection")]
 
 
 def test_default_gateway_translates_retry_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -153,14 +158,18 @@ def test_setup_coro_gateway_invokes_custom_setup(monkeypatch: pytest.MonkeyPatch
     async def setup(connection: str, **kwargs: Any) -> FakeState:
         return FakeState(connection=connection, kwargs=kwargs)
 
+    def fake_validate_runtime(connection: str) -> None:
+        calls.append(("validate", connection))
+
     monkeypatch.setattr(gateway_module, "_ensure_iterm_app_ready", fake_ensure_app_ready)
     monkeypatch.setattr(gateway_module, "_get_connect_timeout_s", lambda: 1.5)
     monkeypatch.setattr(gateway_module, "_async_create_connection_with_retry", fake_create_connection)
+    monkeypatch.setattr(runtime_setup_module, "validate_iterm2_runtime", fake_validate_runtime)
 
     result = asyncio.run(SetupCoroGateway[FakeState](setup).create_state(new_tab=True))
 
     assert result == FakeState(connection="connection", kwargs={"new_tab": True})
-    assert calls == [("ensure_app", True), ("connect", 1.5)]
+    assert calls == [("ensure_app", True), ("connect", 1.5), ("validate", "connection")]
 
 
 def test_setup_coro_gateway_translates_retry_timeout(monkeypatch: pytest.MonkeyPatch) -> None:

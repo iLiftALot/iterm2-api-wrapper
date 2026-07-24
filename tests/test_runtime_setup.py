@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from iterm2.capabilities import AppVersionTooOld
 
-from iterm2_api_wrapper.utils import runtime_setup as it2runtime
+from iterm2_api_wrapper import runtime_setup as it2runtime
 
 
 def connection(version: tuple[int, int] = (1, 14)) -> Any:

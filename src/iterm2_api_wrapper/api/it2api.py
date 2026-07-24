@@ -14,7 +14,7 @@ from async_timeout import timeout as _timeout
 
 from .._logging import PrettyLog
 from ..errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
-from ..utils.runtime_setup import validate_iterm2_runtime
+from ..runtime_setup import validate_iterm2_runtime
 from .it2app import App, async_get_app
 from .it2connection import Connection
 from .it2lifecycle import NewSessionMonitor
@@ -154,6 +154,11 @@ class iTermAPI:
             raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
 
         self._connection = await self.get_connection()
+
+        # This must run before get_app(). App construction subscribes to iTerm2
+        # layout/focus notifications. The bridge makes upstream iterm2.notifications
+        # register its dispatcher on this wrapper's custom Connection class rather
+        # than upstream Connection.
         validate_iterm2_runtime(self._connection)
 
         self._app = await self.get_app()

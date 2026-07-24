@@ -4,12 +4,12 @@ from typing import TYPE_CHECKING
 
 from iterm2.capabilities import check_supports_get_default_profile, check_supports_prompt_id
 
-from .._logging import PrettyLog
-from ..api.it2prompt import check_supports_prompt_monitor_modes
+from ._logging import PrettyLog
+from .api.it2prompt import check_supports_prompt_monitor_modes
 
 
 if TYPE_CHECKING:
-    from ..gateway import _Connection
+    from .gateway import _Connection
 
 
 log = PrettyLog.get_logger(__name__)
@@ -20,7 +20,7 @@ def _install_iterm2_connection_bridge() -> None:
     import iterm2
     import iterm2.connection as upstream_connection
 
-    from ..api import it2connection as wrapper_connection
+    from .api import it2connection as wrapper_connection
 
     previous_connection = upstream_connection.Connection
 

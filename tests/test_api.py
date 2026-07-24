@@ -13,6 +13,7 @@ import pytest
 from iterm2_api_wrapper.api import it2api as api_module
 from iterm2_api_wrapper.api.it2api import contains_matching_term, create_iterm_state, iTermAPI
 from iterm2_api_wrapper.errors import ProfileNotFoundError, TabNotFoundError
+from iterm2_api_wrapper import pyobjc_adapter
 
 
 if TYPE_CHECKING:
@@ -242,6 +243,92 @@ def test_async_create_initializes_on_running_event_loop(monkeypatch: pytest.Monk
         assert api.profile_name == "pyterm-mcp"
         assert api.loop is asyncio.get_running_loop()
         assert api.activate is True
+
+    asyncio.run(scenario())
+
+
+def test_initialize_validates_runtime_before_app_setup(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        profile = FakeProfile(name="pyterm-mcp", guid="PROFILE-GUID")
+        session = FakeSession(
+            name="iterm-api:pyterm-mcp",
+            session_id="session-1",
+            profile=profile,
+        )
+        tab = FakeTab(
+            tab_id="tab-1",
+            sessions=[session],
+            title="iterm-api:pyterm-mcp",
+        )
+        window = FakeWindow("window-1", [tab])
+        app = FakeApp([window])
+        connection = as_connection(SimpleNamespace(iterm2_protocol_version=(1, 14)))
+
+        api = iTermAPI(
+            profile_name="pyterm-mcp",
+            service_name="iterm-api",
+            auto_initialize=False,
+            activate=False,
+        )
+
+        calls: list[str] = []
+
+        async def ensure_iterm_app_running(*, activate: bool) -> None:
+            assert activate is False
+            calls.append("ensure-app")
+
+        async def get_connection() -> Connection:
+            calls.append("connection")
+            return connection
+
+        async def get_app() -> App:
+            calls.append("app")
+            return as_app(app)
+
+        async def get_profile(*, target_profile_name: str | None = None) -> Profile | PartialProfile:
+            assert target_profile_name is None
+            calls.append("profile")
+            return as_profile(profile)
+
+        async def find_tagged_context(
+            selected_profile: Profile | PartialProfile,
+            selected_window: Window | None = None,
+        ) -> tuple[Window, Tab, Session]:
+            assert selected_profile is profile
+            assert selected_window is None
+            calls.append("find-tagged-context")
+            return (
+                cast(Window, window),
+                cast(Tab, tab),
+                cast(Session, session),
+            )
+
+        def validate_runtime(received_connection: object) -> None:
+            assert received_connection is connection
+            calls.append("validate-runtime")
+
+        monkeypatch.setattr(api, "_configure_logging", lambda: None)
+        monkeypatch.setattr(api, "_check_api_enabled", lambda: True)
+        monkeypatch.setattr(api, "get_connection", get_connection)
+        monkeypatch.setattr(api, "get_app", get_app)
+        monkeypatch.setattr(api, "get_profile", get_profile)
+        monkeypatch.setattr(api, "_find_tagged_context", find_tagged_context)
+        monkeypatch.setattr(pyobjc_adapter, "async_ensure_iterm_app_running", ensure_iterm_app_running)
+        monkeypatch.setattr(api_module, "validate_iterm2_runtime", validate_runtime)
+
+        await api._initialize()
+
+        assert calls == [
+            "ensure-app",
+            "connection",
+            "validate-runtime",
+            "app",
+            "profile",
+            "find-tagged-context",
+        ]
+        assert api.window is window
+        assert api.tab is tab
+        assert api.session is session
 
     asyncio.run(scenario())
 
