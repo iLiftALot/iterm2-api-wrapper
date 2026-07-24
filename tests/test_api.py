@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast
 
 import pytest
 
+from iterm2_api_wrapper import pyobjc_adapter
 from iterm2_api_wrapper.api import it2api as api_module
 from iterm2_api_wrapper.api.it2api import contains_matching_term, create_iterm_state, iTermAPI
 from iterm2_api_wrapper.errors import ProfileNotFoundError, TabNotFoundError
-from iterm2_api_wrapper import pyobjc_adapter
 
 
 if TYPE_CHECKING:
