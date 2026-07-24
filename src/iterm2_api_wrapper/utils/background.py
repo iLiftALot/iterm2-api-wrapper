@@ -15,8 +15,7 @@ class Background(subprocess.Popen):
 
     async def cd(self, path: str) -> None:
         shell_pid = await self.fetch_zsh_pid()
-        signal_dir = Path.home() / ".iterm2/api-wrapper/signals"
-
+        signal_dir = Path.home() / ".iterm2"
         signal_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         signal_dir.chmod(0o700)
         (signal_dir / f".iterm2_cd_target.{shell_pid}").write_text(path)

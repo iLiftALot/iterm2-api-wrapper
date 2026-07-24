@@ -153,9 +153,9 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
     """
 
     async def create_state(self, **kwargs: Any) -> iTermState:
-        from .runtime_setup import validate_iterm2_runtime
         from .api.it2api import create_iterm_state
         from .api.it2connection import Connection
+        from .runtime_setup import validate_iterm2_runtime
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
@@ -196,8 +196,8 @@ class SetupCoroGateway(ITermGateway[StateTRefreshable]):
         self._setup_coro: Callable[..., Awaitable[StateTRefreshable]] = setup_coro
 
     async def create_state(self, **kwargs: Any) -> StateTRefreshable:
-        from .runtime_setup import validate_iterm2_runtime
         from .api.it2connection import Connection
+        from .runtime_setup import validate_iterm2_runtime
 
         it2_suite = kwargs.pop("it2_suite", None)
         it2_app_path = kwargs.pop("it2_app_path", None)
