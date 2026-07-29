@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, cast
 
 from iterm2_api_wrapper import state as state_module
 from iterm2_api_wrapper.state import iTermState
@@ -21,10 +21,7 @@ else:
 
 class FakeNotificationResponse:
     class notification_response:
-        import iterm2.api_pb2
-
         status = 0  # == iterm2.api_pb2.NotificationResponse.Status.Value("OK")
-        _s = iterm2.api_pb2.NotificationResponse.Status.Value("OK")
 
     def HasField(self, field: str) -> bool:
         return False if field == "error" else True
@@ -137,6 +134,66 @@ class FakePromptMonitor:
 
     async def refresh_snapshot(self) -> list[str]:
         return self._next_snapshot()
+
+
+class FakeSignal:
+    signal_calls: ClassVar[list[tuple[object, str, str]]]
+
+    def __init__(self, target_state: object, shell: str) -> None:
+        self.target_state = target_state
+        self.shell = shell
+
+        FakeSignal.signal_calls = []
+
+    async def cd(self, path: str) -> None:
+        self.signal_calls.append((self.target_state, self.shell, path))
+
+
+class FakeState:
+    def __init__(self) -> None:
+        self.session = SimpleNamespace(session_id="session-1")
+        self.sent: list[tuple[str, bool]] = []
+        self.on_send: (
+            Callable[
+                [str, bool],
+                Awaitable[None],
+            ]
+            | None
+        ) = None
+
+    async def _send_text(
+        self,
+        command: str,
+        suppress: bool,
+    ) -> None:
+        self.sent.append(
+            (
+                command,
+                suppress,
+            )
+        )
+
+        if self.on_send is not None:
+            await self.on_send(
+                command,
+                suppress,
+            )
+
+    async def get_session_var(
+        self,
+        name: str,
+    ) -> str:
+        assert name == "tty"
+        return "/dev/ttys123"
+
+
+def as_state(
+    state: FakeState,
+) -> iTermState:
+    return cast(
+        "iTermState",
+        state,
+    )
 
 
 def as_connection(connection: object) -> Connection:

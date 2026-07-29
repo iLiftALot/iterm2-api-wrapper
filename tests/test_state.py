@@ -24,6 +24,7 @@ from .fake import (
     FakeConnection,
     FakePromptMonitor,
     FakeSession,
+    FakeSignal,
     FakeTab,
     FakeTarget,
     FakeWebsocket,
@@ -310,8 +311,11 @@ def test_run_command_without_shell_integration_sources_marked_script_and_cleans_
             return None
 
         async def get_session_var(name: str) -> str:
-            assert name == "path"
-            return "/old"
+            if name == "path":
+                return "/old"
+            if name == "shell":
+                return "/bin/zsh"
+            raise AssertionError(f"Unexpected session variable: {name}")
 
         async def shell_integration_enabled() -> bool:
             return False
@@ -360,18 +364,18 @@ def test_run_command_without_shell_integration_sources_marked_script_and_cleans_
         patch_attr(state, "_run_parser", run_parser)
         monkeypatch.setattr(asyncio, "sleep", no_sleep)
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(state_module, "Signal", FakeSignal)
 
         result = await state.run_command("pwd", path="/new", broadcast=False, timeout=4.0)
 
         assert result == CommandExecutionResult(output="script-output", status=status)
         assert list(tmp_path.iterdir()) == []
+
+        assert FakeSignal.signal_calls == [(state, "/bin/zsh", "/new")]
         sent = as_fake_session(state.session).sent
-        assert sent[:3] == [
-            ("\x15", True),
-            ("cd -- /new\r", True),
-            ("\x15", True),
-        ]
-        source_command, suppress = sent[3]
+        assert sent[0] == ("\x15", True)
+        source_command, suppress = sent[1]
+
         assert suppress is True
         assert source_command.startswith(f"source {state_module.shlex.quote(str(tmp_path))}/")
         assert source_command.endswith("\r")

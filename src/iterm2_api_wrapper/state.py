@@ -23,6 +23,7 @@ from .typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
 from .utils.loop_manager import LoopManager
 from .utils.marked_command import MarkedCommand
 from .utils.parser import Parser, ParseResult
+from .utils.signal import Signal
 
 
 if TYPE_CHECKING:
@@ -597,7 +598,8 @@ class iTermState:
         async with self._run_command_lock:
             current_path = await self.get_session_var("path")
             if path and current_path != path:
-                await self._send_text(f"cd -- {shlex.quote(path)}", suppress=suppress)
+                shell_type = await self.get_session_var("shell")
+                await Signal(self, shell_type).cd(path)
 
             shell_integration_enabled = await self._shell_integration_enabled()
             log.debug(
