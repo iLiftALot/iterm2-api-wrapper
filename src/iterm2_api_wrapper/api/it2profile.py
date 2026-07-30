@@ -933,11 +933,13 @@ class Profile(profile.Profile):
 
     @staticmethod
     async def all_guids(connection: Connection) -> set[str]:
+        """Returns all profile guids."""
         profiles = await PartialProfile.async_query(connection, properties=["Guid"])
         return {p.guid for p in profiles}
 
     @staticmethod
     async def all_names(connection: Connection) -> set[str]:
+        """Returns all profile names."""
         profiles = await PartialProfile.async_query(connection, properties=["Name"])
         return {p.name for p in profiles}
 
@@ -1074,6 +1076,16 @@ class PartialProfile(Profile):
         guids: list[str] | None = None,
         properties: Sequence[str] | None = DEFAULT_PARTIAL_PROFILE_PROPERTIES,
     ) -> list[PartialProfile]:
+        """Fetches a list of profiles by guid, populating the requested properties.
+
+        :param connection: The connection to send the query to.
+        :param properties: Lists the properties to fetch. Pass None for all.
+            If you wish to fetch the full profile later, you must ensure the
+            'Guid' property is fetched.
+        :param guids: Lists GUIDs to list. Pass None for all profiles.
+
+        :returns: A list of :class:`PartialProfile` objects with only the specified properties set.
+        """
         response: ServerOriginatedMessage = await rpc.async_list_profiles(connection, guids, properties)
         return [
             PartialProfile(None, connection, response_profile.properties)
@@ -1081,6 +1093,13 @@ class PartialProfile(Profile):
         ]
 
     async def async_get_full_profile(self) -> Profile:
+        """Requests a full profile and returns it.
+
+        :returns: A :class:`Profile`.
+
+        :raises :class:`BadGUIDException`: if the Guid is not set or does not match a
+        profile.
+        """
         if not self.guid:
             raise BadGUIDException()
 
@@ -1290,11 +1309,15 @@ class DynamicProfile:
                 [
                     dynamic_profile
                     for dynamic_profile in previous_dynamic_profiles.get("Profiles", [])
-                    if dynamic_profile.get("Guid") != self.guid
+                    if dynamic_profile.get("Guid") != self.guid  # Already included in dynamic_profiles
                 ]
             )
 
         return {"Profiles": dynamic_profiles}
+
+    @staticmethod
+    def is_dynamic_profile(profile: Profile | PartialProfile) -> bool:
+        return bool(profile.all_properties.get("Is Dynamic Profile", None))
 
     async def parent(self) -> Profile:
         """Return the profile that this dynamic profile inherits from."""
