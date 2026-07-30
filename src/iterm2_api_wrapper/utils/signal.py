@@ -10,7 +10,7 @@ import secrets
 import shlex
 import signal
 import subprocess
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -459,7 +459,7 @@ class Signal:
     async def _installation_lock(
         cls,
         signal_dir: Path,
-    ) -> AsyncIterator[None]:
+    ) -> AsyncGenerator[None]:
         lock_path = signal_dir / cls.INSTALL_LOCK_FILE
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(
