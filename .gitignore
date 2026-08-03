@@ -248,3 +248,5 @@ trace
 tests/_dev.py
 src/iterm2_api_wrapper/triggers.py
 scripts/.iterm2_cd_target
+docs/aegis
+watch_*
