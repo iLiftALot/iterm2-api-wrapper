@@ -169,51 +169,21 @@ class FakeState:
         self.shell = "/bin/zsh"
         self.job_name = "zsh"
         self.sent: list[tuple[str, bool]] = []
-        self.on_send: (
-            Callable[
-                [str, bool],
-                Awaitable[None],
-            ]
-            | None
-        ) = None
+        self.on_send: Callable[[str, bool], Awaitable[None]] | None = None
 
-    async def _send_text(
-        self,
-        command: str,
-        suppress: bool,
-    ) -> None:
-        self.sent.append(
-            (
-                command,
-                suppress,
-            )
-        )
+    async def _send_text(self, command: str, suppress: bool) -> None:
+        self.sent.append((command, suppress))
 
         if self.on_send is not None:
-            await self.on_send(
-                command,
-                suppress,
-            )
+            await self.on_send(command, suppress)
 
-    async def get_session_var(
-        self,
-        name: str,
-    ) -> str:
-        values = {
-            "jobName": self.job_name,
-            "shell": self.shell,
-            "tty": "/dev/ttys123",
-        }
+    async def get_session_var(self, name: str) -> str:
+        values = {"jobName": self.job_name, "shell": self.shell, "tty": "/dev/ttys123"}
         return values[name]
 
 
-def as_state(
-    state: FakeState,
-) -> iTermState:
-    return cast(
-        "iTermState",
-        state,
-    )
+def as_state(state: FakeState) -> iTermState:
+    return cast("iTermState", state)
 
 
 def as_connection(connection: object) -> Connection:

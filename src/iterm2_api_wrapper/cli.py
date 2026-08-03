@@ -65,7 +65,7 @@ FUNCTION_NAME_COMPLETIONS: tuple[tuple[str, str], ...] = (
 
 def _strip_kwarg_prefix(value: str, name: str) -> str:
     prefix = f"{name}="
-    return value[len(prefix) :] if value.startswith(prefix) else value
+    return value.removeprefix(prefix)
 
 
 def _unquote_completion_value(value: str) -> str:
@@ -113,10 +113,9 @@ def _variable_values_for_scope(scope: VariableScopeName, *, refresh: bool = Fals
         # emit Rich debug logs while connecting, which zsh then tries to parse as
         # completion script text and reports as `(eval):1: parse error near ";;"`.
         # Keep dynamic extraction, but make the probe completely silent.
-        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-            with create_iterm_client(timeout=2.0) as client:
-                state = client.get_state()
-                scope_vars = run_coro(state.get_variable(scope, "*"), client.loop)
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()), create_iterm_client(timeout=2.0) as client:
+            state = client.get_state()
+            scope_vars = run_coro(state.get_variable(scope, "*"), client.loop)
 
         if not isinstance(scope_vars, dict):
             return _static_variable_values_for_scope(scope)
@@ -284,30 +283,33 @@ async def test_all_alerts(state: iTermState) -> tuple[int, str | None, alert.Pol
     log.info(f"Text Input Alert Response: {text_input_alert}\n")
     log.info("Poly Modal Alert Response: \n")
     log.info(poly_modal_alert)
+
     return (simple_alert, text_input_alert, poly_modal_alert)
 
 
-async def show_capabilities(state: iTermState, capability: str | None = None) -> dict[str, Any]:
+async def show_capabilities(state: iTermState) -> dict[str, Any]:
     """Retrieve and print iTerm2 capabilities."""
-    import iterm2.capabilities
+    supported_functions: dict[str, bool] = {}
 
-    capabilities: dict[str, Any] = {}
-    for capability in dir(iterm2.capabilities):
+    for capability in dir(supported_functions):
         if not capability.startswith("supports_"):
             continue
-        func = getattr(iterm2.capabilities, capability)
+
+        func = getattr(supported_functions, capability)
         if not isinstance(func, FunctionType):
             continue
-        is_supported = func(state.connection)
-        log.info(f"{capability}: {is_supported}")
-        capabilities[capability] = is_supported
 
-    return capabilities
+        is_supported: bool = func(state.connection)
+        supported_functions[capability] = is_supported
+        log.info(f"{capability}: {is_supported}")
+
+    return supported_functions
 
 
 async def get_variable(
     state: iTermState, scope: Literal["iterm2", "window", "tab", "session", "user"], variable: Variable
 ):
+    return await state.get_variable(scope, variable)
     match scope:
         case "iterm2":
             return await state.get_global_var(variable)
@@ -358,10 +360,7 @@ async def send_hex_codes(
     """Send one or more HexCodeEnum names or raw escape sequences."""
 
     return await state.send_escape_sequence(
-        *sequences,
-        broadcast=_coerce_cli_bool(broadcast),
-        timeout=float(timeout),
-        wait=_coerce_cli_bool(wait),
+        *sequences, broadcast=_coerce_cli_bool(broadcast), timeout=float(timeout), wait=_coerce_cli_bool(wait)
     )
 
 

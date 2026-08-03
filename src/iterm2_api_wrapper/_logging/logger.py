@@ -142,7 +142,7 @@ class _FileConsoleManager:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             if not self._initialized and self._file_manager_config.get("clear_file_on_init", False):
                 self._path.write_text("")
-            self._handle = open(self._path, "a")
+            self._handle = self._path.open("a")
             self._console_config["file"] = self._handle
             self._console = Console(**self._console_config)
             self._initialized = True

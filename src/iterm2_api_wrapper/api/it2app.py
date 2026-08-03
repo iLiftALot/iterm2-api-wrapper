@@ -74,8 +74,7 @@ class App(app.App):
 
             if skipped:
                 log.debug(
-                    "Skipped nested iTerm2 focus refresh call(s) to avoid upstream App recursion.",
-                    {"skipped": skipped},
+                    "Skipped nested iTerm2 focus refresh call(s) to avoid upstream App recursion.", {"skipped": skipped}
                 )
 
     @property

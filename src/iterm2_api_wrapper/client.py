@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import inspect
 import sys
 import threading
@@ -11,6 +10,7 @@ from threading import Thread
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
+from ._logging.logger import PrettyLog
 from .gateway import DefaultITermGateway, ITermGateway, SetupCoroGateway
 
 
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from .typings import iTermStateSetupKwargs
 
 
+log = PrettyLog.get_logger(__name__)
 StateT = TypeVar("StateT", bound="RefreshableState[Any]")
 
 
@@ -91,7 +92,7 @@ class iTermClient(Generic[StateT]):
         """
         Get the current iTermState without ensuring its validity.
 
-        Recommended to use ``get_state()`` or ``get_state_async()`` instead.
+        Recommended to use `get_state()` or `get_state_async()` instead.
 
         ---
 
@@ -135,7 +136,7 @@ class iTermClient(Generic[StateT]):
                 self._state = new_state
 
     def close(self) -> None:
-        # Don't try to join if we're on the client's own thread
+        """Don't try to join if we're on the client's own thread."""
         current_thread = threading.current_thread()
         is_own_thread = current_thread is self._thread
 
@@ -145,15 +146,15 @@ class iTermClient(Generic[StateT]):
             if inspect.iscoroutinefunction(async_close):
                 try:
                     asyncio.run_coroutine_threadsafe(async_close(), self._loop).result(timeout=self._timeout or 5.0)
-                except (TimeoutError, RuntimeError, concurrent.futures.CancelledError):
-                    pass
+                except Exception as e:
+                    log.warning("Failed to close async connection during iTermClient cleanup:", e)
 
         if self._loop.is_running():
             try:
                 self._loop.call_soon_threadsafe(self._loop.stop)
-            except RuntimeError:
+            except Exception as e:
                 # Loop might already be stopping or have pending callbacks
-                pass
+                log.warning("Failed to stop event loop during iTermClient cleanup:", e)
 
         # Only join if we're not on the client's thread
         if not is_own_thread and self._thread.is_alive():
@@ -162,9 +163,9 @@ class iTermClient(Generic[StateT]):
         if not self._loop.is_closed():
             try:
                 self._loop.close()
-            except RuntimeError:
+            except Exception as e:
                 # Loop might still have pending callbacks if we couldn't join
-                pass
+                log.warning("Failed to close event loop during iTermClient cleanup:", e)
 
     def get_state(self) -> StateT:
         """
@@ -193,6 +194,7 @@ class iTermClient(Generic[StateT]):
         """
         if self._on_client_loop():
             return await self._ensure_state_async()
+
         # We're on a different loop; schedule on the client's loop
         future = asyncio.run_coroutine_threadsafe(self._ensure_state_async(), self._loop)
         return await asyncio.get_running_loop().run_in_executor(None, future.result)
@@ -245,8 +247,8 @@ class iTermClient(Generic[StateT]):
             try:
                 if self._loop.is_running():
                     self._loop.call_soon_threadsafe(self._loop.stop)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("Failed to stop event loop during iTermClient cleanup:", e)
 
 
 if TYPE_CHECKING:

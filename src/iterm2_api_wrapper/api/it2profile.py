@@ -806,20 +806,11 @@ ProfilePropertyKey = Literal[
 
 _DynamicProfileDefinitionExtras = TypedDict(
     "_DynamicProfileDefinitionExtras",
-    {
-        "Dynamic Profile Parent GUID": str,
-        "Dynamic Profile Parent Name": str,
-        "Rewritable": bool,
-    },
+    {"Dynamic Profile Parent GUID": str, "Dynamic Profile Parent Name": str, "Rewritable": bool},
     total=False,
 )
 _DynamicProfileRuntimeExtras = TypedDict(
-    "_DynamicProfileRuntimeExtras",
-    {
-        "Dynamic Profile Filename": str,
-        "Is Dynamic Profile": BoolInt,
-    },
-    total=False,
+    "_DynamicProfileRuntimeExtras", {"Dynamic Profile Filename": str, "Is Dynamic Profile": BoolInt}, total=False
 )
 
 DynamicProfilePropertyKey = Literal[
@@ -1000,10 +991,7 @@ class Profile(profile.Profile):
         :returns: The freshly queried profile after iTerm2 observes the update.
         """
         dynamic_profile = DynamicProfile(connection, profile_name)
-        return await dynamic_profile.async_update(
-            properties=properties,
-            remove_properties=remove_properties,
-        )
+        return await dynamic_profile.async_update(properties=properties, remove_properties=remove_properties)
 
     @staticmethod
     async def async_create(
@@ -1017,24 +1005,14 @@ class Profile(profile.Profile):
         """Creates a new [***dynamic***](https://iterm2.com/documentation-dynamic-profiles.html) iTerm2 profile."""
         if parent_profile_guid is not None:
             dynamic_profile = DynamicProfile(
-                connection,
-                profile_name,
-                parent_profile_guid=parent_profile_guid,
-                properties=properties,
+                connection, profile_name, parent_profile_guid=parent_profile_guid, properties=properties
             )
         elif parent_profile_name is not None:
             dynamic_profile = DynamicProfile(
-                connection,
-                profile_name,
-                parent_profile_name=parent_profile_name,
-                properties=properties,
+                connection, profile_name, parent_profile_name=parent_profile_name, properties=properties
             )
         else:
-            dynamic_profile = DynamicProfile(
-                connection,
-                profile_name,
-                properties=properties,
-            )
+            dynamic_profile = DynamicProfile(connection, profile_name, properties=properties)
 
         return await dynamic_profile.async_create()
 
@@ -1125,10 +1103,7 @@ class PartialProfile(Profile):
 
 
 def process_dynamic_profiles_payload(
-    dynamic_profile_path: Path,
-    staging_path: Path,
-    *,
-    payload: DynamicProfilesPayload | None = None,
+    dynamic_profile_path: Path, staging_path: Path, *, payload: DynamicProfilesPayload | None = None
 ) -> DynamicProfilesPayload:
     """Read or atomically publish a wrapper-managed dynamic-profile payload.
 
@@ -1145,25 +1120,23 @@ def process_dynamic_profiles_payload(
     """
     path = dynamic_profile_path
 
-    def _validate_dynamic_profiles_payload(
-        raw_payload: object,
-    ) -> DynamicProfilesPayload:
+    def _validate_dynamic_profiles_payload(raw_payload: object) -> DynamicProfilesPayload:
         if not isinstance(raw_payload, dict):
-            raise ValueError(f"Cannot process dynamic profiles because '{path}' must contain a top-level JSON object.")
+            raise TypeError(f"Cannot process dynamic profiles because '{path}' must contain a top-level JSON object.")
 
         raw_profiles = raw_payload.get("Profiles")
         if not isinstance(raw_profiles, list):
-            raise ValueError(f"Cannot process dynamic profiles because '{path}' must contain a 'Profiles' array.")
+            raise TypeError(f"Cannot process dynamic profiles because '{path}' must contain a 'Profiles' array.")
 
         for index, definition in enumerate(raw_profiles):
             if not isinstance(definition, dict):
-                raise ValueError(f"Dynamic profile entry {index} in '{path}' must be a JSON object.")
+                raise TypeError(f"Dynamic profile entry {index} in '{path}' must be a JSON object.")
 
             if not isinstance(definition.get("Name"), str):
-                raise ValueError(f"Dynamic profile entry {index} in '{path}' must contain a string 'Name'.")
+                raise TypeError(f"Dynamic profile entry {index} in '{path}' must contain a string 'Name'.")
 
             if not isinstance(definition.get("Guid"), str):
-                raise ValueError(f"Dynamic profile entry {index} in '{path}' must contain a string 'Guid'.")
+                raise TypeError(f"Dynamic profile entry {index} in '{path}' must contain a string 'Guid'.")
 
         return cast(DynamicProfilesPayload, raw_payload)
 
@@ -1180,17 +1153,12 @@ def process_dynamic_profiles_payload(
 
         return _validate_dynamic_profiles_payload(raw_payload)
 
-    def _write_dynamic_profiles_payload(
-        validated_payload: DynamicProfilesPayload,
-    ) -> DynamicProfilesPayload:
+    def _write_dynamic_profiles_payload(validated_payload: DynamicProfilesPayload) -> DynamicProfilesPayload:
         """Atomically publish a complete wrapper-managed payload."""
         path.parent.mkdir(parents=True, exist_ok=True)
         staging_path.parent.mkdir(parents=True, exist_ok=True)
 
-        staging_path.write_text(
-            json.dumps(validated_payload, indent=4) + "\n",
-            encoding="utf-8",
-        )
+        staging_path.write_text(json.dumps(validated_payload, indent=4) + "\n", encoding="utf-8")
         staging_path.replace(path)
         return validated_payload
 
@@ -1301,10 +1269,7 @@ class DynamicProfile:
         dynamic_profiles: list[DynamicProfileDefinition] = [self.__props]
 
         if self.DYNAMIC_PROFILE_PATH.exists():
-            previous_dynamic_profiles = process_dynamic_profiles_payload(
-                self.DYNAMIC_PROFILE_PATH,
-                self.STAGING_PATH,
-            )
+            previous_dynamic_profiles = process_dynamic_profiles_payload(self.DYNAMIC_PROFILE_PATH, self.STAGING_PATH)
             dynamic_profiles.extend(
                 [
                     dynamic_profile
@@ -1343,19 +1308,12 @@ class DynamicProfile:
         parent_profile = profile_data.get(self.__parent_name)
 
         if parent_profile is None:
-            raise ProfileNotFoundError(
-                msg=err_msg,
-                target_profile_name=self.__parent_name,
-                profile_data=profile_data,
-            )
+            raise ProfileNotFoundError(msg=err_msg, target_profile_name=self.__parent_name, profile_data=profile_data)
 
         return parent_profile
 
     @staticmethod
-    async def _parent_for_definition(
-        connection: Connection,
-        definition: DynamicProfileDefinition,
-    ) -> Profile:
+    async def _parent_for_definition(connection: Connection, definition: DynamicProfileDefinition) -> Profile:
         """Resolve the effective parent recorded in a persisted definition.
 
         Parent resolution must use the definition currently stored on disk rather
@@ -1377,10 +1335,7 @@ class DynamicProfile:
         # iTerm2 gives the GUID selector priority. If it does not resolve and a
         # name selector is also present, it attempts the name selector next.
         if parent_guid:
-            profiles = await Profile.async_get(
-                connection,
-                [parent_guid],
-            )
+            profiles = await Profile.async_get(connection, [parent_guid])
             if profiles:
                 return profiles[0]
 
@@ -1395,8 +1350,7 @@ class DynamicProfile:
 
         profile_data = await Profile.to_dict(connection)
         raise ProfileNotFoundError(
-            target_profile_name=parent_guid or parent_name or "<default>",
-            profile_data=profile_data,
+            target_profile_name=parent_guid or parent_name or "<default>", profile_data=profile_data
         )
 
     async def async_update(
@@ -1446,25 +1400,18 @@ class DynamicProfile:
             )
 
         current_guid = self.guid
-        current_profiles = await Profile.async_get(
-            self.__connection,
-            [current_guid],
-        )
+        current_profiles = await Profile.async_get(self.__connection, [current_guid])
         if not current_profiles:
             raise ProfileNotFoundError(
-                target_profile_name=self.__profile_name,
-                profile_data=await Profile.to_dict(self.__connection),
+                target_profile_name=self.__profile_name, profile_data=await Profile.to_dict(self.__connection)
             )
 
         current_profile = current_profiles[0]
-        runtime_properties = cast(
-            DynamicProfileRuntimeProperties,
-            current_profile.all_properties,
-        )
+        runtime_properties = cast(DynamicProfileRuntimeProperties, current_profile.all_properties)
         runtime_source = runtime_properties.get("Dynamic Profile Filename")
 
         if not isinstance(runtime_source, str):
-            raise ValueError(
+            raise TypeError(
                 f"Profile '{self.__profile_name}' ({current_guid}) is registered in iTerm2 but is not a dynamic profile."
             )
 
@@ -1477,10 +1424,7 @@ class DynamicProfile:
                 f"'{managed_source_path}'."
             )
 
-        payload = process_dynamic_profiles_payload(
-            self.DYNAMIC_PROFILE_PATH,
-            self.STAGING_PATH,
-        )
+        payload = process_dynamic_profiles_payload(self.DYNAMIC_PROFILE_PATH, self.STAGING_PATH)
         dynamic_profiles = payload["Profiles"]
 
         target_index = next(
@@ -1506,10 +1450,7 @@ class DynamicProfile:
         # parent's effective values so convergence polling can verify inheritance.
         inherited_properties: ProfileProperties = {}
         if removed_properties_set:
-            parent_profile = await self._parent_for_definition(
-                self.__connection,
-                current_definition,
-            )
+            parent_profile = await self._parent_for_definition(self.__connection, current_definition)
             inherited_properties = parent_profile.all_properties
 
         updated_values: dict[str, Any] = dict(current_definition)
@@ -1526,21 +1467,14 @@ class DynamicProfile:
         updated_values["Name"] = current_definition["Name"]
         updated_values["Guid"] = current_definition["Guid"]
 
-        updated_definition = cast(
-            DynamicProfileDefinition,
-            updated_values,
-        )
+        updated_definition = cast(DynamicProfileDefinition, updated_values)
 
         if updated_definition != current_definition:
             # Replace the entry in place. Order matters when one dynamic profile
             # inherits from another profile in the same DynamicProfiles file.
             dynamic_profiles[target_index] = updated_definition
 
-            process_dynamic_profiles_payload(
-                self.DYNAMIC_PROFILE_PATH,
-                self.STAGING_PATH,
-                payload=payload,
-            )
+            process_dynamic_profiles_payload(self.DYNAMIC_PROFILE_PATH, self.STAGING_PATH, payload=payload)
 
         return await self._wait_for_profile_update(
             self.__connection,
@@ -1562,21 +1496,13 @@ class DynamicProfile:
         instead of being incorrectly reported as successful.
         """
         current_guid = self.guid
-        profiles = await Profile.async_get(
-            self.__connection,
-            [current_guid],
-        )
+        profiles = await Profile.async_get(self.__connection, [current_guid])
 
         if profiles:
-            runtime_properties = cast(
-                DynamicProfileRuntimeProperties,
-                profiles[0].all_properties,
-            )
+            runtime_properties = cast(DynamicProfileRuntimeProperties, profiles[0].all_properties)
 
             if bool(runtime_properties.get("Is Dynamic Profile", 0)):
-                return await self.async_update(
-                    properties=self.__requested_properties,
-                )
+                return await self.async_update(properties=self.__requested_properties)
 
             raise ValueError(
                 f"Cannot create dynamic profile '{self.__profile_name}' "
@@ -1585,17 +1511,9 @@ class DynamicProfile:
             )
 
         payload = self.payload
-        process_dynamic_profiles_payload(
-            self.DYNAMIC_PROFILE_PATH,
-            self.STAGING_PATH,
-            payload=payload,
-        )
+        process_dynamic_profiles_payload(self.DYNAMIC_PROFILE_PATH, self.STAGING_PATH, payload=payload)
 
-        return await self._wait_for_profile(
-            self.__connection,
-            current_guid,
-            self.__profile_name,
-        )
+        return await self._wait_for_profile(self.__connection, current_guid, self.__profile_name)
 
     @staticmethod
     async def _wait_for_profile(connection: Connection, guid: str, profile_name: str) -> Profile:
@@ -1649,10 +1567,7 @@ class DynamicProfile:
         missing = object()
 
         while True:
-            profiles = await Profile.async_get(
-                connection,
-                [guid],
-            )
+            profiles = await Profile.async_get(connection, [guid])
             if profiles:
                 current_profile = profiles[0]
                 current_values: dict[str, Any] = dict(current_profile.all_properties)

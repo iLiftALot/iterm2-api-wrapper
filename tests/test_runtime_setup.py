@@ -16,21 +16,9 @@ def connection(version: tuple[int, int] = (1, 14)) -> Any:
 def test_validate_runtime_checks_every_connection(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, object]] = []
 
-    monkeypatch.setattr(
-        it2runtime,
-        "check_supports_prompt_monitor_modes",
-        lambda conn: calls.append(("prompt", conn)),
-    )
-    monkeypatch.setattr(
-        it2runtime,
-        "check_supports_get_default_profile",
-        lambda conn: calls.append(("profile", conn)),
-    )
-    monkeypatch.setattr(
-        it2runtime,
-        "check_supports_prompt_id",
-        lambda conn: calls.append(("prompt_id", conn)),
-    )
+    monkeypatch.setattr(it2runtime, "check_supports_prompt_monitor_modes", lambda conn: calls.append(("prompt", conn)))
+    monkeypatch.setattr(it2runtime, "check_supports_get_default_profile", lambda conn: calls.append(("profile", conn)))
+    monkeypatch.setattr(it2runtime, "check_supports_prompt_id", lambda conn: calls.append(("prompt_id", conn)))
 
     first = connection()
     second = connection()

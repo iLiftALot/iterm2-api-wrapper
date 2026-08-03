@@ -43,27 +43,19 @@ def _install_ack_from_command(command: str, *, pid: int) -> tuple[Path, str, str
     signal_dir = Path(signal_dir_text)
 
     (signal_dir / Signal.BINDING_FILE).write_text(
-        f"{Signal.PROTOCOL_VERSION}\tready\t{pid}\tUSR1\t{digest}\t{nonce}\n",
-        encoding="utf-8",
+        f"{Signal.PROTOCOL_VERSION}\tready\t{pid}\tUSR1\t{digest}\t{nonce}\n", encoding="utf-8"
     )
     (signal_dir / f"install.{nonce}").write_text(
-        f"{Signal.PROTOCOL_VERSION}\tok\t{pid}\tUSR1\t{nonce}\t{digest}\n",
-        encoding="utf-8",
+        f"{Signal.PROTOCOL_VERSION}\tok\t{pid}\tUSR1\t{nonce}\t{digest}\n", encoding="utf-8"
     )
     return signal_dir, nonce, digest
 
 
-def _configure_fake_process(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    handler: Path,
-) -> None:
+def _configure_fake_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, handler: Path) -> None:
     monkeypatch.setattr(Signal, "SIGNAL_ROOT", tmp_path / "signals")
     monkeypatch.setattr(Signal, "SIGNAL_SCRIPT", handler)
     monkeypatch.setattr(
-        Signal,
-        "_read_process_identity",
-        staticmethod(lambda pid: ("ttys123", "Fri Jul 24 21:00:00 2026", "/bin/zsh")),
+        Signal, "_read_process_identity", staticmethod(lambda pid: ("ttys123", "Fri Jul 24 21:00:00 2026", "/bin/zsh"))
     )
 
 
@@ -74,17 +66,10 @@ def _request_for_pid(signal_root: Path, pid: int) -> tuple[Path, Path, str]:
 
 
 def _publish_fake_result(
-    signal_dir: Path,
-    pid: int,
-    nonce: str,
-    result: SignalResult,
-    *,
-    prompt_status: int = 0,
-    redraw_status: int = 0,
+    signal_dir: Path, pid: int, nonce: str, result: SignalResult, *, prompt_status: int = 0, redraw_status: int = 0
 ) -> None:
     (signal_dir / f"started.{pid}.{nonce}").write_text(
-        f"{Signal.PROTOCOL_VERSION}\tstarted\t{pid}\t{nonce}\n",
-        encoding="utf-8",
+        f"{Signal.PROTOCOL_VERSION}\tstarted\t{pid}\t{nonce}\n", encoding="utf-8"
     )
     (signal_dir / f"stdout.{pid}.{nonce}").write_text(result.stdout, encoding="utf-8")
     (signal_dir / f"stderr.{pid}.{nonce}").write_text(result.stderr, encoding="utf-8")
@@ -94,10 +79,7 @@ def _publish_fake_result(
     )
 
 
-def test_execute_sources_once_then_reuses_cached_live_shell(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_sources_once_then_reuses_cached_live_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         state = FakeState()
         handler = tmp_path / "handler.zsh"
@@ -110,12 +92,7 @@ def test_execute_sources_once_then_reuses_cached_live_shell(
 
         state.on_send = send_text
         commands: list[str] = []
-        expected_results = iter(
-            (
-                SignalResult(0, "first output\n", ""),
-                SignalResult(17, "", "second error\n"),
-            )
-        )
+        expected_results = iter((SignalResult(0, "first output\n", ""), SignalResult(17, "", "second error\n")))
         kill_calls: list[tuple[int, int]] = []
 
         def fake_kill(pid: int, signal_number: int) -> None:
@@ -138,10 +115,7 @@ def test_execute_sources_once_then_reuses_cached_live_shell(
         assert second == SignalResult(17, "", "second error\n")
         assert commands == ["print -r -- 'first output'", "print -u2 second error; return 17"]
         assert len(state.sent) == 1
-        assert [call for call in kill_calls if call[1] != 0] == [
-            (4242, signal.SIGUSR1),
-            (4242, signal.SIGUSR1),
-        ]
+        assert [call for call in kill_calls if call[1] != 0] == [(4242, signal.SIGUSR1), (4242, signal.SIGUSR1)]
 
         assert {path.name for path in signal_dir.iterdir()} == {
             Signal.INSTALL_LOCK_FILE,
@@ -154,8 +128,7 @@ def test_execute_sources_once_then_reuses_cached_live_shell(
 
 
 def test_install_is_public_idempotent_and_changed_digest_reinstalls_once(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def scenario() -> None:
         state = FakeState()
@@ -183,10 +156,7 @@ def test_install_is_public_idempotent_and_changed_digest_reinstalls_once(
     asyncio.run(scenario())
 
 
-def test_execute_serializes_concurrent_callers_for_one_session(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_serializes_concurrent_callers_for_one_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         state = FakeState()
         handler = tmp_path / "handler.zsh"
@@ -212,8 +182,7 @@ def test_execute_serializes_concurrent_callers_for_one_session(
 
             if len(commands) == 1:
                 (signal_dir / f"started.{pid}.{nonce}").write_text(
-                    f"{Signal.PROTOCOL_VERSION}\tstarted\t{pid}\t{nonce}\n",
-                    encoding="utf-8",
+                    f"{Signal.PROTOCOL_VERSION}\tstarted\t{pid}\t{nonce}\n", encoding="utf-8"
                 )
                 first_request.append((signal_dir, nonce))
                 first_started.set()
@@ -244,8 +213,7 @@ def test_execute_serializes_concurrent_callers_for_one_session(
 
 
 def test_install_recognizes_an_existing_handler_while_the_shell_is_busy(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def scenario() -> None:
         state = FakeState()
@@ -266,8 +234,7 @@ def test_install_recognizes_an_existing_handler_while_the_shell_is_busy(
         binding_path = signal_dir / Signal.BINDING_FILE
         version, _, pid, signal_name, digest, generation = binding_path.read_text(encoding="utf-8").strip().split("\t")
         (signal_dir / Signal.BUSY_FILE).write_text(
-            f"{version}\tbusy\t{pid}\t{signal_name}\t{digest}\t{generation}\n",
-            encoding="utf-8",
+            f"{version}\tbusy\t{pid}\t{signal_name}\t{digest}\t{generation}\n", encoding="utf-8"
         )
         binding_path.unlink()
         state.job_name = "vim"
@@ -281,8 +248,7 @@ def test_install_recognizes_an_existing_handler_while_the_shell_is_busy(
 
 
 def test_execute_waits_for_an_installed_busy_shell_without_typing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def scenario() -> None:
         state = FakeState()
@@ -314,8 +280,7 @@ def test_execute_waits_for_an_installed_busy_shell_without_typing(
         binding_payload = binding_path.read_text(encoding="utf-8")
         version, _, pid, signal_name, digest, generation = binding_payload.strip().split("\t")
         (signal_dir / Signal.BUSY_FILE).write_text(
-            f"{version}\tbusy\t{pid}\t{signal_name}\t{digest}\t{generation}\n",
-            encoding="utf-8",
+            f"{version}\tbusy\t{pid}\t{signal_name}\t{digest}\t{generation}\n", encoding="utf-8"
         )
         binding_path.unlink()
         state.job_name = "vim"
@@ -336,10 +301,7 @@ def test_execute_waits_for_an_installed_busy_shell_without_typing(
     asyncio.run(scenario())
 
 
-def test_missing_start_ack_invalidates_cached_binding(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_missing_start_ack_invalidates_cached_binding(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         state = FakeState()
         handler = tmp_path / "handler.zsh"
@@ -368,10 +330,7 @@ def test_missing_start_ack_invalidates_cached_binding(
     asyncio.run(scenario())
 
 
-def test_execute_never_signals_without_install_ack(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_never_signals_without_install_ack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         state = FakeState()
         handler = tmp_path / "handler.zsh"
@@ -393,8 +352,7 @@ def test_execute_never_signals_without_install_ack(
 
 
 def test_execute_rejects_nul_and_unsupported_shell_before_installing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def scenario() -> None:
         state = FakeState()
@@ -412,10 +370,7 @@ def test_execute_rejects_nul_and_unsupported_shell_before_installing(
     asyncio.run(scenario())
 
 
-def test_execute_does_not_bootstrap_into_a_foreground_job(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_does_not_bootstrap_into_a_foreground_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         state = FakeState()
         state.job_name = "vim"
@@ -443,9 +398,7 @@ def _write_zsh_request(control: Path, pid: int, nonce: str, command: str) -> Non
     (control / f"request.{pid}.{nonce}").write_text(command, encoding="utf-8")
 
 
-def test_zsh_handler_executes_general_commands_in_parent_scope(
-    tmp_path: Path,
-) -> None:
+def test_zsh_handler_executes_general_commands_in_parent_scope(tmp_path: Path) -> None:
     control = tmp_path / "control"
     hook_output = tmp_path / "hook-state"
     target = tmp_path / "target with spaces\nand newline"
@@ -475,25 +428,14 @@ while true; do sleep 0.05; done
 """
 
     process = subprocess.Popen(
-        ["/bin/zsh", "-fc", command],
-        env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        ["/bin/zsh", "-fc", command], env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
 
     try:
         install_fields = _wait_for_file(control / f"install.{install_nonce}").decode().strip().split("\t")
         binding_fields = _wait_for_file(control / Signal.BINDING_FILE).decode().strip().split("\t")
         assert install_fields[:4] == [Signal.PROTOCOL_VERSION, "ok", str(process.pid), "USR2"]
-        assert binding_fields == [
-            Signal.PROTOCOL_VERSION,
-            "ready",
-            str(process.pid),
-            "USR2",
-            digest,
-            install_nonce,
-        ]
+        assert binding_fields == [Signal.PROTOCOL_VERSION, "ready", str(process.pid), "USR2", digest, install_nonce]
 
         first_nonce = "11111111111111111111111111111111"
         first_command = (
@@ -570,20 +512,13 @@ while true; do sleep 0.05; done
             process.wait(timeout=2.0)
 
 
-def test_zsh_handler_withdraws_readiness_when_list_trap_is_replaced(
-    tmp_path: Path,
-) -> None:
+def test_zsh_handler_withdraws_readiness_when_list_trap_is_replaced(tmp_path: Path) -> None:
     control = tmp_path / "control"
     control.mkdir(mode=0o700)
     digest = "b" * 64
     nonce = "fedcba9876543210fedcba9876543210"
     environment = os.environ.copy()
-    environment.update(
-        {
-            "SIGNAL_TEST_CONTROL": str(control),
-            "SIGNAL_TEST_HANDLER": str(Signal.SIGNAL_SCRIPT),
-        }
-    )
+    environment.update({"SIGNAL_TEST_CONTROL": str(control), "SIGNAL_TEST_HANDLER": str(Signal.SIGNAL_SCRIPT)})
     command = f"""
 source "$SIGNAL_TEST_HANDLER" "$SIGNAL_TEST_CONTROL" {nonce} {digest}
 [[ -f "$SIGNAL_TEST_CONTROL/{Signal.BINDING_FILE}" ]] && print ready
@@ -597,10 +532,6 @@ _iterm2_api_wrapper_signal_activate
 """
 
     completed = subprocess.run(
-        ["/bin/zsh", "-fc", command],
-        check=True,
-        capture_output=True,
-        env=environment,
-        text=True,
+        ["/bin/zsh", "-fc", command], check=True, capture_output=True, env=environment, text=True
     )
     assert completed.stdout.splitlines() == ["ready", "inactive", "reactivated", "replaced"]

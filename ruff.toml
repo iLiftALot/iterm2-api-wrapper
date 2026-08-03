@@ -31,17 +31,11 @@ exclude = [
   "venv",
   "code_examples",
   "miniconda3",
-  "cpython-3.10-macos-aarch64-none",
-  "cpython-3.11-macos-aarch64-none",
-  "cpython-3.12-macos-aarch64-none",
-  "cpython-3.13-macos-aarch64-none",
-  "cpython-3.14-macos-aarch64-none",
-  "cpython-3.15-macos-aarch64-none",
-  "cpython-3.12.9-macos-aarch64-none",
   "cpython-3.*"
 ]
-include = ["**{src,tests}/**/*.py", "**{src,tests}/**/*.ipynb"]
+include = ["**{src,tests,test}/**/*.py", "**{src,tests,test}/**/*.ipynb"]
 force-exclude = true
+fix = true
 
 [lint]
 extend-select = [
@@ -68,6 +62,9 @@ ignore = [
   "UP045",  # Check for typing.Optional annotations that can be rewritten based on PEP 604 syntax.
   "A002",  # Checks for function arguments that use the same names as builtins
   "B905",  # `zip()` without an explicit `strict=` parameter
+  "BLE001", # Checks for except clauses that catch all exceptions. This includes except BaseException and except Exception.
+  "PLE1205", # Checks for too many positional arguments for a logging format string.
+  "PYI034" # Checks for methods that are annotated with a fixed return type which should instead be returning Self.
 ]
 
 [lint.isort]
@@ -83,7 +80,7 @@ docstring-code-line-length = 90
 docstring-code-format = true
 quote-style = "double"
 indent-style = "space"
-skip-magic-trailing-comma = false
+skip-magic-trailing-comma = true
 exclude = ["**/api/__init__.py"]
 
 [analyze]

@@ -107,10 +107,7 @@ def _activation_options() -> Literal[1]:
 
 
 async def _wait_for_finished_application(
-    app_container: PyObjcContainer,
-    *,
-    timeout_s: float = IT2_NEW_APP_TIMEOUT,
-    poll_interval_s: float = _POLL_INTERVAL_S,
+    app_container: PyObjcContainer, *, timeout_s: float = IT2_NEW_APP_TIMEOUT, poll_interval_s: float = _POLL_INTERVAL_S
 ) -> NSRunningApplication:
     """Wait until macOS reports an iTerm2 instance has finished launching."""
     deadline = time.monotonic() + timeout_s

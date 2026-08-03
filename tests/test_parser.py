@@ -59,9 +59,7 @@ def test_parser_read_helpers_extract_and_cache_prompt_and_command() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
         parsed_prompt = prompt_stub(
-            prompt_range=coord_range(start_y=0, end_y=1),
-            command_range=coord_range(start_y=1, end_y=2),
-            command=None,
+            prompt_range=coord_range(start_y=0, end_y=1), command_range=coord_range(start_y=1, end_y=2), command=None
         )
         as_fake_session(state.session).contents = [
             SimpleNamespace(string="prompt$", hard_eol=True),
@@ -124,13 +122,9 @@ def test_parser_clips_output_range_before_current_prompt() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
         command_prompt = prompt_stub(
-            output_range=coord_range(start_y=0, end_x=2, end_y=4),
-            command="command brew doctor",
+            output_range=coord_range(start_y=0, end_x=2, end_y=4), command="command brew doctor"
         )
-        current_prompt = prompt_stub(
-            prompt_range=coord_range(start_y=2, end_x=2, end_y=4),
-            command="",
-        )
+        current_prompt = prompt_stub(prompt_range=coord_range(start_y=2, end_x=2, end_y=4), command="")
 
         async def get_prompt(unique_id: str | None = None) -> Any:
             del unique_id
@@ -231,30 +225,15 @@ def test_parser_diff_edge_cases() -> None:
             return ["p", "y", "z", "q"]
 
         patch_attr(state, "_snapshot", sandwich_snapshot)
-        assert await Parser(state, cast(Any, prompt), "echo hi", initial_snapshot=["p", "x", "q"]).diff() == [
-            "y",
-            "z",
-        ]
+        assert await Parser(state, cast(Any, prompt), "echo hi", initial_snapshot=["p", "x", "q"]).diff() == ["y", "z"]
 
     asyncio.run(scenario())
 
 
 def test_parser_prompt_marker_lines_removes_wrapped_command_text() -> None:
     prompt_text = "\n".join(
-        [
-            "~ master* 1m 27s",
-            "14:44:51",
-            "❯ brew install python-tk@3.13",
-            "brew install python-gdbm@3.13",
-            "br",
-        ]
+        ["~ master* 1m 27s", "14:44:51", "❯ brew install python-tk@3.13", "brew install python-gdbm@3.13", "br"]
     )
-    command = "\n".join(
-        [
-            "brew install python-tk@3.13",
-            "brew install python-gdbm@3.13",
-            "brew install node",
-        ]
-    )
+    command = "\n".join(["brew install python-tk@3.13", "brew install python-gdbm@3.13", "brew install node"])
 
     assert Parser.prompt_marker_lines(prompt_text, command) == ["~ master* 1m 27s", "14:44:51", "❯"]

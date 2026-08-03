@@ -21,16 +21,8 @@ log = PrettyLog.get_logger(__name__)
 
 
 def _validate_state(
-    method: Callable[
-        Concatenate[iTermState, P],
-        Coroutine[Any, Any, T],
-    ],
-    *,
-    ensure_state_name: str = "_ensure_state",
-) -> Callable[
-    Concatenate[iTermState, P],
-    Coroutine[Any, Any, T],
-]:
+    method: Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]], *, ensure_state_name: str = "_ensure_state"
+) -> Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]]:
     """Validate state and route the method to the correct event loop."""
 
     if not iscoroutinefunction(method):
@@ -66,10 +58,7 @@ def _validate_state(
                 )
                 raise
 
-        ensure_state = cast(
-            Callable[[], Awaitable[None]],
-            getattr(self, ensure_state_name),
-        )
+        ensure_state = cast(Callable[[], Awaitable[None]], getattr(self, ensure_state_name))
 
         # We're on the correct loop — validate + execute
         try:
@@ -102,13 +91,6 @@ def validator(cls: StateClassT) -> StateClassT:
             continue
 
         if iscoroutinefunction(attribute):
-            setattr(
-                cls,
-                name,
-                _validate_state(
-                    attribute,
-                    ensure_state_name=ensure_state_name,
-                ),
-            )
+            setattr(cls, name, _validate_state(attribute, ensure_state_name=ensure_state_name))
 
     return cls

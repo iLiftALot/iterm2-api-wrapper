@@ -199,14 +199,7 @@ def test_send_hex_codes_delegates_to_state_escape_sequence() -> None:
         )
 
         assert result is True
-        assert state.calls == [
-            {
-                "sequences": ("CNTRL_C", "ESCAPE_B"),
-                "broadcast": True,
-                "timeout": 3.5,
-                "wait": True,
-            }
-        ]
+        assert state.calls == [{"sequences": ("CNTRL_C", "ESCAPE_B"), "broadcast": True, "timeout": 3.5, "wait": True}]
 
     asyncio.run(scenario())
 

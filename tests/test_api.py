@@ -55,13 +55,7 @@ class FakeProfile:
 
 class FakeSession:
     def __init__(
-        self,
-        name: str,
-        session_id: str,
-        profile: FakeProfile,
-        *,
-        buried: bool = False,
-        shell: str | None = None,
+        self, name: str, session_id: str, profile: FakeProfile, *, buried: bool = False, shell: str | None = None
     ) -> None:
         self.name = name
         self.session_id = session_id
@@ -264,26 +258,13 @@ def test_async_create_initializes_on_running_event_loop(monkeypatch: pytest.Monk
 def test_initialize_validates_runtime_before_app_setup(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         profile = FakeProfile(name="pyterm-mcp", guid="PROFILE-GUID")
-        session = FakeSession(
-            name="iterm-api:pyterm-mcp",
-            session_id="session-1",
-            profile=profile,
-        )
-        tab = FakeTab(
-            tab_id="tab-1",
-            sessions=[session],
-            title="iterm-api:pyterm-mcp",
-        )
+        session = FakeSession(name="iterm-api:pyterm-mcp", session_id="session-1", profile=profile)
+        tab = FakeTab(tab_id="tab-1", sessions=[session], title="iterm-api:pyterm-mcp")
         window = FakeWindow("window-1", [tab])
         app = FakeApp([window])
         connection = as_connection(SimpleNamespace(iterm2_protocol_version=(1, 14)))
 
-        api = iTermAPI(
-            profile_name="pyterm-mcp",
-            service_name="iterm-api",
-            auto_initialize=False,
-            activate=False,
-        )
+        api = iTermAPI(profile_name="pyterm-mcp", service_name="iterm-api", auto_initialize=False, activate=False)
 
         calls: list[str] = []
 
@@ -305,17 +286,12 @@ def test_initialize_validates_runtime_before_app_setup(monkeypatch: pytest.Monke
             return as_profile(profile)
 
         async def find_tagged_context(
-            selected_profile: Profile | PartialProfile,
-            selected_window: Window | None = None,
+            selected_profile: Profile | PartialProfile, selected_window: Window | None = None
         ) -> tuple[Window, Tab, Session]:
             assert selected_profile is profile
             assert selected_window is None
             calls.append("find-tagged-context")
-            return (
-                cast(Window, window),
-                cast(Tab, tab),
-                cast(Session, session),
-            )
+            return (cast(Window, window), cast(Tab, tab), cast(Session, session))
 
         def validate_runtime(received_connection: object) -> None:
             assert received_connection is connection
@@ -332,14 +308,7 @@ def test_initialize_validates_runtime_before_app_setup(monkeypatch: pytest.Monke
 
         await api._initialize()
 
-        assert calls == [
-            "ensure-app",
-            "connection",
-            "validate-runtime",
-            "app",
-            "profile",
-            "find-tagged-context",
-        ]
+        assert calls == ["ensure-app", "connection", "validate-runtime", "app", "profile", "find-tagged-context"]
         assert api.window is window
         assert api.tab is tab
         assert api.session is session

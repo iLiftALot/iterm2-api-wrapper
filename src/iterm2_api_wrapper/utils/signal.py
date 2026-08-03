@@ -81,9 +81,8 @@ class Signal:
         signal_dir = self._prepare_signal_dir(self.__state.session.session_id)
         handler_digest = self._handler_digest()
 
-        async with self._operation_lock(signal_dir):
-            async with self._installation_lock(signal_dir):
-                await self._get_or_install_binding(signal_dir, handler_digest, wait_for_ready=False)
+        async with self._operation_lock(signal_dir), self._installation_lock(signal_dir):
+            await self._get_or_install_binding(signal_dir, handler_digest, wait_for_ready=False)
 
     async def execute(self, command: str) -> SignalResult:
         """Execute ``command`` out-of-band in the target interactive Zsh.
@@ -110,12 +109,7 @@ class Signal:
             self._cleanup_request_artifacts(signal_dir)
             return await self._execute_request(signal_dir, binding, command)
 
-    async def _execute_request(
-        self,
-        signal_dir: Path,
-        binding: _SignalBinding,
-        command: str,
-    ) -> SignalResult:
+    async def _execute_request(self, signal_dir: Path, binding: _SignalBinding, command: str) -> SignalResult:
         request_nonce = secrets.token_hex(16)
         request_path = signal_dir / f"request.{binding.pid}.{request_nonce}"
         started_path = signal_dir / f"started.{binding.pid}.{request_nonce}"
@@ -136,11 +130,7 @@ class Signal:
                 raise RuntimeError(f"The target zsh process {binding.pid} is no longer signalable.") from error
 
             try:
-                started = await self._wait_for_file(
-                    started_path,
-                    self.START_TIMEOUT,
-                    process_pid=binding.pid,
-                )
+                started = await self._wait_for_file(started_path, self.START_TIMEOUT, process_pid=binding.pid)
                 self._validate_started(started, binding.pid, request_nonce)
             except (RuntimeError, TimeoutError):
                 # No start acknowledgment means the cached trap did not prove
@@ -149,15 +139,9 @@ class Signal:
                 raise
 
             try:
-                response = await self._wait_for_file(
-                    response_path,
-                    None,
-                    process_pid=binding.pid,
-                )
+                response = await self._wait_for_file(response_path, None, process_pid=binding.pid)
                 command_status, prompt_status, redraw_status = self._parse_response(
-                    response,
-                    binding.pid,
-                    request_nonce,
+                    response, binding.pid, request_nonce
                 )
                 await self._wait_until_not_busy(signal_dir, binding.pid)
             except RuntimeError:
@@ -177,11 +161,7 @@ class Signal:
                 path.unlink(missing_ok=True)
 
     async def _get_or_install_binding(
-        self,
-        signal_dir: Path,
-        handler_digest: str,
-        *,
-        wait_for_ready: bool,
+        self, signal_dir: Path, handler_digest: str, *, wait_for_ready: bool
     ) -> _SignalBinding:
         binding_path = signal_dir / self.BINDING_FILE
         busy_path = signal_dir / self.BUSY_FILE
@@ -255,11 +235,7 @@ class Signal:
                 f"instead of sending shell input to {job_name or 'an unknown job'!r}."
             )
 
-    async def _install(
-        self,
-        signal_dir: Path,
-        handler_digest: str,
-    ) -> _SignalBinding:
+    async def _install(self, signal_dir: Path, handler_digest: str) -> _SignalBinding:
         if not self.SIGNAL_SCRIPT.is_file():
             raise FileNotFoundError(f"Packaged signal handler not found: {self.SIGNAL_SCRIPT}")
 
@@ -286,17 +262,11 @@ class Signal:
         finally:
             ack_path.unlink(missing_ok=True)
 
-    async def _validated_target_binding(
-        self,
-        binding: _SignalBinding,
-    ) -> _SignalBinding | None:
+    async def _validated_target_binding(self, binding: _SignalBinding) -> _SignalBinding | None:
         try:
             self._assert_process_alive(binding.pid)
             target_tty = self._normalize_tty(str(await self.__state.get_session_var("tty")))
-            process_tty, process_start, process_name = await asyncio.to_thread(
-                self._read_process_identity,
-                binding.pid,
-            )
+            process_tty, process_start, process_name = await asyncio.to_thread(self._read_process_identity, binding.pid)
         except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
             return None
 
@@ -315,10 +285,7 @@ class Signal:
 
     @classmethod
     def _read_cached_binding(
-        cls,
-        binding_path: Path,
-        identity_path: Path,
-        handler_digest: str,
+        cls, binding_path: Path, identity_path: Path, handler_digest: str
     ) -> _SignalBinding | None:
         if binding_path.is_symlink():
             return None
@@ -416,12 +383,7 @@ class Signal:
         )
 
     @classmethod
-    def _parse_install_ack(
-        cls,
-        payload: bytes,
-        nonce: str,
-        handler_digest: str,
-    ) -> _SignalBinding:
+    def _parse_install_ack(cls, payload: bytes, nonce: str, handler_digest: str) -> _SignalBinding:
         fields = payload.decode("utf-8").rstrip("\n").split("\t", 6)
 
         if len(fields) < 6:
@@ -456,14 +418,7 @@ class Signal:
 
     @classmethod
     def _binding_from_fields(
-        cls,
-        *,
-        pid_text: str,
-        signal_name: str,
-        handler_digest: str,
-        generation: str,
-        tty: str,
-        process_start: str,
+        cls, *, pid_text: str, signal_name: str, handler_digest: str, generation: str, tty: str, process_start: str
     ) -> _SignalBinding:
         try:
             pid = int(pid_text)
@@ -577,10 +532,7 @@ class Signal:
     def _read_process_identity(pid: int) -> tuple[str, str, str]:
         def ps_field(field: str) -> str:
             completed = subprocess.run(
-                ["/bin/ps", "-p", str(pid), "-o", f"{field}="],
-                check=True,
-                capture_output=True,
-                text=True,
+                ["/bin/ps", "-p", str(pid), "-o", f"{field}="], check=True, capture_output=True, text=True
             )
             value = completed.stdout.strip()
             if not value:
@@ -628,13 +580,7 @@ class Signal:
         return session_dir
 
     @classmethod
-    async def _wait_for_file(
-        cls,
-        path: Path,
-        timeout: float | None,
-        *,
-        process_pid: int | None = None,
-    ) -> bytes:
+    async def _wait_for_file(cls, path: Path, timeout: float | None, *, process_pid: int | None = None) -> bytes:
         loop = asyncio.get_running_loop()
         deadline = None if timeout is None else loop.time() + timeout
 

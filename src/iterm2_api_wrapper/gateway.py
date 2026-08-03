@@ -23,7 +23,7 @@ def _debug_enabled(debug: bool | None) -> bool:
 
 
 StateTAny = TypeVar("StateTAny")
-StateTRefreshable = TypeVar("StateTRefreshable", bound="RefreshableState[Any]", covariant=True)
+StateTRefreshable_co = TypeVar("StateTRefreshable_co", bound="RefreshableState[Any]", covariant=True)
 
 
 class _Connection(Protocol):
@@ -133,7 +133,7 @@ def _temporary_iterm_env(*, it2_suite: str | None = None, it2_app_path: str | No
                 os.environ[key] = old_value
 
 
-class ITermGateway(Protocol[StateTRefreshable]):
+class ITermGateway(Protocol[StateTRefreshable_co]):
     """
     Creates a fully-initialized state object.
 
@@ -141,7 +141,7 @@ class ITermGateway(Protocol[StateTRefreshable]):
     than importing iTerm2 directly.
     """
 
-    async def create_state(self, **kwargs: Any) -> StateTRefreshable: ...
+    async def create_state(self, **kwargs: Any) -> StateTRefreshable_co: ...
 
 
 class DefaultITermGateway(ITermGateway["iTermState"]):
@@ -184,7 +184,7 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
             return await create_iterm_state(conn, activate=False, **kwargs)
 
 
-class SetupCoroGateway(ITermGateway[StateTRefreshable]):
+class SetupCoroGateway(ITermGateway[StateTRefreshable_co]):
     """
     Gateway that builds state using a provided setup coroutine.
 
@@ -192,10 +192,10 @@ class SetupCoroGateway(ITermGateway[StateTRefreshable]):
     still allowing unit tests to supply a fully-fake gateway (no iTerm2 import).
     """
 
-    def __init__(self, setup_coro: Callable[..., Awaitable[StateTRefreshable]]) -> None:
-        self._setup_coro: Callable[..., Awaitable[StateTRefreshable]] = setup_coro
+    def __init__(self, setup_coro: Callable[..., Awaitable[StateTRefreshable_co]]) -> None:
+        self._setup_coro: Callable[..., Awaitable[StateTRefreshable_co]] = setup_coro
 
-    async def create_state(self, **kwargs: Any) -> StateTRefreshable:
+    async def create_state(self, **kwargs: Any) -> StateTRefreshable_co:
         from .api.it2connection import Connection
         from .runtime_setup import validate_iterm2_runtime
 

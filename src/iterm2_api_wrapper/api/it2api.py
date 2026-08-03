@@ -258,12 +258,6 @@ class iTermAPI:
         self._profile = value
         self.profile_name = value.name if value else None
 
-    @overload
-    async def get_window(self, *, window_id: str | None = None) -> Window: ...
-    @overload
-    async def get_window(self, *, profile_name: str | None = None) -> Window: ...
-    @overload
-    async def get_window(self, *, tab_id: str | None = None) -> Window: ...
     async def get_window(
         self, *, window_id: str | None = None, profile_name: str | None = None, tab_id: str | None = None
     ) -> Window:
@@ -291,7 +285,7 @@ class iTermAPI:
                     log.debug(
                         f"PROFILE FOUND: '{profile.name}' ({profile_guid})",
                         f"in window '{_window.window_id}'",
-                        f"for session '{session.session_id}"
+                        f"for session '{session.session_id}'",
                     )
                     return _window
 
@@ -347,8 +341,7 @@ class iTermAPI:
     ) -> Tab:
         app = await self.get_app()
         profile = await self.get_profile(target_profile_name=profile_name)
-        # TODO: update this if get_window gets updated
-        window = await self.get_window(**{"window_id": window_id, "profile_name": profile_name, "tab_id": tab_id})
+        window = await self.get_window(window_id=window_id, profile_name=profile_name, tab_id=tab_id)
         tab: Tab | None = None
 
         async def from_tab_id(_tab_id: str) -> Tab | None:
@@ -679,10 +672,13 @@ class iTermAPI:
         """Check if the Python API is enabled in iTerm2 preferences."""
         try:
             result = subprocess.run(
-                ["defaults", "read", "com.googlecode.iterm2", "EnableAPIServer"], capture_output=True, text=True
+                ["defaults", "read", "com.googlecode.iterm2", "EnableAPIServer"],
+                capture_output=True,
+                text=True,
+                check=True,
             )
-            return result.returncode == 0 and result.stdout.strip() == "1"
-        except Exception:
+            return result.stdout.strip() == "1"
+        except subprocess.CalledProcessError:  # Non-zero exit code
             return False
 
     @staticmethod
@@ -695,7 +691,7 @@ class iTermAPI:
                 capture_output=True,
             )
             return True
-        except Exception:
+        except subprocess.CalledProcessError:
             return False
 
     def _build_tag_regex(self, profile: Profile | PartialProfile) -> re.Pattern[str]:
@@ -809,10 +805,10 @@ class iTermAPI:
         app = await self.get_app()
         windows = [window] if window is not None else app.windows
 
-        for window in windows:
-            for tab in window.tabs:
-                for session in tab.all_sessions:
-                    yield window, tab, session
+        for current_window in windows:
+            for current_tab in current_window.tabs:
+                for current_session in current_tab.all_sessions:
+                    yield current_window, current_tab, current_session
 
     def _current_context_matches(
         self,
@@ -832,10 +828,7 @@ class iTermAPI:
             return False
 
         ctx_profile = self.profile
-        if ctx_profile is not None and self._profiles_match(ctx_profile, profile):
-            return True
-
-        return False
+        return ctx_profile is not None and self._profiles_match(ctx_profile, profile)
 
     @overload
     @staticmethod

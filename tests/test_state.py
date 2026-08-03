@@ -10,13 +10,7 @@ from typing import Any, cast
 import pytest
 
 from iterm2_api_wrapper import state as state_module
-from iterm2_api_wrapper.state import (
-    LoopManager,
-    MarkedCommand,
-    User,
-    _validate_state,
-    iTermState,
-)
+from iterm2_api_wrapper.state import LoopManager, MarkedCommand, User, _validate_state, iTermState
 from iterm2_api_wrapper.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
 from iterm2_api_wrapper.utils.parser import ParseResult
 
@@ -911,10 +905,7 @@ def test_get_prompt_routes_through_current_prompt_wrapper(monkeypatch: pytest.Mo
 
         assert await state._get_prompt("uid-1") == "PROMPT-uid-1"
         assert await state._get_prompt() == "PROMPT-LAST"
-        assert captured == [
-            (state.connection, "session-1", "uid-1"),
-            (state.connection, "session-1", None),
-        ]
+        assert captured == [(state.connection, "session-1", "uid-1"), (state.connection, "session-1", None)]
 
     asyncio.run(scenario())
 

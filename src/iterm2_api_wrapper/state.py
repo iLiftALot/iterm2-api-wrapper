@@ -27,6 +27,7 @@ from .utils.parser import Parser, ParseResult
 from .utils.signal import Signal
 from .utils.validator import validator
 
+
 if TYPE_CHECKING:
     from .api.it2app import App
     from .api.it2connection import Connection
