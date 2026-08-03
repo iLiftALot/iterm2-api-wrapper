@@ -289,8 +289,9 @@ class iTermAPI:
 
                 if self._profiles_match(session_profile, profile):
                     log.debug(
-                        f"PROFILE FOUND: '{profile.name}' ({profile_guid}) in window "
-                        f"'{_window.window_id}' for session '{session.name}' ({session.session_id})"
+                        f"PROFILE FOUND: '{profile.name}' ({profile_guid})",
+                        f"in window '{_window.window_id}'",
+                        f"for session '{session.session_id}"
                     )
                     return _window
 
@@ -306,15 +307,7 @@ class iTermAPI:
 
         async def from_tab_id(_tab_id: str) -> Window | None:
             _window = app.get_window_for_tab(_tab_id)
-            if _window is not None:
-                return _window
-
-            for window_obj in app.windows:
-                for tab in window_obj.tabs:
-                    if _tab_id == tab.tab_id:
-                        return window_obj
-
-            return None
+            return _window
 
         async def from_none() -> Window | None:
             if self.window and (self.profile_name or self.profile):
@@ -947,6 +940,7 @@ async def create_iterm_state(
     )
 
     from ..state import iTermState
+    from ..utils.signal import Signal, SignalShellBusyError
 
     state = iTermState(
         connection=await api.get_connection(),
@@ -957,5 +951,12 @@ async def create_iterm_state(
         profile=await api.get_profile(),
         is_hotkey_window=bool(await (await api.get_window()).async_get_variable("isHotkeyWindow")),
     )
+
+    shell_type = await state.session.async_get_variable("shell")
+    if shell_type and Signal.supports(str(shell_type)):
+        try:
+            await Signal(state, str(shell_type)).install()
+        except SignalShellBusyError as error:
+            log.debug("Deferred signal-handler installation until the target shell is idle", {"reason": str(error)})
 
     return state

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import os
 import re
 import shlex
 from collections.abc import Awaitable, Callable, Coroutine
@@ -24,7 +25,7 @@ from .utils.loop_manager import LoopManager
 from .utils.marked_command import MarkedCommand
 from .utils.parser import Parser, ParseResult
 from .utils.signal import Signal
-
+from .utils.validator import validator
 
 if TYPE_CHECKING:
     from .api.it2app import App
@@ -54,8 +55,8 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 
-def _has_session_value(value: object) -> bool:
-    return value is not None and bool(str(value).strip())
+def _has_session_values(*values: object) -> bool:
+    return bool([v is not None and bool(str(v).strip()) for v in values])
 
 
 def _validate_state(
@@ -91,11 +92,11 @@ def _validate_state(
 
         # We're on the correct loop — validate + execute
         try:
-            await self.ensure_state()
+            await self._ensure_state()
             return await method(self, *args, **kwargs)
         except (ConnectionClosed, ConcurrencyError):
             log.warning("Connection closed, refreshing state and retrying...")
-            await self.ensure_state()  # Uses the `_refresh_callback`
+            await self._ensure_state()  # Uses the `_refresh_callback`
             return await method(self, *args, **kwargs)
 
     if not inspect.iscoroutinefunction(method):
@@ -163,6 +164,7 @@ class User:
         return all_user_vars
 
 
+@validator
 @dataclass
 class iTermState:
     """Global iTerm2 state."""
@@ -213,7 +215,7 @@ class iTermState:
     # Validation Helpers
     # --------------------------------------------------
 
-    def refresh_from(self, new_state: iTermState) -> None:
+    def _refresh_from(self, new_state: iTermState) -> None:
         """
         Refresh this state in-place from another state instance.
 
@@ -244,11 +246,11 @@ class iTermState:
         if new_loop is not None:
             self.connection.loop = new_loop
 
-    async def ensure_state(
+    async def _ensure_state(
         self, refresh_callback: Callable[[], Awaitable[iTermState]] | Awaitable[iTermState] | None = None
     ) -> None:
         """Ensure the state is valid, refreshing if needed."""
-        if await self.validated_state():
+        if await self._validated_state():
             return
 
         callback = refresh_callback or self._refresh_callback
@@ -260,9 +262,9 @@ class iTermState:
             new_state = await cast(Awaitable[iTermState], callback)
         else:
             new_state = await callback()
-        self.refresh_from(new_state)
+        self._refresh_from(new_state)
 
-    async def validated_state(self) -> bool:
+    async def _validated_state(self) -> bool:
         """Validate state by checking if iTerm2 objects are still active.
 
         Checks (in order):
@@ -272,7 +274,7 @@ class iTermState:
         """
         try:
             # Check connection is alive and event loop is usable
-            if not await self.online():
+            if not await self._online():
                 return False
 
             # Check app still responds
@@ -318,7 +320,7 @@ class iTermState:
             )
             return False
 
-    async def online(self, decode: bool = False) -> bool:
+    async def _online(self, decode: bool = False) -> bool:
         """
         Check if the iTerm2 connection is online.
 
@@ -412,7 +414,7 @@ class iTermState:
     # Public API
     # --------------------------------------------------
 
-    @_validate_state
+    # @_validate_state
     async def exec(self, coro_factory: Coroutine[None, None, T]) -> T:
         """Execute a iTerm2-source function on the state loop.
 
@@ -478,28 +480,28 @@ class iTermState:
         return await self.get_variable(ctx="user", variable=name)
 
     @overload
-    @_validate_state
+    # @_validate_state
     async def get_variable(
         self,
         ctx: VariableScope,
         variable: Literal["*", AppVarEnum.all, WindowVarEnum.all, TabVarEnum.all, SessionVarEnum.all, UserVarEnum.all],
     ) -> dict[str, str]: ...
     @overload
-    @_validate_state
+    # @_validate_state
     async def get_variable(self, ctx: SessionScope, variable: SessionVariable) -> str: ...
     @overload
-    @_validate_state
+    # @_validate_state
     async def get_variable(self, ctx: TabScope, variable: TabVariable) -> str: ...
     @overload
-    @_validate_state
+    # @_validate_state
     async def get_variable(self, ctx: WindowScope, variable: WindowVariable) -> str: ...
     @overload
-    @_validate_state
+    # @_validate_state
     async def get_variable(self, ctx: AppScope, variable: AppVariable) -> str: ...
     @overload
-    @_validate_state
+    # @_validate_state
     async def get_variable(self, ctx: UserScope, variable: UserVariable) -> str: ...
-    @_validate_state
+    # @_validate_state
     async def get_variable(self, ctx: VariableScope, variable: Variable) -> str | dict[str, str]:
         """Get a variable from the specified context."""
 
@@ -524,7 +526,7 @@ class iTermState:
         result: str | dict[str, str] = await target.async_get_variable(variable)
         return result
 
-    @_validate_state
+    # @_validate_state
     async def send_escape_sequence(
         self, *sequences: HexCode | str, broadcast: bool = False, timeout: float = 2.0, wait: bool = False
     ) -> bool:
@@ -581,15 +583,15 @@ class iTermState:
                 log.warning(f"Timed out waiting for terminal response after sending escape sequence(s): {sequences}")
                 return False
 
-    @_validate_state
+    # @_validate_state
     async def get_selection(self) -> str:
         selection_instance = await self.session.async_get_selection()
         selection_text = await self.session.async_get_selection_text(selection_instance)
         return selection_text
 
-    @_validate_state
+    # @_validate_state
     async def run_command(
-        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 10.0
+        self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 5.0
     ) -> CommandExecutionResult:
         """Run a command and return its output."""
         safe_command = re.sub(r"(\r|\n)", lambda m: "\\r" if m.group(1) == "\r" else "\\n", command)
@@ -597,9 +599,21 @@ class iTermState:
 
         async with self._run_command_lock:
             current_path = await self.get_session_var("path")
-            if path and current_path != path:
+            target_path: str | None = None
+            if path:
+                target_path = os.path.abspath(os.path.expanduser(path))
+                if not os.path.isdir(target_path):
+                    raise NotADirectoryError(target_path)
+
+            if target_path is not None and current_path != target_path:
                 shell_type = await self.get_session_var("shell")
-                await Signal(self, shell_type).cd(path)
+                signal_result = await Signal(self, shell_type).execute(f"builtin cd -- {shlex.quote(target_path)}")
+                if signal_result.returncode != 0:
+                    detail = signal_result.stderr.strip() or signal_result.stdout.strip() or "no shell error output"
+                    raise RuntimeError(
+                        f"The target shell rejected the directory change to {target_path!r} "
+                        f"(status={signal_result.returncode}): {detail}"
+                    )
 
             shell_integration_enabled = await self._shell_integration_enabled()
             log.debug(
@@ -647,7 +661,7 @@ class iTermState:
         self,
         coro: Awaitable[None],
         *,
-        timeout: float = 30.0,
+        timeout: float = 5.0,
         expected_command: str | None = None,
         initial_prompt_id: str | None = None,
     ) -> CommandExecutionStatus:
@@ -841,13 +855,13 @@ class iTermState:
                 return cache(await self._ask_load_shell_integration())
             return cache(False)
 
-        last_command = await self.session.async_get_variable("lastCommand")
-        username = await self.session.async_get_variable("username")
-        hostname = await self.session.async_get_variable("hostname")
+        last_command = await self.get_variable("session", "lastCommand")
+        username = await self.get_variable("session", "username")
+        hostname = await self.get_variable("session", "hostname")
 
-        prompt_state = getattr(last_prompt, "state", None)
+        prompt_state = last_prompt.state
         prompt_ready = prompt_state in {prompt.PromptState.EDITING, prompt.PromptState.UNKNOWN}
-        has_identity = _has_session_value(username) and _has_session_value(hostname)
+        has_identity = _has_session_values(last_command, username, hostname)
 
         if prompt_ready and has_identity:
             log.debug(
@@ -870,10 +884,10 @@ class iTermState:
             )
             return cache(False)
 
-        job = await self.session.async_get_variable("jobName")
-        shell = await self.session.async_get_variable("shell")
+        job = await self.get_variable("session", "jobName")
+        shell = await self.get_variable("session", "shell")
 
-        if job and shell and job != Path(str(shell)).name:
+        if job and shell and job != Path(shell).name:
             log.debug(
                 "Shell integration prompt exists, but foreground job is not the shell", {"job": job, "shell": shell}
             )
@@ -883,7 +897,7 @@ class iTermState:
 
     async def _probe_shell_integration_live(self, timeout: float | None = None) -> bool:
         async with PromptMonitor(self.connection, self.session.session_id) as monitor:
-            await self.session.async_send_text("\r", suppress_broadcast=True)
+            await self._send_text("\r", suppress=True, clear_line=False)
             try:
                 await asyncio.wait_for(
                     monitor.async_get(mode=PromptMonitor.Mode.PROMPT), timeout or self.SI_PROBE_TIMEOUT

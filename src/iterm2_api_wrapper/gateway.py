@@ -48,10 +48,10 @@ class RefreshableState(Protocol[StateTAny]):
     _refresh_callback: Callable[[], Awaitable[StateTAny]] | Awaitable[StateTAny] | None
     _event_loop: asyncio.AbstractEventLoop | None
 
-    async def ensure_state(
+    async def _ensure_state(
         self, refresh_callback: Callable[[], Awaitable[StateTAny]] | Awaitable[StateTAny] | None = None
     ) -> None: ...
-    def refresh_from(self, new_state: StateTAny) -> None: ...
+    def _refresh_from(self, new_state: StateTAny) -> None: ...
 
 
 _ENV_CONNECT_TIMEOUT = "IT2_CONNECT_TIMEOUT"

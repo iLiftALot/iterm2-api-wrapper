@@ -34,6 +34,31 @@ class Prompt(prompt.Prompt):
     def command_range(self) -> CoordRange:
         return CoordRange.from_proto(self.__proto.command_range)
 
+    @property
+    def state(self) -> prompt.PromptState:
+        """Return the semantic prompt state using the protobuf wire enum.
+
+        iterm2 2.20's generated protobuf defines FINISHED as 2 in certain cases,
+        while its handwritten PromptState enum defines FINISHED as 3. Map by the
+        protobuf enum's semantic members so valid FINISHED responses do not
+        raise ValueError.
+        """
+        if not self.__proto.HasField("prompt_state"):
+            return prompt.PromptState.UNKNOWN
+
+        raw_state = self.__proto.prompt_state
+
+        if raw_state == api_pb2.GetPromptResponse.State.Value("EDITING"):
+            return prompt.PromptState.EDITING
+
+        if raw_state == api_pb2.GetPromptResponse.State.Value("RUNNING"):
+            return prompt.PromptState.RUNNING
+
+        if raw_state == api_pb2.GetPromptResponse.State.Value("FINISHED"):
+            return prompt.PromptState.FINISHED
+
+        return prompt.PromptState.UNKNOWN
+
 
 PromptEvent = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None]
 PromptEventWithId = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None, str | None]

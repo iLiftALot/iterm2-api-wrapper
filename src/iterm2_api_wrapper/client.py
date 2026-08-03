@@ -127,7 +127,7 @@ class iTermClient(Generic[StateT]):
         async with self._lock:
             new_state = await self._init_async()
             try:
-                self._state.refresh_from(new_state)
+                self._state._refresh_from(new_state)
             except Exception:
                 # As a fallback, replace state entirely. This can break code that
                 # holds a reference to the old state, but is safer than leaving
@@ -203,7 +203,7 @@ class iTermClient(Generic[StateT]):
         async def _invoke() -> StateT:
             try:
                 async with self._lock:
-                    await self._state.ensure_state(refresh_callback=self._init_async)
+                    await self._state._ensure_state(refresh_callback=self._init_async)
             except Exception:
                 await self._refresh_async()
 
@@ -216,7 +216,7 @@ class iTermClient(Generic[StateT]):
 
         try:
             async with self._lock:
-                await self._state.ensure_state(refresh_callback=self._init_async)
+                await self._state._ensure_state(refresh_callback=self._init_async)
         except Exception:
             await self._refresh_async()
 
