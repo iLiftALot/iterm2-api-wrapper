@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, cast
 
 from iterm2_api_wrapper import state as state_module
 from iterm2_api_wrapper.state import iTermState
+from iterm2_api_wrapper.utils.signal import SignalResult
 
 
 if TYPE_CHECKING:
@@ -137,21 +139,35 @@ class FakePromptMonitor:
 
 
 class FakeSignal:
-    signal_calls: ClassVar[list[tuple[object, str, str]]]
+    install_calls: ClassVar[list[tuple[object, str]]] = []
+    execute_calls: ClassVar[list[tuple[object, str, str]]] = []
 
     def __init__(self, target_state: object, shell: str) -> None:
         self.target_state = target_state
         self.shell = shell
 
-        FakeSignal.signal_calls = []
+    @staticmethod
+    def supports(shell: str) -> bool:
+        return Path(shell).name.lstrip("-") == "zsh"
 
-    async def cd(self, path: str) -> None:
-        self.signal_calls.append((self.target_state, self.shell, path))
+    @classmethod
+    def reset(cls) -> None:
+        cls.install_calls = []
+        cls.execute_calls = []
+
+    async def install(self) -> None:
+        self.install_calls.append((self.target_state, self.shell))
+
+    async def execute(self, command: str) -> SignalResult:
+        self.execute_calls.append((self.target_state, self.shell, command))
+        return SignalResult(returncode=0, stdout="", stderr="")
 
 
 class FakeState:
     def __init__(self) -> None:
         self.session = SimpleNamespace(session_id="session-1")
+        self.shell = "/bin/zsh"
+        self.job_name = "zsh"
         self.sent: list[tuple[str, bool]] = []
         self.on_send: (
             Callable[
@@ -183,8 +199,12 @@ class FakeState:
         self,
         name: str,
     ) -> str:
-        assert name == "tty"
-        return "/dev/ttys123"
+        values = {
+            "jobName": self.job_name,
+            "shell": self.shell,
+            "tty": "/dev/ttys123",
+        }
+        return values[name]
 
 
 def as_state(

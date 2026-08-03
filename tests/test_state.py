@@ -82,7 +82,7 @@ def test_refresh_from_requires_iterm_state() -> None:
         state = make_state(asyncio.get_running_loop())
 
         with pytest.raises(TypeError, match="refresh_from expects an iTermState"):
-            call_untyped(state.refresh_from, object())
+            call_untyped(state._refresh_from, object())
 
     asyncio.run(scenario())
 
@@ -100,9 +100,9 @@ def test_ensure_state_refreshes_from_callback_when_invalid() -> None:
         async def callback() -> iTermState:
             return refreshed
 
-        patch_attr(state, "validated_state", invalid)
+        patch_attr(state, "_validated_state", invalid)
 
-        await state.ensure_state(callback)
+        await state._ensure_state(callback)
 
         assert state.connection is refreshed.connection
         assert state.app is refreshed.app
@@ -118,10 +118,10 @@ def test_ensure_state_requires_refresh_callback_when_invalid() -> None:
         async def invalid() -> bool:
             return False
 
-        patch_attr(state, "validated_state", invalid)
+        patch_attr(state, "_validated_state", invalid)
 
         with pytest.raises(RuntimeError, match="No refresh callback"):
-            await state.ensure_state()
+            await state._ensure_state()
 
     asyncio.run(scenario())
 
@@ -153,9 +153,9 @@ def test_validated_state_updates_current_iterm_objects(monkeypatch: pytest.Monke
             return True
 
         monkeypatch.setattr(state_module, "async_get_app", fake_get_app)
-        patch_attr(state, "online", online)
+        patch_attr(state, "_online", online)
 
-        assert await state.validated_state() is True
+        assert await state._validated_state() is True
         assert state.session is new_session
         assert state.window is new_window
         assert state.tab is new_tab
@@ -170,11 +170,11 @@ def test_online_uses_passive_websocket_state() -> None:
         state = make_state(loop)
         as_fake_connection(state.connection).websocket = websocket
 
-        assert await state.online() is True
+        assert await state._online() is True
         assert websocket.recv_calls == 0
 
         websocket.state = SimpleNamespace(name="CLOSED")
-        assert await state.online() is False
+        assert await state._online() is False
         assert websocket.recv_calls == 0
 
     asyncio.run(scenario())
@@ -247,7 +247,7 @@ def test_variable_helpers_dispatch_to_expected_targets() -> None:
         async def ensure_state(refresh_callback: Any = None) -> None:
             return None
 
-        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_ensure_state", ensure_state)
         get_variable = cast(Any, state.get_variable)
 
         assert await get_variable("session", "path") == "/current"
@@ -303,6 +303,9 @@ def test_run_command_without_shell_integration_sources_marked_script_and_cleans_
 ) -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
+        target_path = tmp_path / "target with spaces\nand-newline"
+        target_path.mkdir()
+        FakeSignal.reset()
         status = CommandExecutionStatus(
             prompt_id="prompt-1", command="pwd", exit_code=CommandExecutionStatus.ExitCode.SUCCESS
         )
@@ -355,7 +358,7 @@ def test_run_command_without_shell_integration_sources_marked_script_and_cleans_
         async def no_sleep(delay: float) -> None:
             return None
 
-        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_ensure_state", ensure_state)
         patch_attr(state, "get_session_var", get_session_var)
         patch_attr(state, "_shell_integration_enabled", shell_integration_enabled)
         patch_attr(state, "_snapshot", snapshot)
@@ -366,12 +369,14 @@ def test_run_command_without_shell_integration_sources_marked_script_and_cleans_
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         monkeypatch.setattr(state_module, "Signal", FakeSignal)
 
-        result = await state.run_command("pwd", path="/new", broadcast=False, timeout=4.0)
+        result = await state.run_command("pwd", path=str(target_path), broadcast=False, timeout=4.0)
 
         assert result == CommandExecutionResult(output="script-output", status=status)
-        assert list(tmp_path.iterdir()) == []
+        assert set(tmp_path.iterdir()) == {target_path}
 
-        assert FakeSignal.signal_calls == [(state, "/bin/zsh", "/new")]
+        assert FakeSignal.execute_calls == [
+            (state, "/bin/zsh", f"builtin cd -- {state_module.shlex.quote(str(target_path))}")
+        ]
         sent = as_fake_session(state.session).sent
         assert sent[0] == ("\x15", True)
         source_command, suppress = sent[1]
@@ -517,7 +522,7 @@ def test_run_command_with_shell_integration_returns_prompt_output() -> None:
                 output="prompt-output", prompt="prompt$", command="echo\\nhi", command_parsed="echo\\nhi"
             )
 
-        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_ensure_state", ensure_state)
         patch_attr(state, "_shell_integration_enabled", shell_integration_enabled)
         patch_attr(state, "_snapshot", snapshot)
         patch_attr(state, "_wait_for_prompt", wait_for_prompt)
@@ -570,7 +575,7 @@ def test_run_command_returns_parser_output_when_prompt_monitor_times_out() -> No
             assert initial_snapshot == ["prompt$"]
             return ParseResult(output="fallback", prompt="prompt$", command="echo hi", command_parsed="echo hi")
 
-        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_ensure_state", ensure_state)
         patch_attr(state, "_shell_integration_enabled", shell_integration_enabled)
         patch_attr(state, "_snapshot", snapshot)
         patch_attr(state, "_wait_for_prompt", wait_for_prompt)
@@ -644,7 +649,7 @@ def test_send_escape_sequence_resolves_members_and_names() -> None:
         async def ensure_state(refresh_callback: Any = None) -> None:
             return None
 
-        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_ensure_state", ensure_state)
 
         await state.send_escape_sequence(HexCodeEnum.ESC, "B", broadcast=False)
 
@@ -661,7 +666,7 @@ def test_send_escape_sequence_requires_at_least_one_sequence() -> None:
         async def ensure_state(refresh_callback: Any = None) -> None:
             return None
 
-        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_ensure_state", ensure_state)
 
         with pytest.raises(ValueError, match="at least one sequence"):
             await state.send_escape_sequence()
@@ -678,6 +683,10 @@ def test_typed_var_getters_route_to_expected_contexts() -> None:
             captured.append((ctx, variable))
             return "value"
 
+        async def ensure_state(refresh_callback: Any = None) -> None:
+            return None
+
+        patch_attr(state, "_ensure_state", ensure_state)
         patch_attr(state, "get_variable", fake_get_variable)
 
         await state.get_session_var("path")
@@ -703,7 +712,7 @@ def test_online_returns_false_without_websocket() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
         as_fake_connection(state.connection).websocket = None
-        assert await state.online() is False
+        assert await state._online() is False
 
     asyncio.run(scenario())
 
@@ -712,7 +721,7 @@ def test_online_returns_false_when_close_code_present() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
         as_fake_connection(state.connection).websocket = FakeWebsocket(state="OPEN", close_code=1006)
-        assert await state.online() is False
+        assert await state._online() is False
 
     asyncio.run(scenario())
 
@@ -724,8 +733,8 @@ def test_validated_state_returns_false_when_offline() -> None:
         async def offline() -> bool:
             return False
 
-        patch_attr(state, "online", offline)
-        assert await state.validated_state() is False
+        patch_attr(state, "_online", offline)
+        assert await state._validated_state() is False
 
     asyncio.run(scenario())
 
@@ -740,10 +749,10 @@ def test_validated_state_returns_false_when_app_missing(monkeypatch: pytest.Monk
         async def fake_get_app(connection: Any, *, create_if_needed: bool) -> None:
             return None
 
-        patch_attr(state, "online", online)
+        patch_attr(state, "_online", online)
         monkeypatch.setattr(state_module, "async_get_app", fake_get_app)
 
-        assert await state.validated_state() is False
+        assert await state._validated_state() is False
 
     asyncio.run(scenario())
 
@@ -774,7 +783,7 @@ def test_refresh_from_copies_all_fields_and_reconciles_loop() -> None:
 
         replacement._refresh_callback = callback
 
-        state.refresh_from(replacement)
+        state._refresh_from(replacement)
 
         assert state.connection is replacement.connection
         assert state.app is replacement.app
@@ -793,7 +802,7 @@ def test_refresh_from_rejects_non_state() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
         with pytest.raises(TypeError, match="refresh_from expects an iTermState"):
-            state.refresh_from(cast(Any, object()))
+            state._refresh_from(cast(Any, object()))
 
     asyncio.run(scenario())
 
@@ -807,12 +816,12 @@ def test_ensure_state_accepts_awaitable_callback() -> None:
         async def invalid() -> bool:
             return False
 
-        patch_attr(state, "validated_state", invalid)
+        patch_attr(state, "_validated_state", invalid)
 
         async def awaitable_callback() -> iTermState:
             return refreshed
 
-        await state.ensure_state(awaitable_callback())
+        await state._ensure_state(awaitable_callback())
 
         assert state.connection is refreshed.connection
 
@@ -1079,6 +1088,10 @@ def test_shell_integration_enabled_trusts_editing_prompt_state() -> None:
         async def get_prompt(unique_id: str | None = None) -> Any:
             return editing_prompt
 
+        async def ensure_state(refresh_callback: Any = None) -> None:
+            return None
+
+        patch_attr(state, "_ensure_state", ensure_state)
         patch_attr(state, "_get_prompt", get_prompt)
 
         assert await state._shell_integration_enabled() is True
@@ -1161,7 +1174,7 @@ def test_run_command_uses_prompt_output_when_shell_integration_live() -> None:
             assert initial_snapshot == ["prompt$"]
             return ParseResult(output="hi", prompt="prompt$", command="echo hi", command_parsed="echo hi")
 
-        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_ensure_state", ensure_state)
         patch_attr(state, "get_session_var", get_session_var)
         patch_attr(state, "_shell_integration_enabled", shell_integration_enabled)
         patch_attr(state, "_snapshot", snapshot)
@@ -1188,7 +1201,7 @@ def test_validate_state_cancels_cross_loop_future_when_outer_task_is_cancelled()
         async def ensure_state(refresh_callback: Any = None) -> None:
             return None
 
-        patch_attr(state, "ensure_state", ensure_state)
+        patch_attr(state, "_ensure_state", ensure_state)
 
         started = asyncio.Event()
         cancelled_on_target = asyncio.Event()

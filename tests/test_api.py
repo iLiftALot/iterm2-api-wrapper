@@ -14,6 +14,9 @@ from iterm2_api_wrapper import pyobjc_adapter
 from iterm2_api_wrapper.api import it2api as api_module
 from iterm2_api_wrapper.api.it2api import contains_matching_term, create_iterm_state, iTermAPI
 from iterm2_api_wrapper.errors import ProfileNotFoundError, TabNotFoundError
+from iterm2_api_wrapper.utils import signal as signal_module
+
+from .fake import FakeSignal
 
 
 if TYPE_CHECKING:
@@ -51,11 +54,20 @@ class FakeProfile:
 
 
 class FakeSession:
-    def __init__(self, name: str, session_id: str, profile: FakeProfile, *, buried: bool = False) -> None:
+    def __init__(
+        self,
+        name: str,
+        session_id: str,
+        profile: FakeProfile,
+        *,
+        buried: bool = False,
+        shell: str | None = None,
+    ) -> None:
         self.name = name
         self.session_id = session_id
         self.profile = profile
         self.buried = buried
+        self.shell = shell
         self.activation_args: tuple[bool, bool] | None = None
         self.profile_properties_written: list[FakeLocalWriteOnlyProfile] = []
 
@@ -65,6 +77,8 @@ class FakeSession:
     async def async_get_variable(self, variable: str) -> str | None:
         if variable == "profileName":
             return self.profile.name
+        if variable == "shell":
+            return self.shell
         return None
 
     async def async_set_name(self, name: str) -> None:
@@ -432,7 +446,7 @@ def test_create_iterm_state_builds_state_from_api_context(monkeypatch: pytest.Mo
         calls: list[dict[str, object]] = []
         conn = as_connection(SimpleNamespace(loop=None))
         profile = FakeProfile(name="pyterm-mcp", guid="CONFIGURED-GUID")
-        session = FakeSession("target", "session-1", profile)
+        session = FakeSession("target", "session-1", profile, shell="/bin/zsh")
         tab = FakeTab("tab-1", [session], title="tab-1")
         window = FakeWindow("window-1", [tab])
         app = FakeApp([window])
@@ -447,7 +461,9 @@ def test_create_iterm_state_builds_state_from_api_context(monkeypatch: pytest.Mo
             api.session = as_session(session)
             return api
 
+        FakeSignal.reset()
         monkeypatch.setattr(iTermAPI, "async_create", staticmethod(async_create))
+        monkeypatch.setattr(signal_module, "Signal", FakeSignal)
 
         state = await create_iterm_state(
             conn, dedicated_profile_name="fallback-profile", new_tab=True, debug=True, activate=False
@@ -458,6 +474,7 @@ def test_create_iterm_state_builds_state_from_api_context(monkeypatch: pytest.Mo
         assert state.tab is tab
         assert state.session is session
         assert state.profile is profile
+        assert FakeSignal.install_calls == [(state, "/bin/zsh")]
         assert calls == [
             {
                 "connection_instance": conn,
@@ -470,6 +487,70 @@ def test_create_iterm_state_builds_state_from_api_context(monkeypatch: pytest.Mo
                 "profile_properties": None,
             }
         ]
+
+    asyncio.run(scenario())
+
+
+def test_create_iterm_state_skips_signal_install_for_unsupported_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def scenario() -> None:
+        conn = as_connection(SimpleNamespace(loop=None))
+        profile = FakeProfile(name="pyterm-mcp", guid="CONFIGURED-GUID")
+        session = FakeSession("target", "session-1", profile, shell="/bin/bash")
+        tab = FakeTab("tab-1", [session], title="tab-1")
+        window = FakeWindow("window-1", [tab])
+        app = FakeApp([window])
+
+        async def async_create(**_: object) -> iTermAPI:
+            api = make_api(profile, [window])
+            api._connection = conn
+            api._app = as_app(app)
+            api.window = as_window(window)
+            api.tab = as_tab(tab)
+            api.session = as_session(session)
+            return api
+
+        FakeSignal.reset()
+        monkeypatch.setattr(iTermAPI, "async_create", staticmethod(async_create))
+        monkeypatch.setattr(signal_module, "Signal", FakeSignal)
+
+        await create_iterm_state(conn)
+
+        assert FakeSignal.install_calls == []
+
+    asyncio.run(scenario())
+
+
+def test_create_iterm_state_defers_signal_install_when_shell_is_busy(monkeypatch: pytest.MonkeyPatch) -> None:
+    class BusySignal(FakeSignal):
+        async def install(self) -> None:
+            await super().install()
+            raise signal_module.SignalShellBusyError("foreground job is busy")
+
+    async def scenario() -> None:
+        conn = as_connection(SimpleNamespace(loop=None))
+        profile = FakeProfile(name="pyterm-mcp", guid="CONFIGURED-GUID")
+        session = FakeSession("target", "session-1", profile, shell="/bin/zsh")
+        tab = FakeTab("tab-1", [session], title="tab-1")
+        window = FakeWindow("window-1", [tab])
+        app = FakeApp([window])
+
+        async def async_create(**_: object) -> iTermAPI:
+            api = make_api(profile, [window])
+            api._connection = conn
+            api._app = as_app(app)
+            api.window = as_window(window)
+            api.tab = as_tab(tab)
+            api.session = as_session(session)
+            return api
+
+        BusySignal.reset()
+        monkeypatch.setattr(iTermAPI, "async_create", staticmethod(async_create))
+        monkeypatch.setattr(signal_module, "Signal", BusySignal)
+
+        state = await create_iterm_state(conn)
+
+        assert state.session is session
+        assert BusySignal.install_calls == [(state, "/bin/zsh")]
 
     asyncio.run(scenario())
 

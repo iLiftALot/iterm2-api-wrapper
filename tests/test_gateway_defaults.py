@@ -26,10 +26,10 @@ class FakeState:
     _refresh_callback: Any = None
     _event_loop: asyncio.AbstractEventLoop | None = None
 
-    async def ensure_state(self, refresh_callback: Any = None) -> None:
+    async def _ensure_state(self, refresh_callback: Any = None) -> None:
         return None
 
-    def refresh_from(self, new_state: Any) -> None:
+    def _refresh_from(self, new_state: Any) -> None:
         assert isinstance(new_state, FakeState)
         self.connection = new_state.connection
         self.kwargs = new_state.kwargs

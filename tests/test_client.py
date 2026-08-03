@@ -22,7 +22,7 @@ class DummyState:
     ensure_state_calls: int = 0
     ensure_state_exc: Exception | None = None
 
-    async def ensure_state(self, refresh_callback: Any = None) -> None:
+    async def _ensure_state(self, refresh_callback: Any = None) -> None:
         self.ensure_state_calls += 1
         if self.ensure_state_exc is None:
             return
@@ -30,7 +30,7 @@ class DummyState:
         self.ensure_state_exc = None
         raise exc
 
-    def refresh_from(self, new_state: DummyState) -> None:
+    def _refresh_from(self, new_state: DummyState) -> None:
         assert isinstance(new_state, DummyState)
         self.marker = new_state.marker
         self.setup_kwargs = new_state.setup_kwargs
@@ -40,7 +40,7 @@ class DummyState:
 
 
 class FailingRefreshState(DummyState):
-    def refresh_from(self, new_state: Any) -> None:
+    def _refresh_from(self, new_state: Any) -> None:
         raise RuntimeError("refresh failed")
 
 
