@@ -24,6 +24,7 @@ class MetaEnum(EnumMeta):
         classdict = super().__prepare__(clsname, bases, **kwargs)
 
         if prefix is not None:
+
             def generate_prefixed_value(name: str, start: int, count: int, last_values: list[object]) -> str:
                 # print(f"\n\nClsName = {clsname}")
                 # last_values.reverse()
