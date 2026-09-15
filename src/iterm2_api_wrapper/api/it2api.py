@@ -8,15 +8,15 @@ import subprocess
 import sys
 from collections.abc import AsyncGenerator
 from types import NoneType
-from typing import TYPE_CHECKING, Literal, cast, overload
+from typing import TYPE_CHECKING, ClassVar, Literal, cast, overload
 
 from async_timeout import timeout as _timeout
 
 from .._logging import PrettyLog
-from ..errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
-from ..runtime_setup import validate_iterm2_runtime
+from ..core.errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
+from ..core.runtime_setup import validate_iterm2_runtime
 from .it2app import App, async_get_app
-from .it2connection import Connection
+from .it2connection import Connection as IT2Connection
 from .it2lifecycle import NewSessionMonitor
 from .it2profile import LocalWriteOnlyProfile, Profile, ProfileProperties
 from .it2prompt import PromptMonitor
@@ -29,8 +29,9 @@ else:
     from typing_extensions import Unpack
 
 if TYPE_CHECKING:
+    from ..core.gateway import Connection
+    from ..core.typings import iTermStateSetupKwargs
     from ..state import iTermState
-    from ..typings import iTermStateSetupKwargs
     from .it2lifecycle import NewSessionMonitor
     from .it2profile import PartialProfile
     from .it2session import Session
@@ -46,8 +47,8 @@ def contains_matching_term(regex_pattern: re.Pattern[str], *terms: str) -> bool:
 
 
 class iTermAPI:
-    __connection: Connection | None = None
-    __app: App | None = None
+    __connection: ClassVar[Connection | None] = None
+    __app: ClassVar[App | None] = None
 
     def __init__(
         self,
@@ -62,8 +63,6 @@ class iTermAPI:
         activate: bool = True,
         profile_properties: ProfileProperties | None = None,
     ) -> None:
-        self._connection: Connection | None = connection_instance
-        self._app: App | None = None
         self._profile_cache: dict[str, Profile | PartialProfile] = {}
 
         self.profile_name = profile_name or os.getenv("IT2_DEFAULT_PROFILE", None)
@@ -80,7 +79,7 @@ class iTermAPI:
         self._profile: Profile | PartialProfile | None = None
 
         if connection_instance is not None:
-            type(self).__connection = connection_instance
+            iTermAPI.__connection = connection_instance
 
         if not auto_initialize:
             return
@@ -100,20 +99,20 @@ class iTermAPI:
         self.loop.run_until_complete(self._initialize())
 
     @property
-    def app(self) -> App:
-        if not self._app:
-            if not self.__app:
-                raise RuntimeError("iTermAPI._app not set.")
-            self._app = self.__app
-        return self._app
+    def _app(self) -> App:
+        """Internal - do not call."""
+        app = iTermAPI.__app
+        if not app:
+            raise RuntimeError("iTermAPI.__app not set.")
+        return app
 
     @property
-    def connection(self) -> Connection:
-        if not self._connection:
-            if not self.__connection:
-                raise RuntimeError("iTermAPI._connection not set.")
-            self._connection = self.__connection
-        return self._connection
+    def _connection(self) -> Connection:
+        """Internal - do not call."""
+        connection = iTermAPI.__connection
+        if not connection:
+            raise RuntimeError("iTermAPI.__connection not set.")
+        return connection
 
     @classmethod
     async def async_create(
@@ -153,15 +152,15 @@ class iTermAPI:
         if not self._check_api_enabled():
             raise RuntimeError("iTerm2 Python API is not enabled. Enable it in iTerm2 Preferences > General > Magic.")
 
-        self._connection = await self.get_connection()
+        connection = iTermAPI.__connection = await self.get_connection()
 
         # This must run before get_app(). App construction subscribes to iTerm2
         # layout/focus notifications. The bridge makes upstream iterm2.notifications
         # register its dispatcher on this wrapper's custom Connection class rather
         # than upstream Connection.
-        validate_iterm2_runtime(self._connection)
+        validate_iterm2_runtime(connection)
 
-        self._app = await self.get_app()
+        app = iTermAPI.__app = await self.get_app()
         self.profile = await self.get_profile()
 
         selected_window: Window
@@ -169,43 +168,49 @@ class iTermAPI:
         selected_session: Session
 
         if not self.new_tab:
+            log.debug("Searching for existing window/tab/session matching profile", {"profile_name": self.profile_name})
             tagged_context = await self._find_tagged_context(self.profile)
         else:
             tagged_context = None
 
         if tagged_context is not None:
+            log.debug("Found existing window/tab/session", {"tagged_context": tagged_context})
             selected_window, selected_tab, selected_session = tagged_context
         else:
             if self.new_tab:
+                log.debug("Creating a new tab for due to new_tab=True")
                 selected_window = (
-                    self.app.current_window
-                    or self.app.windows[0]
+                    app.current_window
+                    or next(iter(app.windows), None)
                     or await self.create_window(profile_name=self.profile_name)
                 )
+
                 if selected_window is None:
                     raise WindowNotFoundError(f"{self.profile_name} ({self._profile_guid(self.profile)})")
             else:
+                log.debug("Searching for existing window")
                 selected_window = await self.get_window()
+
             selected_tab, selected_session = await self._get_tagged_tab_with_session(
                 selected_window, self.profile, new_tab=self.new_tab
             )
 
         self.window, self.tab, self.session = selected_window, selected_tab, selected_session
 
-    async def get_connection(self) -> Connection:
-        if self._connection is None:
-            if type(self).__connection is None:
-                type(self).__connection = await Connection.async_create()
-            self._connection = type(self).__connection
-        return cast(Connection, self._connection)
+    @classmethod
+    async def get_connection(cls) -> Connection:
+        conn: Connection | None = getattr(cls, "_iTermAPI__connection", None)
+        if conn is None:
+            cls.__connection = conn = await IT2Connection.async_create()
+        return conn
 
-    async def get_app(self) -> App:
-        if self._app is None:
-            if type(self).__app is None:
-                conn = await self.get_connection()
-                type(self).__app = await async_get_app(conn, create_if_needed=True)
-            self._app = type(self).__app
-        return cast(App, self._app)
+    @classmethod
+    async def get_app(cls) -> App:
+        app: App | None = getattr(cls, "_iTermAPI__app", None)
+        if app is None:
+            conn = await cls.get_connection()
+            cls.__app = app = await async_get_app(conn, create_if_needed=True)
+        return app
 
     async def get_profile(self, *, target_profile_name: str | None = None) -> Profile | PartialProfile:
         target_profile_name = target_profile_name or self.profile_name or self._profile_name(self._profile)
@@ -278,7 +283,7 @@ class iTermAPI:
 
             profile_guid = self._profile_guid(profile)
 
-            async for _window, _, session in self._iter_sessions():
+            async for _window, _, session in self.iter_sessions():
                 session_profile = await session.async_get_profile()
 
                 if self._profiles_match(session_profile, profile):
@@ -307,7 +312,11 @@ class iTermAPI:
             if self.window and (self.profile_name or self.profile):
                 _window = await from_profile()
             else:
-                _window = app.current_window or app.windows[0] or await self.create_window(profile_name=profile.name)
+                _window = (
+                    app.current_window
+                    or next(iter(app.windows), None)
+                    or await self.create_window(profile_name=profile.name)
+                )
 
             return _window
 
@@ -356,7 +365,7 @@ class iTermAPI:
 
             profile_guid = self._profile_guid(profile)
 
-            async for _, _tab, session in self._iter_sessions():
+            async for _, _tab, session in self.iter_sessions():
                 session_profile = await session.async_get_profile()
 
                 if self._profiles_match(session_profile, profile):
@@ -450,7 +459,7 @@ class iTermAPI:
 
             profile_guid = self._profile_guid(profile)
 
-            async for _, _tab, _session in self._iter_sessions():
+            async for _, _tab, _session in self.iter_sessions():
                 session_profile = await _session.async_get_profile()
 
                 if self._profiles_match(session_profile, profile):
@@ -514,9 +523,13 @@ class iTermAPI:
         await _configure_profile(session)
         return session
 
-    async def create_window(self, *, profile_name: str | None = None, command: str | None = None) -> Window | None:
+    async def create_window(self, *, profile_name: str | None = None, command: str | None = None) -> Window:
         connection = await self.get_connection()
         window = await Window.async_create(connection, profile_name, command)
+
+        if window is None:
+            raise RuntimeError(f"Unable to create a new window with profile '{profile_name}'.")
+
         return window
 
     @overload
@@ -648,7 +661,7 @@ class iTermAPI:
                             return
 
         async with NewSessionMonitor(connection) as monitor:
-            created_tab = await window.async_create_tab(profile=profile.name)
+            created_tab = await window.async_create_tab(select=False, profile=profile.name)
             if created_tab is None:
                 raise RuntimeError(f"Unable to create a new tab with profile '{profile.name}'.")
 
@@ -678,7 +691,7 @@ class iTermAPI:
                 check=True,
             )
             return result.stdout.strip() == "1"
-        except subprocess.CalledProcessError:  # Non-zero exit code
+        except (subprocess.CalledProcessError, OSError):  # Non-zero exit code or unavailable command
             return False
 
     @staticmethod
@@ -691,7 +704,7 @@ class iTermAPI:
                 capture_output=True,
             )
             return True
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, OSError):
             return False
 
     def _build_tag_regex(self, profile: Profile | PartialProfile) -> re.Pattern[str]:
@@ -708,7 +721,7 @@ class iTermAPI:
         tag_regex = self._build_tag_regex(profile)
 
         log.add_context(status=f"Searching for tagged context for {profile.name}")
-        async for window_obj, tab_obj, session_obj in self._iter_sessions(window):
+        async for window_obj, tab_obj, session_obj in self.iter_sessions(await self.get_app(), window):
             current_session = session_obj
             if current_session is None:
                 continue
@@ -801,8 +814,13 @@ class iTermAPI:
 
         return selected_tab, selected_session
 
-    async def _iter_sessions(self, window: Window | None = None) -> AsyncGenerator[tuple[Window, Tab, Session]]:
-        app = await self.get_app()
+    @classmethod
+    async def iter_sessions(
+        cls, app: App | None = None, window: Window | None = None
+    ) -> AsyncGenerator[tuple[Window, Tab, Session]]:
+        if app is None:
+            app = await cls.get_app()
+
         windows = [window] if window is not None else app.windows
 
         for current_window in windows:
@@ -876,7 +894,7 @@ class iTermAPI:
 
     @property
     def version(self) -> str:
-        connection = self.connection
+        connection = self._connection
         return ".".join(str(v) for v in connection.iterm2_protocol_version)
 
     def json(self) -> str:
@@ -885,11 +903,11 @@ class iTermAPI:
                 "profile": {"name": self._profile_name(self.profile), "guid": self._profile_guid(self.profile)},
                 "iterm2_protocol_version": self.version,
                 "app": {
-                    "windows": len(self.app.windows),
-                    "broadcast_domains": len(self.app.broadcast_domains),
-                    "buried_sessions": len(self.app.buried_sessions),
+                    "windows": len(self._app.windows),
+                    "broadcast_domains": len(self._app.broadcast_domains),
+                    "buried_sessions": len(self._app.buried_sessions),
                 }
-                if self.app
+                if self._app
                 else None,
                 "window": {
                     "tabs": len(self.window.tabs),
@@ -906,7 +924,7 @@ class iTermAPI:
                 if self.tab
                 else None,
                 "session": {"id": self.session.session_id, "name": self.session.name} if self.session else None,
-                "connection": repr(self.connection) if self.connection else None,
+                "connection": repr(self._connection) if self._connection else None,
             },
             indent=4,
         )

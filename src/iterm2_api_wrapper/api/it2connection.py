@@ -10,6 +10,7 @@ from typing import Any, ClassVar, Concatenate, ParamSpec, TypeVar, overload
 
 from iterm2 import __version__ as iterm2_version
 from iterm2 import api_pb2, auth
+from typing_extensions import Self
 from websockets.asyncio.client import ClientConnection, unix_connect
 from websockets.asyncio.client import connect as WebSocketConnect
 from websockets.exceptions import InvalidMessage, InvalidStatus
@@ -29,8 +30,6 @@ gDisconnectCallbacks: list[DisconnectCallback] = []
 
 
 def _run_disconnect_callbacks() -> None:
-    global gDisconnectCallbacks
-
     callbacks = list(gDisconnectCallbacks)
     gDisconnectCallbacks.clear()
 
@@ -111,8 +110,8 @@ class Connection:
 
         cls.helpers.append(helper)
 
-    @staticmethod
-    async def async_create() -> Connection:
+    @classmethod
+    async def async_create(cls) -> Self:
         """Create and authenticate a new iTerm2 API connection.
 
         This is intended for use in an apython REPL. It constructs a new
@@ -130,7 +129,7 @@ class Connection:
 
         .. seealso:: [Running in a REPL](https://iterm2.com/python-api/usage.html#running-in-a-repl)
         """
-        conn = Connection()
+        conn = cls()
         # Set ITERM2_COOKIE and ITERM2_KEY if needed by making an Applescript request.
         have_fresh_cookie: bool = conn.authenticate(False)
 
@@ -139,7 +138,7 @@ class Connection:
                 loop = asyncio.get_running_loop()
                 conn.loop = loop
                 conn.websocket = await conn._get_connect_coro()
-                conn.__dispatch_forever_future = asyncio.ensure_future(conn._async_dispatch_forever(conn, loop))
+                conn.__dispatch_forever_future = asyncio.ensure_future(conn._async_dispatch_forever(loop))
                 return conn
             except ConnectionRefusedError:
                 # ! NOTE: App might not be open
@@ -148,7 +147,7 @@ class Connection:
                 log.warning("Connection was refused. Checking iTerm2 application state...")
 
                 if iterm_not_open():
-                    return await async_create_app_with_retry(Connection)
+                    return await async_create_app_with_retry(cls)
 
                 raise
             except InvalidStatus as status_code_exception:
@@ -442,7 +441,7 @@ class Connection:
 
         async def async_main(connection: Connection) -> T:
             self.__tasks = []
-            dispatch_forever_task = asyncio.ensure_future(self._async_dispatch_forever(connection, loop))
+            dispatch_forever_task = asyncio.ensure_future(self._async_dispatch_forever(loop))
 
             try:
                 result = await coro(connection)
@@ -537,7 +536,7 @@ class Connection:
         """Keep pending task references only while they are still active."""
         self.__tasks = [task for task in self.__tasks if not task.done()]
 
-    async def _async_dispatch_forever(self, connection: Connection, loop: asyncio.AbstractEventLoop) -> None:
+    async def _async_dispatch_forever(self, loop: asyncio.AbstractEventLoop) -> None:
         """Read websocket messages and dispatch them to receivers or helpers."""
         self.__tasks = []
 

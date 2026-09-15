@@ -10,7 +10,7 @@ from .api.it2app import async_get_app
 
 if TYPE_CHECKING:
     from .api.it2app import App
-    from .api.it2connection import Connection
+    from .core.gateway import Connection
 
 
 async def alert_handler(

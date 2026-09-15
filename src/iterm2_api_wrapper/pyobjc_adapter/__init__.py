@@ -23,8 +23,7 @@ from .pyobjc_typings import (
 
 
 if TYPE_CHECKING:
-    from .. import iTermConnection
-    from ..api.it2connection import Connection
+    from ..core.gateway import ConnectionFactory
 
 
 log = PrettyLog.get_logger(__name__)
@@ -37,6 +36,7 @@ _POLL_INTERVAL_S = 0.5
 P = ParamSpec("P")
 R = TypeVar("R")
 T = TypeVar("T")
+ConnectionT = TypeVar("ConnectionT")
 
 
 class KillResult(TypedDict, total=False):
@@ -309,7 +309,9 @@ async def async_ensure_iterm_app_running(
     return iterm_application
 
 
-async def async_create_app_with_retry(connection_cls: iTermConnection, *, activate: bool = False) -> Connection:
+async def async_create_app_with_retry(
+    connection_cls: ConnectionFactory[ConnectionT], *, activate: bool = False
+) -> ConnectionT:
     """Launch iTerm2 if needed, wait for app launch, then wait for API readiness.
 
     This is the main entrypoint for async flows that need to ensure iTerm2 is running and ready to accept API connections.
@@ -317,14 +319,14 @@ async def async_create_app_with_retry(connection_cls: iTermConnection, *, activa
     ---
 
     :param connection_cls: The class to use for creating the iTerm2 connection.
-    :type connection_cls: :class:`iTermConnection`
+    :type connection_cls: :class:`Connection`
     :param activate: Whether to activate the iTerm2 application after launching.
     :type activate: `bool`, default=False
     :return: An instance of the established connection.
     :rtype: `Connection`
     """
 
-    from ..gateway import _async_create_connection_with_retry
+    from ..core.gateway import _async_create_connection_with_retry
 
     await async_ensure_iterm_app_running(activate=activate)
 

@@ -5,14 +5,16 @@ from typing import TYPE_CHECKING, Generic, Literal, TypeVar, cast, overload
 
 from iterm2 import api_pb2, capabilities, prompt, rpc
 
-from .it2connection import Connection
+from .._logging.logger import PrettyLog
+from ._connection_compat import _as_upstream_connection
 from .it2measurement import CoordRange
 
 
 if TYPE_CHECKING:
-    from iterm2 import Connection as IT2Connection
+    from ..core.gateway import Connection
 
-    from ..gateway import _Connection
+
+log = PrettyLog.get_logger(__name__)
 
 
 class Prompt(prompt.Prompt):
@@ -33,31 +35,6 @@ class Prompt(prompt.Prompt):
     @property
     def command_range(self) -> CoordRange:
         return CoordRange.from_proto(self.__proto.command_range)
-
-    @property
-    def state(self) -> prompt.PromptState:
-        """Return the semantic prompt state using the protobuf wire enum.
-
-        iterm2 2.20's generated protobuf defines FINISHED as 2 in certain cases,
-        while its handwritten PromptState enum defines FINISHED as 3. Map by the
-        protobuf enum's semantic members so valid FINISHED responses do not
-        raise ValueError.
-        """
-        if not self.__proto.HasField("prompt_state"):
-            return prompt.PromptState.UNKNOWN
-
-        raw_state = self.__proto.prompt_state
-
-        if raw_state == api_pb2.GetPromptResponse.State.Value("EDITING"):
-            return prompt.PromptState.EDITING
-
-        if raw_state == api_pb2.GetPromptResponse.State.Value("RUNNING"):
-            return prompt.PromptState.RUNNING
-
-        if raw_state == api_pb2.GetPromptResponse.State.Value("FINISHED"):
-            return prompt.PromptState.FINISHED
-
-        return prompt.PromptState.UNKNOWN
 
 
 PromptEvent = tuple[Literal[prompt.PromptMonitor.Mode.PROMPT], Prompt | None]
@@ -83,7 +60,7 @@ class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
     @overload
     def __init__(
         self: PromptMonitor[None],
-        connection: _Connection,
+        connection: Connection,
         session_id: str,
         modes: list[prompt.PromptMonitor.Mode] | None = None,
         *,
@@ -92,7 +69,7 @@ class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
     @overload
     def __init__(
         self: PromptMonitor[SnapshotT],  # pyright: ignore[reportInvalidTypeVarUse]
-        connection: _Connection,
+        connection: Connection,
         session_id: str,
         modes: list[prompt.PromptMonitor.Mode] | None = None,
         *,
@@ -101,13 +78,13 @@ class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
 
     def __init__(
         self,
-        connection: _Connection,
+        connection: Connection,
         session_id: str,
         modes: list[prompt.PromptMonitor.Mode] | None = None,
         *,
         snapshot_provider: Callable[[], Awaitable[SnapshotT]] | None = None,
     ):
-        super().__init__(cast("IT2Connection", connection), session_id, modes)
+        super().__init__(_as_upstream_connection(connection), session_id, modes)
         self.snapshot_provider = snapshot_provider
         self.initial_snapshot = cast(SnapshotT, None)
         self.current_snapshot = cast(SnapshotT, None)
@@ -167,34 +144,37 @@ async def async_get_prompt(
 ) -> Prompt | None:
     """Fetches a :class:`Prompt` by its unique ID if provided, or the most recent prompt.
 
-    ---
-
     :param connection: The connection to iTerm2.
     :type connection: :class:`Connection`
-    :param session_id: The Session ID the prompt belongs to.
+    :param session_id: The :class:`~iterm2_api_wrapper.api.it2session.Session` ID the prompt belongs to.
     :type session_id: `str` | `None`, default=None
     :param prompt_id: The unique ID of the prompt.
     :type prompt_id: `str | None`, default=None
+
     :return: The prompt if one exists or else `None`.
-    :rtype: :class:`Prompt` | `None`
-    :raises :class:`rpc.RPCException`: _description_
+    :rtype: `Prompt | None`
+    :raises :class:`~rpc.RPCException`: If the prompt could not be fetched due to an RPC error.
     """
 
     if prompt_id:
         capabilities.check_supports_prompt_id(connection)
 
     response: api_pb2.ServerOriginatedMessage = await rpc.async_get_prompt(connection, session_id, prompt_id)
-    status: api_pb2.GetPromptResponse._Status.ValueType = response.get_prompt_response.status
+    status: api_pb2.GetPromptResponse.Status.ValueType = response.get_prompt_response.status
     if status == api_pb2.GetPromptResponse.Status.Value("OK"):  # 0
         return Prompt(response.get_prompt_response)
 
     if status == api_pb2.GetPromptResponse.Status.Value("PROMPT_UNAVAILABLE"):  # 3
+        log.warning(
+            f"Prompt unavailable for session_id={session_id}, prompt_id={prompt_id}, "
+            f"prompt_response_status={status}, response={response}"
+        )
         return None
 
     raise rpc.RPCException(api_pb2.GetPromptResponse.Status.Name(status))
 
 
-def check_supports_prompt_monitor_modes(connection: _Connection) -> None:
+def check_supports_prompt_monitor_modes(connection: Connection) -> None:
     """Die if you can't monitor multiple prompt monitor modes."""
     if not capabilities.supports_prompt_monitor_modes(connection):
         raise capabilities.AppVersionTooOld(

@@ -8,6 +8,7 @@ this exists at runtime — the real objects come from PyObjC framework modules.
 from collections.abc import Callable, Mapping, Sequence
 from types import TracebackType
 from typing import Literal, Protocol, TypeAlias, TypedDict
+
 from typing_extensions import deprecated
 
 AXAction: TypeAlias = str
@@ -448,6 +449,30 @@ class NSWorkspace(Protocol):
         description: None,
         file_system_type: None,
     ) -> tuple[bool, bool, bool, bool, str | None, str | None]: ...
+
+class CGPoint(Protocol):
+    x: float
+    y: float
+
+    def copy(self) -> CGPoint: ...
+
+class CGSize(Protocol):
+    width: float
+    height: float
+
+    def copy(self) -> CGSize: ...
+
+class CGRect(Protocol):
+    origin: CGPoint
+    size: CGSize
+
+    def copy(self) -> CGRect: ...
+
+class NSScreen(Protocol):
+    @classmethod
+    def screens(cls) -> Sequence[NSScreen]: ...
+    def frame(self) -> CGRect: ...
+    def visibleFrame(self) -> CGRect: ...
 
 # --- ApplicationServices constants/functions for AX UI automation ---
 def AXIsProcessTrusted() -> bool: ...

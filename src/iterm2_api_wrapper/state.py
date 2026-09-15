@@ -8,35 +8,37 @@ import re
 import shlex
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
-from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Concatenate, Literal, ParamSpec, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, ParamSpec, TypedDict, TypeVar, cast, overload
 
 from websockets import ConcurrencyError, ConnectionClosed
 
 from ._logging import PrettyLog
 from .alert import poly_modal_alert_handler
+from .api.it2api import iTermAPI
 from .api.it2app import async_get_app
+from .api.it2broadcast import BroadcastDomain, async_set_broadcast_domains
 from .api.it2prompt import PromptMonitor, async_get_prompt, prompt
 from .api.it2transaction import Transaction
 from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
-from .typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
+from .core.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
+from .core.validator import validator
+from .utils.enumerate import async_enumerate
 from .utils.loop_manager import LoopManager
 from .utils.marked_command import MarkedCommand
 from .utils.parser import Parser, ParseResult
 from .utils.signal import Signal
-from .utils.validator import validator
 
 
 if TYPE_CHECKING:
     from .api.it2app import App
-    from .api.it2connection import Connection
     from .api.it2profile import PartialProfile, Profile
     from .api.it2prompt import Prompt
     from .api.it2session import Session
     from .api.it2tab import Tab
     from .api.it2window import Window
-    from .typings import HexCode
+    from .core.gateway import Connection
+    from .core.typings import HexCode
 
     # fmt: off
     from .api.it2variable import (  # isort: skip
@@ -58,55 +60,6 @@ T = TypeVar("T")
 
 def _has_session_values(*values: object) -> bool:
     return bool([v is not None and bool(str(v).strip()) for v in values])
-
-
-def _validate_state(
-    method: Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]],
-) -> Callable[Concatenate[iTermState, P], Coroutine[Any, Any, T]]:
-    """Decorator that validates state and auto-routes to the correct event loop."""
-
-    @wraps(method)
-    async def async_wrapper(self: iTermState, *args: P.args, **kwargs: P.kwargs) -> T:
-        # Auto-route: if we're on the wrong loop, hop to the correct one
-        if not self.on_correct_loop:
-            target_loop = self.loop_manager.require_loop()
-            routed = async_wrapper(self, *args, **kwargs)
-
-            try:
-                future = asyncio.run_coroutine_threadsafe(routed, target_loop)
-            except RuntimeError:
-                routed.close()
-                self.loop_manager._discard_loop(target_loop)
-                raise
-
-            wrapped_future = asyncio.wrap_future(future)
-
-            try:
-                return await wrapped_future
-            except asyncio.CancelledError:
-                cancelled = future.cancel()
-                log.debug(
-                    f"Cancelled cross-loop call to {method.__qualname__}: "
-                    f"future.cancel() -> {cancelled} (done={future.done()} cancelled={future.cancelled()})"
-                )
-                raise
-
-        # We're on the correct loop — validate + execute
-        try:
-            await self._ensure_state()
-            return await method(self, *args, **kwargs)
-        except (ConnectionClosed, ConcurrencyError):
-            log.warning("Connection closed, refreshing state and retrying...")
-            await self._ensure_state()  # Uses the `_refresh_callback`
-            return await method(self, *args, **kwargs)
-
-    if not inspect.iscoroutinefunction(method):
-        raise TypeError(
-            "The _validate_state decorator can only be applied to async methods. "
-            f"iTermState.{method!r} is not asynchronous."
-        )
-
-    return async_wrapper
 
 
 class User:
@@ -165,6 +118,13 @@ class User:
         return all_user_vars
 
 
+class SelectionMap(TypedDict, total=False):
+    session_name: str
+    session_id: str
+    working_directory: str
+    selection: str
+
+
 @validator
 @dataclass
 class iTermState:
@@ -191,12 +151,6 @@ class iTermState:
     HEX: ClassVar[type[HexCodeEnum]] = HexCodeEnum
     """Enum class :class:`HexCode` for type-hinted hex codes to use with :meth:`~iTermState.send_escape_sequence`."""
 
-    # TODO: Implement Command Event Signaling?
-    class CommandEvent:
-        idle: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
-        running: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
-        cancelled: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
-
     # refresh_callback and _event_loop are set in client.py after initialization
     _refresh_callback: Callable[[], Awaitable[iTermState]] | Awaitable[iTermState] | None = field(
         default=None, init=False, repr=False
@@ -211,6 +165,8 @@ class iTermState:
     SI_DEAD_RECHECK_SECONDS: ClassVar[float] = 60.0
     SI_PROBE_TIMEOUT: ClassVar[float] = 1.5
     _si_live_cache: dict[str, tuple[bool, float]] = field(default_factory=dict, init=False, repr=False)
+
+    _broadcast_active: ClassVar[bool] = False
 
     # --------------------------------------------------
     # Validation Helpers
@@ -329,18 +285,18 @@ class iTermState:
 
         It intentionally avoids reading from the websocket because iTerm2 keeps a
         background dispatcher task running on the same connection. Calling
-        ``recv()`` here races with that dispatcher and can spuriously raise
-        ``ConcurrencyError`` even while the connection is healthy.
-
-        ---
+        `recv()` here races with that dispatcher and can spuriously raise
+        :class:`ConcurrencyError` even while the connection is healthy.
 
         :param decode: Whether to decode the received message, defaults to False
-        :type decode: ``bool``, optional
-        :raises ConnectionClosed: If the websocket connection is closed
-        :raises ConcurrencyError: If there is a concurrency error
-        :raises RuntimeError: If there is a runtime error
+        :type decode: `bool`, optional
+
         :return: True if the connection is online, False otherwise
-        :rtype: ``bool``
+        :rtype: `bool`
+
+        :raises :class:`ConnectionClosed`: If the websocket connection is closed
+        :raises :class:`ConcurrencyError`: If there is a concurrency error
+        :raises RuntimeError: If there is a runtime error
         """
         websocket = self.connection.websocket
         del decode
@@ -382,8 +338,6 @@ class iTermState:
 
         This property ensures that a :class:`LoopManager` instance is created if it doesn't already exist.
 
-        ---
-
         :return: The loop manager associated with this state.
         :rtype: `LoopManager`
         """
@@ -415,25 +369,19 @@ class iTermState:
     # Public API
     # --------------------------------------------------
 
-    # @_validate_state
     async def exec(self, coro_factory: Coroutine[None, None, T]) -> T:
         """Execute a iTerm2-source function on the state loop.
 
         Ensures that the function runs on the current state loop so that
         the process doesn't hang.
 
-        ---
-
-        :example:
-
-            ```python
-            await state.exec(state.session.async_inject(...))
-            ```
-
-        ---
+        .. example::
+            .. code-block:: python
+                await state.exec(state.session.async_inject(...))
 
         :param coro_factory: The function to run in :class:`Coroutine` form.
         :type coro_factory: Coroutine[None, None, T]
+
         :return: The return-type of the function passed.
         :rtype: T
         """
@@ -481,28 +429,21 @@ class iTermState:
         return await self.get_variable(ctx="user", variable=name)
 
     @overload
-    # @_validate_state
     async def get_variable(
         self,
         ctx: VariableScope,
         variable: Literal["*", AppVarEnum.all, WindowVarEnum.all, TabVarEnum.all, SessionVarEnum.all, UserVarEnum.all],
     ) -> dict[str, str]: ...
     @overload
-    # @_validate_state
     async def get_variable(self, ctx: SessionScope, variable: SessionVariable) -> str: ...
     @overload
-    # @_validate_state
     async def get_variable(self, ctx: TabScope, variable: TabVariable) -> str: ...
     @overload
-    # @_validate_state
     async def get_variable(self, ctx: WindowScope, variable: WindowVariable) -> str: ...
     @overload
-    # @_validate_state
     async def get_variable(self, ctx: AppScope, variable: AppVariable) -> str: ...
     @overload
-    # @_validate_state
     async def get_variable(self, ctx: UserScope, variable: UserVariable) -> str: ...
-    # @_validate_state
     async def get_variable(self, ctx: VariableScope, variable: Variable) -> str | dict[str, str]:
         """Get a variable from the specified context."""
 
@@ -527,7 +468,6 @@ class iTermState:
         result: str | dict[str, str] = await target.async_get_variable(variable)
         return result
 
-    # @_validate_state
     async def send_escape_sequence(
         self, *sequences: HexCode | str, broadcast: bool = False, timeout: float = 2.0, wait: bool = False
     ) -> bool:
@@ -584,13 +524,79 @@ class iTermState:
                 log.warning(f"Timed out waiting for terminal response after sending escape sequence(s): {sequences}")
                 return False
 
-    # @_validate_state
-    async def get_selection(self) -> str:
-        selection_instance = await self.session.async_get_selection()
-        selection_text = await self.session.async_get_selection_text(selection_instance)
-        return selection_text
+    async def get_selection(self, *, target_session: Session | None = None, all_sessions: bool = False) -> str:
+        target_session = target_session if target_session is not None else self.session
+        selection_text: str = await target_session.async_get_selection_text()
 
-    # @_validate_state
+        if selection_text:
+            return selection_text
+
+        seperator = "\n---\n"
+        selection_text_template = "{header}\n{sections}"
+        selection_text_header_template = "# Selections Across {total_sessions} iTerm Sessions"
+        selection_info_section_template = "\n".join(
+            [
+                f"{seperator}",
+                "## Session {session_idx}\n",
+                "<selection>",
+                "{session_selection}",
+                "</selection>\n",
+                "<session_metadata>",
+                "- Session Name: {session_name}",
+                "- Session ID: {session_id}",
+                "- Session Directory: {session_directory}",
+                "</session_metadata>",
+            ]
+        )
+        selection_info_sections: list[str] = []
+
+        async for session_idx, (*_, session) in async_enumerate(iTermAPI.iter_sessions(self.app, self.window), 1):
+            if session is target_session:
+                log.debug("Skipping current session...")
+                continue
+
+            session_selection: str = await session.async_get_selection_text()
+
+            if not session_selection:
+                continue
+
+            session_id: str = session.session_id
+            session_directory: str = await session.async_get_variable("path")
+            session_name: str = session.name
+
+            selection_info_section = selection_info_section_template.format(
+                session_idx=session_idx,
+                session_selection=session_selection,
+                session_name=session_name,
+                session_id=session_id,
+                session_directory=session_directory,
+            )
+
+            selection_info_sections.append(selection_info_section)
+
+        if selection_info_sections:
+            selection_text_header = selection_text_header_template.format(total_sessions=len(selection_info_sections))
+            selection_text_sections = "\n".join(selection_info_sections)
+            selection_text = selection_text_template.format(
+                header=selection_text_header, sections=selection_text_sections
+            )
+
+        return selection_text if selection_text else "<|==| No selections found ==|>"
+
+    async def broadcast(self) -> None:
+        if iTermState._broadcast_active is True:
+            await async_set_broadcast_domains(self.connection, [])
+            iTermState._broadcast_active = False
+            return
+
+        domain = BroadcastDomain()
+
+        async for *_, session in iTermAPI.iter_sessions(self.app, self.window):
+            domain.add_session(session)
+
+        await async_set_broadcast_domains(self.connection, [domain])
+        iTermState._broadcast_active = True
+
     async def run_command(
         self, command: str, path: str | None = None, broadcast: bool = False, timeout: float = 5.0
     ) -> CommandExecutionResult:

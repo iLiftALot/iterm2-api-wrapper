@@ -36,10 +36,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from iterm2_api_wrapper.api.it2connection import (
-    Connection,
-    run_until_complete,
-)
+from iterm2_api_wrapper.api.it2connection import run_until_complete
 from iterm2_api_wrapper.api.it2profile import (
     DynamicProfile,
     DynamicProfileDefinition,
@@ -48,7 +45,11 @@ from iterm2_api_wrapper.api.it2profile import (
     ProfilePropertiesNoIdentifiers,
     process_dynamic_profiles_payload,
 )
+from typing import TYPE_CHECKING
 
+
+if TYPE_CHECKING:
+    from iterm2_api_wrapper.core.gateway import Connection
 
 SMOKE_PROFILE_NAME = "iterm2-api-wrapper-dynamic-update-smoke"
 SMOKE_PROPERTY = "Badge Text"

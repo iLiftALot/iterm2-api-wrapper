@@ -25,7 +25,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from iterm2 import BadGUIDException, capabilities, profile, rpc
 
-from ..errors import ProfileNotFoundError, SessionNotFoundError
+from ..core.errors import ProfileNotFoundError, SessionNotFoundError
 from .it2app import async_get_app
 
 
@@ -38,7 +38,7 @@ else:
 if TYPE_CHECKING:
     from iterm2.api_pb2 import ServerOriginatedMessage
 
-    from .it2connection import Connection
+    from ..core.gateway import Connection
 
 
 ColorSpace = Literal["sRGB", "Dev", "P3"]

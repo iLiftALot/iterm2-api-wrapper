@@ -10,7 +10,7 @@ from threading import Thread
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
-from ._logging.logger import PrettyLog
+from .._logging.logger import PrettyLog
 from .gateway import DefaultITermGateway, ITermGateway, SetupCoroGateway
 
 
@@ -20,8 +20,8 @@ else:
     from typing_extensions import Unpack
 
 if TYPE_CHECKING:
-    from .gateway import RefreshableState, _Connection
-    from .state import iTermState
+    from ..state import iTermState
+    from .gateway import Connection, RefreshableState
     from .typings import iTermStateSetupKwargs
 
 
@@ -32,7 +32,7 @@ StateT = TypeVar("StateT", bound="RefreshableState[Any]")
 class iTermClient(Generic[StateT]):
     def __init__(
         self,
-        coro: Callable[[_Connection], Awaitable[iTermState]] | None = None,
+        coro: Callable[[Connection], Awaitable[iTermState]] | None = None,
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
@@ -45,7 +45,7 @@ class iTermClient(Generic[StateT]):
 
     def _setup(
         self,
-        coro: Callable[[_Connection], Awaitable[iTermState]] | None = None,
+        coro: Callable[[Connection], Awaitable[iTermState]] | None = None,
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
@@ -69,7 +69,7 @@ class iTermClient(Generic[StateT]):
     @classmethod
     async def create(
         cls,
-        coro: Callable[[_Connection], Awaitable[iTermState]] | None = None,
+        coro: Callable[[Connection], Awaitable[iTermState]] | None = None,
         *,
         gateway: ITermGateway[StateT] | None = None,
         timeout: float | None = None,
@@ -118,7 +118,7 @@ class iTermClient(Generic[StateT]):
         state._refresh_callback = self._init_async
         state._event_loop = self._loop
 
-        connection: _Connection | None = getattr(state, "connection", None)
+        connection: Connection | None = getattr(state, "connection", None)
         if connection is not None:
             connection.loop = self._loop
 
@@ -141,7 +141,7 @@ class iTermClient(Generic[StateT]):
         is_own_thread = current_thread is self._thread
 
         if self._loop.is_running() and not is_own_thread:
-            connection: _Connection | None = getattr(getattr(self, "_state", None), "connection", None)
+            connection: Connection | None = getattr(getattr(self, "_state", None), "connection", None)
             async_close: Coroutine[Any, Any, None] | None = getattr(connection, "async_close", None)
             if inspect.iscoroutinefunction(async_close):
                 try:

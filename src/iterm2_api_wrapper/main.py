@@ -8,8 +8,8 @@ else:
 
 from iterm2_api_wrapper.api.it2api import create_iterm_state
 from iterm2_api_wrapper.api.it2connection import run_until_complete
+from iterm2_api_wrapper.core.typings import iTermStateSetupKwargs
 from iterm2_api_wrapper.state import iTermState
-from iterm2_api_wrapper.typings import iTermStateSetupKwargs
 
 
 __all__ = ["create_iterm_state", "init", "run_until_complete"]

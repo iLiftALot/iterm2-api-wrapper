@@ -73,6 +73,8 @@ NSWorkspaceLaunchNewInstance = AppKit.NSWorkspaceLaunchNewInstance
 NSWorkspaceLaunchAndHide = AppKit.NSWorkspaceLaunchAndHide
 NSWorkspaceLaunchAndHideOthers = AppKit.NSWorkspaceLaunchAndHideOthers
 
+NSScreen = AppKit.NSScreen
+
 # --- ApplicationServices: Accessibility / AX UI automation ---
 AXIsProcessTrusted = ApplicationServices.AXIsProcessTrusted
 AXIsProcessTrustedWithOptions = ApplicationServices.AXIsProcessTrustedWithOptions

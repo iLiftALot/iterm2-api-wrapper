@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast, overload
 
 from iterm2 import app, rpc, session, tab, tmux, window
 
@@ -10,15 +10,23 @@ from .it2connection import add_disconnect_callback
 
 if TYPE_CHECKING:
     from iterm2.api_pb2 import ListSessionsResponse, ServerOriginatedMessage
-    from iterm2.connection import Connection as IT2Connection
 
-    from .it2connection import Connection
+    from ..core.gateway import Connection
     from .it2session import Session
     from .it2tab import Tab
     from .it2window import Window
 
 
 log = PrettyLog.get_logger(__name__)
+_WrapperT = TypeVar("_WrapperT")
+
+
+def _promote_wrapper(value: object, wrapper_type: type[_WrapperT]) -> _WrapperT:
+    """Promote an upstream iTerm2 model to its layout-compatible wrapper class."""
+    if not isinstance(value, wrapper_type):
+        object.__setattr__(value, "__class__", wrapper_type)
+
+    return cast(_WrapperT, value)
 
 
 class App(app.App):
@@ -34,16 +42,44 @@ class App(app.App):
         self._focus_refresh_in_progress = False
         self._nested_focus_refresh_skips = 0
 
+    def _promote_runtime_hierarchy(self) -> None:
+        """Make every object in the upstream layout graph a wrapper instance."""
+        from .it2session import Session
+        from .it2tab import Tab
+        from .it2window import Window
+
+        for upstream_window in super().windows:
+            wrapped_window = _promote_wrapper(upstream_window, Window)
+
+            for upstream_tab in wrapped_window.tabs:
+                wrapped_tab = _promote_wrapper(upstream_tab, Tab)
+
+                for upstream_session in wrapped_tab.all_sessions:
+                    _promote_wrapper(upstream_session, Session)
+
+        for upstream_session in super().buried_sessions:
+            _promote_wrapper(upstream_session, Session)
+
+    @overload
+    async def _async_handle_layout_change(self, _connection: Any, layout: Any) -> None: ...
+    @overload
+    async def _async_handle_layout_change(self, _connection: Connection | None, layout: Any) -> None: ...
+    async def _async_handle_layout_change(self, _connection: Connection | None, layout: Any) -> None:
+        conn: Any = _connection
+        await super()._async_handle_layout_change(conn, layout)
+        self._promote_runtime_hierarchy()
+
     @staticmethod
     async def async_construct(connection: Connection) -> App:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Construct a wrapper App instead of upstream iterm2.app.App."""
-        response: ServerOriginatedMessage = await rpc.async_list_sessions(cast("IT2Connection", connection))
+        response: ServerOriginatedMessage = await rpc.async_list_sessions(connection)
         list_sessions_response: ListSessionsResponse = response.list_sessions_response
 
         windows = app.App._windows_from_list_sessions_response(connection, list_sessions_response)
         buried_sessions = app.App._buried_sessions_from_list_sessions_response(connection, list_sessions_response)
 
         wrapper_app = App(connection, windows, buried_sessions)
+        wrapper_app._promote_runtime_hierarchy()
 
         session.Session.delegate = wrapper_app
         tab.Tab.delegate = wrapper_app

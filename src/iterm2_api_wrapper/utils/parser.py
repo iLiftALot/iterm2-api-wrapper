@@ -9,9 +9,9 @@ from ..api.it2transaction import Transaction
 
 
 if TYPE_CHECKING:
-    from ..api.it2connection import Connection
     from ..api.it2prompt import Prompt
     from ..api.it2session import Session
+    from ..core.gateway import Connection
     from ..state import iTermState
 
 

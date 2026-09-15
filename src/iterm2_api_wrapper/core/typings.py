@@ -1,24 +1,142 @@
 from __future__ import annotations
 
+import ast
+import inspect
+import itertools
+import textwrap
 from dataclasses import dataclass
-from enum import Enum, IntEnum
-from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, TypedDict
+from enum import Enum, EnumMeta, IntEnum
+from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, TypedDict, cast
 
 
 if TYPE_CHECKING:
-    from .api.it2app import App
-    from .api.it2connection import Connection
-    from .api.it2profile import Profile, ProfileProperties
-    from .api.it2session import Session
-    from .api.it2tab import Tab
-    from .api.it2window import Window
-    from .gateway import _Connection
+    from ..api.it2profile import ProfileProperties
 
 
-iTermConnection = type["_Connection | Connection"]
+class MetaEnum(EnumMeta):
+    """Support prefixed automatic values and adjacent member docstrings."""
+
+    _name_: str
+    _value_: str
+
+    @classmethod
+    def __prepare__(metacls, clsname, bases, *, prefix: str | None = None, **kwargs):
+        classdict = super().__prepare__(clsname, bases, **kwargs)
+
+        if prefix is not None:
+            def generate_prefixed_value(name: str, start: int, count: int, last_values: list[object]) -> str:
+                # print(f"\n\nClsName = {clsname}")
+                # last_values.reverse()
+                # print(f"{name=}", f"{start=}", f"{count=}", f"last_value={(last_values[0] if last_values else [])}")
+                return f"{prefix}.{name}"
+
+            classdict["_generate_next_value_"] = staticmethod(generate_prefixed_value)
+
+        return classdict
+
+    def __new__(metacls, clsname, bases, classdict, *, prefix: str | None = None, **kwargs):
+        # `prefix` was consumed by __prepare__. Do not forward it to EnumMeta.
+        enum_class = super().__new__(metacls, clsname, bases, classdict, **kwargs)
+        metacls._assign_member_docstrings(cast(type[Enum], enum_class))
+        return enum_class
+
+    @staticmethod
+    def _assign_member_docstrings(enum_class: type[Enum]) -> None:
+        try:
+            source = textwrap.dedent(inspect.getsource(enum_class))
+        except (OSError, TypeError):
+            # Dynamically generated enums, interactive classes, frozen modules,
+            # and compiled modules may not have retrievable source.
+            return
+
+        try:
+            module = ast.parse(source)
+        except SyntaxError:
+            return
+
+        class_node = next(
+            (node for node in module.body if isinstance(node, ast.ClassDef) and node.name == enum_class.__name__), None
+        )
+        if class_node is None:
+            return
+
+        MetaEnum._assign_docs_from_statements(enum_class, class_node.body)
+
+        for assignment, following_statement in itertools.pairwise(class_node.body):
+            member_names = MetaEnum._assigned_names(assignment)
+            docstring = MetaEnum._string_expression(following_statement)
+
+            if not member_names or docstring is None:
+                continue
+
+            cleaned_docstring = inspect.cleandoc(docstring)
+
+            for member_name in member_names:
+                enum_member = enum_class.__members__.get(member_name)
+                if enum_member is not None:
+                    enum_member.__doc__ = cleaned_docstring
+
+    @staticmethod
+    def _assign_docs_from_statements(enum_class: type[Enum], statements: list[ast.stmt]) -> None:
+        for assignment, following_statement in itertools.pairwise(statements):
+            member_names = MetaEnum._assigned_names(assignment)
+            docstring = MetaEnum._string_expression(following_statement)
+
+            if member_names and docstring is not None:
+                cleaned_docstring = inspect.cleandoc(docstring)
+
+                for member_name in member_names:
+                    target = enum_class.__members__.get(member_name)
+
+                    if target is None:
+                        target = vars(enum_class).get(member_name)
+
+                    if target is not None:
+                        target.__doc__ = cleaned_docstring
+
+        # Assign documentation inside version-conditional class sections.
+        for statement in statements:
+            if isinstance(statement, ast.If):
+                MetaEnum._assign_docs_from_statements(enum_class, statement.body)
+                MetaEnum._assign_docs_from_statements(enum_class, statement.orelse)
+
+    @staticmethod
+    def _assigned_names(statement: ast.stmt) -> tuple[str, ...]:
+        if isinstance(statement, ast.Assign):
+            names: list[str] = []
+
+            for target in statement.targets:
+                if isinstance(target, ast.Name):
+                    names.append(target.id)
+                elif isinstance(target, (ast.Tuple, ast.List)):
+                    names.extend(element.id for element in target.elts if isinstance(element, ast.Name))
+
+            return tuple(names)
+
+        if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+            return (statement.target.id,)
+
+        return ()
+
+    @staticmethod
+    def _string_expression(statement: ast.stmt) -> str | None:
+        if not isinstance(statement, ast.Expr):
+            return None
+
+        value = statement.value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            return value.value
+
+        return None
 
 
-class StrEnum(str, Enum):
+class StrEnum(str, Enum, metaclass=MetaEnum):
+    """String-valued enum supporting adjacent member docstrings."""
+
+    @staticmethod
+    def _generate_next_value_(name: str, start: int, count: int, last_values: list[str]) -> str:
+        return name
+
     def __str__(self) -> str:
         return str.__str__(self)
 
@@ -37,18 +155,6 @@ class iTermStateSetupKwargs(TypedDict, total=False):
     """Whether to bring iTerm2 to the foreground during setup."""
     profile_properties: ProfileProperties
     """Custom properties for the profile."""
-
-
-class iTermStateKwargs(TypedDict, total=True):
-    connection: Connection
-    app: App
-    window: Window
-    tab: Tab
-    session: Session
-    profile: Profile
-
-    is_hotkey_window: bool
-    """Whether the current window is a hotkey window."""
 
 
 class HexCodeEnum(StrEnum):

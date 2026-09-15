@@ -6,10 +6,10 @@ from iterm2 import profile, window
 
 
 if TYPE_CHECKING:
-    from iterm2.connection import Connection as IT2Connection
-
-    from .it2connection import Connection
+    from ..core.gateway import Connection
     from .it2tab import Tab
+
+from ._connection_compat import _as_upstream_connection
 
 
 class Window(window.Window):
@@ -22,15 +22,15 @@ class Window(window.Window):
     """
 
     @property
-    def tabs(self) -> list[Tab]:  # pyright: ignore[reportIncompatibleMethodOverride]
-        return cast(list[Tab], super().tabs)
+    def tabs(self) -> list[Tab]:  # type: ignore
+        return cast(list["Tab"], super().tabs)
 
     @property
-    def current_tab(self) -> Tab | None:  # pyright: ignore[reportIncompatibleMethodOverride]
-        return cast(Tab | None, super().current_tab)
+    def current_tab(self) -> Tab | None:  # type: ignore
+        return cast("Tab | None", super().current_tab)
 
     @staticmethod
-    async def async_create(  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def async_create(  # type: ignore
         connection: Connection,
         profile: str | None = None,
         command: str | None = None,
@@ -39,7 +39,7 @@ class Window(window.Window):
         return cast(
             Window | None,
             await window.Window.async_create(
-                cast("IT2Connection", connection), profile, command, profile_customizations
+                _as_upstream_connection(connection), profile, command, profile_customizations
             ),
         )
 
@@ -49,5 +49,8 @@ class Window(window.Window):
         command: str | None = None,
         index: int | None = None,
         profile_customizations: profile.LocalWriteOnlyProfile | None = None,
+        select: bool = True,
     ) -> Tab | None:
-        return cast(Tab | None, await super().async_create_tab(profile, command, index, profile_customizations))
+        return cast(
+            "Tab | None", await super().async_create_tab(profile, command, index, profile_customizations, select)
+        )

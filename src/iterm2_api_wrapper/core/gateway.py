@@ -6,14 +6,16 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, TypeVar
 
-from ._logging import PrettyLog
+from .._logging import PrettyLog
 
 
 if TYPE_CHECKING:
-    from .api.it2connection import Connection
-    from .state import iTermState
+    from iterm2.api_pb2 import ClientOriginatedMessage, ServerOriginatedMessage
+    from websockets.asyncio.client import ClientConnection
+
+    from ..state import iTermState
 
 
 def _debug_enabled(debug: bool | None) -> bool:
@@ -24,17 +26,30 @@ def _debug_enabled(debug: bool | None) -> bool:
 
 StateTAny = TypeVar("StateTAny")
 StateTRefreshable_co = TypeVar("StateTRefreshable_co", bound="RefreshableState[Any]", covariant=True)
+ConnectionT = TypeVar("ConnectionT")
+ConnectionT_co = TypeVar("ConnectionT_co", covariant=True)
 
 
-class _Connection(Protocol):
+class ConnectionLike(Protocol):
     """Connection protocol for iTerm2's Python API."""
 
+    websocket: ClientConnection | None
     loop: asyncio.AbstractEventLoop | None
 
-    @classmethod
-    async def async_create(cls) -> Connection: ...
     @property
     def iterm2_protocol_version(self) -> tuple[int, int]: ...
+    async def async_send_message(self, message: ClientOriginatedMessage) -> None: ...
+    async def async_dispatch_until_id(self, reqid: str) -> ServerOriginatedMessage: ...
+
+
+Connection: TypeAlias = ConnectionLike
+
+
+class ConnectionFactory(Protocol[ConnectionT_co]):
+    """Construct a connection while preserving its exact concrete type."""
+
+    @classmethod
+    async def async_create(cls) -> ConnectionT_co: ...
 
 
 class RefreshableState(Protocol[StateTAny]):
@@ -62,7 +77,7 @@ _TRANSIENT_CONNECT_ERRNOS = {errno.ENOENT, errno.ECONNREFUSED, errno.ECONNRESET}
 
 
 async def _ensure_iterm_app_ready(*, activate: bool) -> None:
-    from .pyobjc_adapter import async_ensure_iterm_app_running
+    from ..pyobjc_adapter import async_ensure_iterm_app_running
 
     await async_ensure_iterm_app_running(activate=activate)
 
@@ -89,13 +104,13 @@ def _get_connect_timeout_s() -> float:
 
 
 async def _async_create_connection_with_retry(
-    connection_cls: type[_Connection],
+    connection_cls: ConnectionFactory[ConnectionT],
     *,
     timeout_s: float,
     initial_delay_s: float = 0.05,
     max_delay_s: float = 0.5,
     backoff: float = 1.6,
-) -> Connection:
+) -> ConnectionT:
     """Create an iTerm2 `Connection`, retrying until its socket is ready."""
     deadline = time.monotonic() + timeout_s
     delay_s = initial_delay_s
@@ -153,8 +168,8 @@ class DefaultITermGateway(ITermGateway["iTermState"]):
     """
 
     async def create_state(self, **kwargs: Any) -> iTermState:
-        from .api.it2api import create_iterm_state
-        from .api.it2connection import Connection
+        from ..api.it2api import create_iterm_state
+        from ..api.it2connection import Connection
         from .runtime_setup import validate_iterm2_runtime
 
         it2_suite = kwargs.pop("it2_suite", None)
@@ -196,7 +211,7 @@ class SetupCoroGateway(ITermGateway[StateTRefreshable_co]):
         self._setup_coro: Callable[..., Awaitable[StateTRefreshable_co]] = setup_coro
 
     async def create_state(self, **kwargs: Any) -> StateTRefreshable_co:
-        from .api.it2connection import Connection
+        from ..api.it2connection import Connection
         from .runtime_setup import validate_iterm2_runtime
 
         it2_suite = kwargs.pop("it2_suite", None)

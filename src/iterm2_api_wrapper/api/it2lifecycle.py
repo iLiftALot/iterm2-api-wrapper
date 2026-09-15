@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from iterm2 import lifecycle
-from iterm2.connection import Connection as IT2Connection
+
+from ._connection_compat import _as_upstream_connection
 
 
 if TYPE_CHECKING:
-    from .it2connection import Connection
+    from ..core.gateway import Connection
 
 
 class NewSessionMonitor(lifecycle.NewSessionMonitor):
     def __init__(self, connection: Connection):
-        super().__init__(cast("IT2Connection", connection))
+        super().__init__(_as_upstream_connection(connection))

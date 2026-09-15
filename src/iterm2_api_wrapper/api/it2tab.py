@@ -12,12 +12,12 @@ if TYPE_CHECKING:
 class Tab(tab.Tab):
     @property
     def all_sessions(self) -> list[Session]:  # pyright: ignore[reportIncompatibleMethodOverride]
-        return cast(list[Session], super().all_sessions)
+        return cast(list["Session"], super().all_sessions)
 
     @property
     def sessions(self) -> list[Session]:  # pyright: ignore[reportIncompatibleMethodOverride]
-        return cast(list[Session], super().sessions)
+        return cast(list["Session"], super().sessions)
 
     @property
     def current_session(self) -> Session | None:
-        return cast(Session, super().current_session)
+        return cast("Session", super().current_session)
