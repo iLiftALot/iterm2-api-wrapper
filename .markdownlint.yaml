@@ -1,0 +1,6 @@
+no-hard-tabs: false
+no-bare-urls: false
+no-duplicate-heading: false
+indentation: false
+no-inline-html: false
+line-length: false

@@ -483,15 +483,15 @@ wheels = [
 
 [[package]]
 name = "iterm2"
-version = "2.20"
+version = "2.22"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "protobuf" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4f/fb/258e7e3bfcacf9cdfc378ae4ee2aca743dbccd6a12ffceee12957f67dff3/iterm2-2.20.tar.gz", hash = "sha256:168d3807cd58b3e678476852be2bb4a5cd89f008d95e37d2777d9810731cff08", size = 182507, upload-time = "2026-06-04T02:01:09.76Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a9/eb/3b0eee58d952b693e7cfd693e172fade70d75aebf62e619fe9be12acf938/iterm2-2.22.tar.gz", hash = "sha256:35f050bdbd1a459e70e3774ad7e922cf1ea36b650c9d7eb59ddd93e3dbb9f308", size = 183795, upload-time = "2026-08-25T19:33:35.888Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/64/6d/be0b4215579171cbf07ed89561c39ef5e2d17d0947480161338999aafeed/iterm2-2.20-py3-none-any.whl", hash = "sha256:b7bfe91146a96fafdb04f47291f51c83ccc3b31c01769637e029f6383c015e76", size = 188520, upload-time = "2026-06-04T02:01:08.359Z" },
+    { url = "https://files.pythonhosted.org/packages/66/37/a0c7d17cf8c38b5bc79ccaf34292b0f4f029f75abbde18fe2a81bd16535d/iterm2-2.22-py3-none-any.whl", hash = "sha256:8d84d992a439ca01369f71b17ed1312b6453eb7b249712b09333f1275934045d", size = 189800, upload-time = "2026-08-25T19:33:34.734Z" },
 ]
 
 [[package]]
@@ -536,12 +536,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "async-timeout", specifier = "==5.0.1" },
-    { name = "iterm2", specifier = "==2.20" },
+    { name = "iterm2", specifier = "==2.22" },
     { name = "py-applescript", marker = "extra == 'applescript'" },
     { name = "pyobjc", specifier = "==12.2.1" },
     { name = "python-dotenv", specifier = "==1.2.2" },
     { name = "rich", specifier = "==15.0.0" },
-    { name = "typer", specifier = "==0.27.0" },
+    { name = "typer", specifier = "==0.27.1" },
     { name = "typing-extensions", specifier = "==4.16.0" },
 ]
 provides-extras = ["applescript"]
@@ -4386,7 +4386,7 @@ wheels = [
 
 [[package]]
 name = "typer"
-version = "0.27.0"
+version = "0.27.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc" },
@@ -4394,9 +4394,9 @@ dependencies = [
     { name = "rich" },
     { name = "shellingham" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/37/78/fda3361b56efc27944f24225f6ecd13d96d6fcfe37bd0eb34e2f4c63f9fc/typer-0.27.0.tar.gz", hash = "sha256:629bd12ea5d13a17148125d9a264f949eb171fb3f120f9b04d85873cab054fa5", size = 203430, upload-time = "2026-07-15T19:21:07.007Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/40/4a3db7990d1f62a53182aa96eaef57aeb2886a27f90a195bc66713565d31/typer-0.27.1.tar.gz", hash = "sha256:a79bef8469a79c45498e7b814ecf8d603cc7644e9acbd9e19cac0334240b18df", size = 203994, upload-time = "2026-08-03T14:41:03.438Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/40/03/26a383c9e58c213199d1aad1c3d353cfc22d4444ec6d2c0bf8ad02523843/typer-0.27.0-py3-none-any.whl", hash = "sha256:6f4b27631e47f077871b7dc30e933ec0131c1390fbe0e387ea5574b5bac9ccf1", size = 122716, upload-time = "2026-07-15T19:21:05.553Z" },
+    { url = "https://files.pythonhosted.org/packages/43/89/9518bc0c3929bee36b3a4a8e3daddd6e03f92f9961c66d4983b837160543/typer-0.27.1-py3-none-any.whl", hash = "sha256:53150287edd11baeb4e4722c8e394fcdf8181c0ae89485cba8d25c778d5edd56", size = 122874, upload-time = "2026-08-03T14:41:04.391Z" },
 ]
 
 [[package]]

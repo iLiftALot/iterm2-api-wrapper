@@ -3,7 +3,6 @@ from typing import Generic, Literal, TypeVar, cast, overload
 
 from iterm2_api_wrapper.core.typings import StrEnum
 
-
 _T = TypeVar("_T", bound=StrEnum)
 _ContextT = TypeVar("_ContextT")
 

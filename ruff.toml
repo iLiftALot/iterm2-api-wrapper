@@ -49,23 +49,50 @@ extend-select = [
   "RUF",  # the ruff developer's own rules
 ]
 ignore = [
-  "D",  # ignore missing docs
-  "TC",  # false positives for local imports
-  "E501",  # line too long
-  "I001",  # unsorted imports
+  "D",       # ignore missing docs
+  "TC",      # false positives for local imports
+  "E501",    # line too long
+  "I001",    # unsorted imports
   "TRY003",  # external messages in exceptions are too verbose
-  "UP035",  # Checks for uses of deprecated imports based on the minimum supported Python version.
-  "UP006",  # Checks for the use of generics that can be replaced with standard library variants based on PEP 585.
-  "UP007",  # Check for type annotations that can be rewritten based on PEP 604 syntax.
-  "UP015",  # Checks for redundant open mode arguments.
-  "UP040",  # Checks for use of TypeAlias annotations and TypeAliasType assignments for declaring type aliases.
-  "UP045",  # Check for typing.Optional annotations that can be rewritten based on PEP 604 syntax.
-  "A002",  # Checks for function arguments that use the same names as builtins
-  "B905",  # `zip()` without an explicit `strict=` parameter
-  "BLE001", # Checks for except clauses that catch all exceptions. This includes except BaseException and except Exception.
+  "UP035",   # Checks for uses of deprecated imports based on the minimum supported Python version.
+  "UP006",   # Checks for the use of generics that can be replaced with standard library variants based on PEP 585.
+  "UP007",   # Check for type annotations that can be rewritten based on PEP 604 syntax.
+  "UP015",   # Checks for redundant open mode arguments.
+  "UP040",   # Checks for use of TypeAlias annotations and TypeAliasType assignments for declaring type aliases.
+  "UP045",   # Check for typing.Optional annotations that can be rewritten based on PEP 604 syntax.
+  "A002",    # Checks for function arguments that use the same names as builtins
+  "B905",    # `zip()` without an explicit `strict=` parameter
+  "BLE001",  # Checks for except clauses that catch all exceptions. This includes except BaseException and except Exception.
   "PLE1205", # Checks for too many positional arguments for a logging format string.
-  "PYI034" # Checks for methods that are annotated with a fixed return type which should instead be returning Self.
+  "PYI034"   # Checks for methods that are annotated with a fixed return type which should instead be returning Self.
 ]
+fixable = [ # ruff check . --fix
+  "TRY004",
+  "F401",
+  "UP035",
+  "I001",
+  "PLR1711",
+  "PLR1722",
+  "B011",
+  "F541",
+  "FURB105",
+  "PIE810",
+  "SIM115",
+  "UP032",
+  "C402",
+  "RUF005",
+  "UP028",
+  "UP031",
+  "RUF021",
+  "UP033",
+  "RUF010",
+  "RUF007",
+  "E731"
+]
+
+[lint.per-file-ignores]
+"it2selection.py" = ["PYI042"]
+"tests/*_.py" = ["N999"]
 
 [lint.isort]
 force-wrap-aliases = false

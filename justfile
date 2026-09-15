@@ -155,3 +155,17 @@ ipython *ARGS:
         echo "Received additional arguments: {{ARGS}}"
     fi
     uv run --group=dev ipython3 --profile {{env("IPYTHON_PROFILE", "default")}} {{ARGS}}
+
+protofile:
+    #!/usr/bin/env zsh
+    uv run ./tests/\*_.py
+
+enhance_imports:
+    #!./.venv/bin/python
+    from iterm2_api_wrapper.core.runtime_setup import _enhance_imports
+    _enhance_imports()
+
+enhance_docstrings:
+    #!./.venv/bin/python
+    from iterm2_api_wrapper.core.runtime_setup import _enhance_docstrings
+    _enhance_docstrings()

@@ -25,11 +25,11 @@ classifiers = [
 ]
 dependencies = [
   "async_timeout==5.0.1",
-  "iterm2==2.20",
+  "iterm2==2.22",
   "pyobjc==12.2.1",
   "python-dotenv==1.2.2",
   "rich==15.0.0",
-  "typer==0.27.0",
+  "typer==0.27.1",
   "typing_extensions==4.16.0"
 ]
 optional-dependencies = { "applescript" = ["py-applescript"] }
@@ -60,7 +60,7 @@ dev = [
 ci = ["pyright", "ruff"]
 
 [build-system]
-requires = ["uv_build >= 0.11.23, <0.12.0"]
+requires = ["uv_build >= 0.12.1, <0.13.0"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
