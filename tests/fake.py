@@ -11,12 +11,15 @@ from iterm2_api_wrapper.utils.signal import SignalResult
 
 
 if TYPE_CHECKING:
+    from iterm2.api_pb2 import ClientOriginatedMessage, ServerOriginatedMessage
+    from websockets.asyncio.client import ClientConnection
+
     from iterm2_api_wrapper.api.it2app import App
-    from iterm2_api_wrapper.api.it2connection import Connection
     from iterm2_api_wrapper.api.it2profile import PartialProfile, Profile
     from iterm2_api_wrapper.api.it2session import Session
     from iterm2_api_wrapper.api.it2tab import Tab
     from iterm2_api_wrapper.api.it2window import Window
+    from iterm2_api_wrapper.core.gateway import Connection
 else:
     App = Connection = PartialProfile = Profile = Session = Tab = Window = object
 
@@ -26,19 +29,21 @@ class FakeNotificationResponse:
         status = 0  # == iterm2.api_pb2.NotificationResponse.Status.Value("OK")
 
     def HasField(self, field: str) -> bool:
-        return False if field == "error" else True
+        return field != "error"
 
 
 class FakeConnection:
+    iterm2_protocol_version: tuple[int, int] = (1, 14)
+
     def __init__(self, loop: asyncio.AbstractEventLoop | None = None, websocket: Any = None) -> None:
         self.loop = loop
-        self.websocket = websocket
+        self.websocket: ClientConnection | None = cast("ClientConnection | None", websocket)
 
-    async def async_send_message(self, *_) -> None:
+    async def async_send_message(self, message: ClientOriginatedMessage) -> None:
         return
 
-    async def async_dispatch_until_id(self, *_) -> FakeNotificationResponse:
-        return FakeNotificationResponse()
+    async def async_dispatch_until_id(self, reqid: str) -> ServerOriginatedMessage:
+        return cast("ServerOriginatedMessage", FakeNotificationResponse())
 
 
 class FakeWebsocket:
@@ -186,8 +191,8 @@ def as_state(state: FakeState) -> iTermState:
     return cast("iTermState", state)
 
 
-def as_connection(connection: object) -> Connection:
-    return cast(Connection, connection)
+def as_connection(connection: Connection) -> Connection:
+    return connection
 
 
 def as_app(app: object) -> App:

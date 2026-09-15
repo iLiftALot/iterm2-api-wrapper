@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from iterm2_api_wrapper import client as client_module
-from iterm2_api_wrapper.client import iTermClient
-from iterm2_api_wrapper.gateway import ITermGateway
+from iterm2_api_wrapper.core import client as client_module
+from iterm2_api_wrapper.core.client import iTermClient
+from iterm2_api_wrapper.core.gateway import ITermGateway
 
 
 @dataclass

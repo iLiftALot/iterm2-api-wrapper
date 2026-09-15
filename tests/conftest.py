@@ -246,7 +246,7 @@ def _load_iterm_profile() -> dict[str, object] | None:
     if not isinstance(profiles, list):
         return None
 
-    profile_id = os.getenv("PYTEST_HTML_THEME_PROFILE_ID") or os.getenv("IT2_PROFILE_ID")
+    profile_id = os.getenv("PYTEST_HTML_THEME_PROFILE_ID") or os.getenv("IT2_PROFILE_GUID")
     profile_name = os.getenv("PYTEST_HTML_THEME_PROFILE") or os.getenv("IT2_PROFILE")
 
     if profile_id:

@@ -100,6 +100,33 @@ def test_iterm2_protocol_version_returns_zero_without_response() -> None:
     assert conn.iterm2_protocol_version == (0, 0)
 
 
+def test_async_create_preserves_subclass_and_uses_owned_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DerivedConnection(Connection):
+        pass
+
+    dispatch_loops: list[asyncio.AbstractEventLoop] = []
+
+    async def fake_connect(self: DerivedConnection) -> Any:
+        return SimpleNamespace()
+
+    async def fake_dispatch(self: DerivedConnection, loop: asyncio.AbstractEventLoop) -> None:
+        dispatch_loops.append(loop)
+
+    monkeypatch.setattr(DerivedConnection, "authenticate", lambda self, force: True)
+    monkeypatch.setattr(DerivedConnection, "_get_connect_coro", fake_connect)
+    monkeypatch.setattr(DerivedConnection, "_async_dispatch_forever", fake_dispatch)
+
+    async def scenario() -> None:
+        connection = await DerivedConnection.async_create()
+        await asyncio.sleep(0)
+
+        assert type(connection) is DerivedConnection
+        assert connection.loop is asyncio.get_running_loop()
+        assert dispatch_loops == [asyncio.get_running_loop()]
+
+    asyncio.run(scenario())
+
+
 # def test_notification_helper_registry_is_shared_with_upstream() -> None:
 #     import iterm2.connection as upstream_connection
 
@@ -292,6 +319,26 @@ def test_async_close_is_safe_without_websocket() -> None:
         assert conn.websocket is None
 
     asyncio.run(scenario())
+
+
+def test_async_close_runs_disconnect_callbacks_once() -> None:
+    original = list(connection_module.gDisconnectCallbacks)
+    calls: list[str] = []
+
+    try:
+        connection_module.gDisconnectCallbacks.clear()
+        connection_module.add_disconnect_callback(lambda: calls.append("closed"))
+
+        async def scenario() -> None:
+            connection = Connection()
+            await connection.async_close()
+            await connection.async_close()
+
+        asyncio.run(scenario())
+
+        assert calls == ["closed"]
+    finally:
+        connection_module.gDisconnectCallbacks[:] = original
 
 
 def test_async_close_closes_websocket_and_cancels_tasks() -> None:

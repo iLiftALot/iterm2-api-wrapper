@@ -1,14 +1,42 @@
 from __future__ import annotations
 
+import inspect
+import subprocess
+import sys
+from io import StringIO
 from pathlib import Path
 
 import pytest
-from rich.console import Console
 from rich.text import Text
 
 from iterm2_api_wrapper._logging import config as config_module
 from iterm2_api_wrapper._logging import logger as logger_module
-from iterm2_api_wrapper._logging import styles
+from iterm2_api_wrapper._logging.config import ConsoleConfig, LogLevel, PrettyLogConfig
+
+
+def _logger_config(path: Path, terminal_buffer: StringIO | None = None) -> PrettyLogConfig:
+    terminal: ConsoleConfig = {"force_terminal": False, "width": 200, "log_path": False, "log_time": False}
+    if terminal_buffer is not None:
+        terminal["file"] = terminal_buffer
+    return {
+        "logger_config": {"markup": False, "highlight": True, "source_link": "none"},
+        "file_manager_config": {
+            "path": path,
+            "encoding": "utf-8",
+            "clear_file_on_init": True,
+            "flush_each_write": True,
+        },
+        "file_console_config": {
+            "force_terminal": False,
+            "color_system": None,
+            "no_color": True,
+            "width": 200,
+            "log_path": False,
+            "log_time": False,
+        },
+        "terminal_console_config": terminal,
+        "traceback_config": {"show_locals": False, "width": 160},
+    }
 
 
 def test_log_level_helpers_resolve_valid_and_invalid_values() -> None:
@@ -19,121 +47,215 @@ def test_log_level_helpers_resolve_valid_and_invalid_values() -> None:
         config_module._resolve_level("verbose")
 
 
-def test_gradient_helpers_style_text() -> None:
-    assert styles.gradient_colors(["red"], 3) == ["red", "red", "red"]
-    assert styles.gradient_colors(["red", "blue"], 1) == ["red"]
-    colors = styles.gradient_colors(["#000000", "#ffffff"], 3)
-    assert colors == ["rgb(0,0,0)", "rgb(127,127,127)", "rgb(255,255,255)"]
+def test_import_does_not_install_hooks_or_initialize_output() -> None:
+    script = """
+import sys
+before = sys.excepthook
+import iterm2_api_wrapper._logging.logger as module
+assert sys.excepthook is before
+assert module._standalone_terminal is None
+assert all(not item._sinks.terminal.initialized for item in module.PrettyLog._registry.values())
+assert all(not item._sinks.file.initialized for item in module.PrettyLog._registry.values())
+assert len({id(item._sinks) for item in module.PrettyLog._registry.values()}) == 1
+module.install_pretty_tracebacks({"show_locals": False})
+assert sys.excepthook is not before
+"""
 
-    text = Text("abc")
-    styles.GradientHighlighter(["red", "blue"]).highlight(text)
-    assert text.spans
-
-
-def test_prefix_rule_renders_rule_to_remaining_width() -> None:
-    console = Console(width=16, record=True)
-    console.print(logger_module._PrefixRule(Text("[INFO]")))
-
-    assert "[INFO]" in console.export_text()
-
-
-def test_path_text_uses_compact_label_and_vscode_line_link(tmp_path: Path) -> None:
-    source = tmp_path / "api.py"
-    source.write_text("print('hello')\n")
-    log = logger_module.PrettyLog("path-test", mode="terminal")
-
-    path_text = log._build_path_text(str(source), 587)
-
-    assert path_text.plain == "api.py:587"
-    assert path_text.spans[0].style == f"link {log._vscode_file_uri(str(source))}"
-    assert path_text.spans[1].style == f"link {log._vscode_file_uri(str(source), 587)}"
-    assert path_text.spans[1].style.endswith(":587:1")  # pyright: ignore[reportAttributeAccessIssue]
-    assert "vscode://file" in path_text.spans[1].style  # pyright: ignore[reportOperatorIssue]
-
-
-def test_log_table_respects_rich_time_and_path_flags(tmp_path: Path) -> None:
-    source = tmp_path / "api.py"
-    source.write_text("print('hello')\n")
-    console = Console(record=True, force_terminal=False, log_time=False, log_path=False)
-    log = logger_module.PrettyLog("path-flags", mode="terminal")
-
-    console.print(log._build_log_table(console, [Text("message")], filename=str(source), line_no=587))
-
-    output = console.export_text()
-    assert "message" in output
-    assert "api.py" not in output
-    assert "587" not in output
-
-
-def test_file_console_manager_lazily_creates_and_rebuilds(tmp_path: Path) -> None:
-    path = tmp_path / "log.txt"
-    manager = logger_module._FileConsoleManager.get_or_create(
-        path, file_manager_config={"clear_file_on_init": True}, console_config={"force_terminal": False, "width": 40}
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        check=False,
+        capture_output=True,
+        text=True,
     )
 
-    manager.console.print("first")
-    assert "first" in path.read_text()
-
-    manager.reset_config(console_config={"width": 60})
-    manager.console.print("second")
-    manager.close()
-
-    content = path.read_text()
-    assert "first" in content
-    assert "second" in content
+    assert result.returncode == 0, result.stderr
 
 
-def test_terminal_console_manager_rebuilds_on_config_change() -> None:
-    manager = logger_module._TerminalConsoleManager(width=20)
-    first = manager.console
-
-    manager.reset_config(width=30)
-
-    assert manager.console is not first
-    manager.close()
-    assert manager._console is None
-
-
-def test_pretty_log_filters_levels_context_and_file_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    log_path = tmp_path / "pretty.log"
-    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
-    logger_module.PrettyLog._registry.clear()
-    logger_module._FileConsoleManager._instances.clear()
-
-    log = logger_module.PrettyLog(
-        "root",
-        mode="file",
-        level="INFO",
-        pretty_config={
-            "logger_config": {"markup": False},
-            "file_manager_config": {"clear_file_on_init": True},
-            "file_console_config": {"force_terminal": False, "width": 120, "log_path": False, "log_time": False},
-            "terminal_console_config": {"force_terminal": False, "width": 120},
-        },
-    )
+def test_pretty_log_filters_levels_context_and_file_output(tmp_path: Path) -> None:
+    path = tmp_path / "pretty.log"
+    log = logger_module.PrettyLog("facade", mode="file", level="INFO", pretty_config=_logger_config(path))
     child = log.child("child", component="api")
 
     log.debug("hidden")
     log.info("visible")
     child.warning("child visible")
-    with log.scoped_level("DEBUG"):
+    with log.scoped_level("DEBUG") as scoped:
+        assert scoped is log
         log.debug("debug visible")
     with log.scoped_context(request_id="abc"):
-        assert "request_id" in log._context
-    assert "request_id" not in log._context
+        log.info("context visible")
 
-    log.add_filter(lambda level, messages: "blocked" not in str(messages[0]))
+    def blocked(level: LogLevel, messages: tuple[object, ...]) -> bool:
+        del level
+        return "blocked" not in str(messages[0])
+
+    log.add_filter(blocked)
     log.info("blocked")
+    assert log.remove_filter(blocked) is True
+    assert log.remove_filter(blocked) is False
+    log.add_filter(blocked)
+    log.clear_filters()
     log.disable()
     log.info("disabled")
     log.enable()
     log.error("enabled error")
+    log.flush()
 
-    content = log_path.read_text()
+    content = path.read_text(encoding="utf-8")
     assert "visible" in content
     assert "child visible" in content
+    assert "component=api" in content
     assert "debug visible" in content
+    assert "request_id=abc" in content
     assert "enabled error" in content
     assert "hidden" not in content
     assert "blocked" not in content
     assert "disabled" not in content
+    assert log.is_enabled_for("INFO") is True
+    assert log.is_enabled_for("DEBUG") is False
+
+    log.close()
+    child.info("child survives parent close")
+    child.close()
+    assert "child survives parent close" in path.read_text(encoding="utf-8")
+
+
+def test_hierarchy_and_configuration_are_isolated(tmp_path: Path) -> None:
+    root = logger_module.PrettyLog("hierarchy", mode="file", pretty_config=_logger_config(tmp_path / "tree.log"))
+    child = logger_module.PrettyLog.get_logger("hierarchy.worker")
+
+    assert child.parent is root
+    assert root.children == {"hierarchy.worker": child}
+    assert logger_module.PrettyLog.get_logger("hierarchy.worker") is child
+    assert logger_module.PrettyLog.list_loggers()["hierarchy"] is root
+    assert child._sinks is root._sinks
+
+    child.configure(logger_config={"source_link": "file"})
+    assert child.pretty_config.get("logger_config", {}).get("source_link") == "file"
+    assert root.pretty_config.get("logger_config", {}).get("source_link") == "none"
+    child.configure(terminal_console_config={"width": 77})
+    assert child._sinks is not root._sinks
+    assert child.pretty_config.get("terminal_console_config", {}).get("width") == 77
+    assert root.pretty_config.get("terminal_console_config", {}).get("width") == 200
+
+    child.close()
+    root.close()
+
+
+def test_active_call_lease_survives_concurrent_logger_close(tmp_path: Path) -> None:
+    path = tmp_path / "leased.log"
+    log = logger_module.PrettyLog("leased", mode="file", pretty_config=_logger_config(path))
+    resolved = log._resolve_call({})
+
+    assert resolved.sinks.reference_count == 2
+    log.close()
+    assert resolved.sinks.reference_count == 1
+    resolved.sinks.emit("file", Text("terminal"), Text("leased entry"))
+    resolved.close()
+    resolved.close()
+
+    assert resolved.sinks.reference_count == 0
+    assert path.read_text(encoding="utf-8") == "leased entry\n"
+
+
+def test_source_location_uses_the_public_call_site(tmp_path: Path) -> None:
+    path = tmp_path / "source.log"
+    pretty_config = _logger_config(path)
+    pretty_config.setdefault("file_console_config", {})["log_path"] = True
+    pretty_config.setdefault("logger_config", {})["source_link"] = "none"
+    log = logger_module.PrettyLog("source", mode="file", pretty_config=pretty_config)
+
+    frame = inspect.currentframe()
+    assert frame is not None
+    expected_line = frame.f_lineno + 1
+    log.info("source location")
+    del frame
+    log.close()
+
+    assert f"{Path(__file__).name}:{expected_line}" in path.read_text(encoding="utf-8")
+
+
+def test_ordinary_call_locals_are_explicitly_opt_in(tmp_path: Path) -> None:
+    path = tmp_path / "locals.log"
+    log = logger_module.PrettyLog("locals", mode="file", pretty_config=_logger_config(path))
+    local_secret = "-".join(("ordinary", "local", "value"))
+
+    log.info("without locals")
+    assert local_secret not in path.read_text(encoding="utf-8")
+    log.info("with locals", log_locals=True)
+    log.close()
+
+    content = path.read_text(encoding="utf-8")
+    assert "local_secret" in content
+    assert local_secret in content
+
+
+def test_exception_obeys_mode_threshold_filter_and_locals_policy(tmp_path: Path) -> None:
+    path = tmp_path / "exceptions.log"
+    terminal_buffer = StringIO()
+    log = logger_module.PrettyLog(
+        "exceptions", mode="all", level="ERROR", pretty_config=_logger_config(path, terminal_buffer)
+    )
+
+    hidden_local = "-".join(("terminal", "secret"))
+    try:
+        raise RuntimeError("terminal failure")
+    except RuntimeError:
+        assert hidden_local
+        log.exception("terminal only", mode="terminal")
+
+    assert "terminal only" in terminal_buffer.getvalue()
+    assert "terminal failure" in terminal_buffer.getvalue()
+    assert "terminal-secret" not in terminal_buffer.getvalue()
+    assert not path.exists()
+
+    previous_terminal = terminal_buffer.getvalue()
+    try:
+        raise ValueError("file failure")
+    except ValueError:
+        log.exception("file only", mode="file")
+
+    assert terminal_buffer.getvalue() == previous_terminal
+    assert "file only" in path.read_text(encoding="utf-8")
+    assert "file failure" in path.read_text(encoding="utf-8")
+
+    log.set_level("CRITICAL")
+    try:
+        raise RuntimeError("threshold suppressed")
+    except RuntimeError:
+        log.exception("threshold suppressed", mode="file")
+    log.set_level("ERROR")
+    log.add_filter(lambda level, messages: False)
+    try:
+        raise RuntimeError("filter suppressed")
+    except RuntimeError:
+        log.exception("filter suppressed", mode="file")
+    log.close()
+
+    content = path.read_text(encoding="utf-8")
+    assert "threshold suppressed" not in content
+    assert "filter suppressed" not in content
+
+
+def test_timer_logs_success_and_failure_then_reraises(tmp_path: Path) -> None:
+    path = tmp_path / "timer.log"
+    log = logger_module.PrettyLog("timer", mode="file", pretty_config=_logger_config(path))
+
+    with log.timer("successful operation") as active:
+        assert active is log
+
+    with pytest.raises(RuntimeError, match="expected failure"):
+        with log.timer("failed operation"):
+            raise RuntimeError("expected failure")
+    log.close()
+
+    content = path.read_text(encoding="utf-8")
+    assert "successful operation completed in" in content
+    assert "failed operation failed after" in content
+    assert "expected failure" in content
+
+
+def test_invalid_modes_are_rejected() -> None:
+    with pytest.raises(ValueError, match="Invalid log mode"):
+        logger_module._validate_mode("invalid")

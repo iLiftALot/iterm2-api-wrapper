@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 
-from iterm2_api_wrapper.errors import (
+from iterm2_api_wrapper.core.errors import (
     ProfileNotFoundError,
     SessionNotFoundError,
     TabNotFoundError,

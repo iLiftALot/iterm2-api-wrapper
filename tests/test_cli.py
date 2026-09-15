@@ -11,7 +11,7 @@ import pytest
 import typer
 
 from iterm2_api_wrapper import cli
-from iterm2_api_wrapper.typings import CommandExecutionResult, HexCodeEnum
+from iterm2_api_wrapper.core.typings import CommandExecutionResult, HexCodeEnum
 
 
 if TYPE_CHECKING:

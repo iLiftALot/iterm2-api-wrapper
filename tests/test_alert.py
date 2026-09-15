@@ -9,7 +9,7 @@ from iterm2_api_wrapper import alert as alert_module
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.api.it2connection import Connection
+    from iterm2_api_wrapper.core.gateway import Connection
 else:
     Connection = object
 

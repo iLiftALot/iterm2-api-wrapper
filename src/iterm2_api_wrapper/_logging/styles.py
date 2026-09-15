@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import ClassVar, Literal, NamedTuple
+from enum import Enum
+from types import MappingProxyType
+from typing import ClassVar, Literal, TypedDict, overload
 
 from rich.color import Color
 from rich.color_triplet import ColorTriplet
 from rich.highlighter import Highlighter, RegexHighlighter
 from rich.style import Style
+from rich.style import StyleType as RichStyleType
 from rich.text import Text
 from rich.theme import Theme
 
@@ -185,6 +188,9 @@ ThemeStyle = Literal[
     "markdown.link",
     "markdown.link_url",
     "markdown.s",
+    "markdown.table.border",
+    "markdown.table.header",
+    "markdown.kbd",
     "iso8601.date",
     "iso8601.time",
     "iso8601.timezone",
@@ -431,16 +437,251 @@ ColorName = Literal[
 ColorLike = Color | ColorName | str
 
 
-class StyleType(NamedTuple):
-    """Structured style information for log styling."""
+class LogStyle(str, Enum):
+    """Semantic style names added by :mod:`iterm2_api_wrapper._logging`."""
 
-    color: ColorLike
-    bgcolor: ColorLike
-    attributes: tuple[StyleAttribute, ...] | None
-    link: str | None
+    NUMBER = "log.number"
+    HEX = "log.hex"
+    UUID = "log.uuid"
+    PATH = "log.path"
+    URL = "log.url"
+    DURATION = "log.duration"
+    BOOLEAN = "log.bool"
+    NONE = "log.none"
+    SUCCESS = "log.success"
+    WARNING = "log.warning"
+    FAILURE = "log.failure"
+    LOGGER = "log.logger"
+    CONTEXT = "log.context"
+    CONTEXT_KEY = "log.context.key"
+    CONTEXT_VALUE = "log.context.value"
+    RULE = "log.rule"
 
 
-StyleLike = ThemeStyle | StyleType | Style | str
+@dataclass(frozen=True, slots=True)
+class StyleSpec:
+    """A discoverable, immutable constructor for :class:`rich.style.Style`."""
+
+    color: ColorLike | None = None
+    bgcolor: ColorLike | None = None
+    bold: bool | None = None
+    dim: bool | None = None
+    italic: bool | None = None
+    underline: bool | None = None
+    blink: bool | None = None
+    blink2: bool | None = None
+    reverse: bool | None = None
+    conceal: bool | None = None
+    strike: bool | None = None
+    underline2: bool | None = None
+    frame: bool | None = None
+    encircle: bool | None = None
+    overline: bool | None = None
+    link: str | None = None
+    meta: Mapping[str, object] | None = None
+
+    def to_rich_style(self) -> Style:
+        """Build a Rich style without exposing a mutable metadata mapping."""
+        return Style(
+            color=self.color,
+            bgcolor=self.bgcolor,
+            bold=self.bold,
+            dim=self.dim,
+            italic=self.italic,
+            underline=self.underline,
+            blink=self.blink,
+            blink2=self.blink2,
+            reverse=self.reverse,
+            conceal=self.conceal,
+            strike=self.strike,
+            underline2=self.underline2,
+            frame=self.frame,
+            encircle=self.encircle,
+            overline=self.overline,
+            link=self.link,
+            meta=dict(self.meta) if self.meta is not None else None,
+        )
+
+
+ThemeValue = StyleSpec | Style | str
+StyleLike = ThemeStyle | LogStyle | StyleSpec | Style | str
+
+
+ThemeStyles = TypedDict(
+    "ThemeStyles",
+    {
+        "none": ThemeValue,
+        "reset": ThemeValue,
+        "dim": ThemeValue,
+        "bright": ThemeValue,
+        "bold": ThemeValue,
+        "strong": ThemeValue,
+        "code": ThemeValue,
+        "italic": ThemeValue,
+        "emphasize": ThemeValue,
+        "underline": ThemeValue,
+        "blink": ThemeValue,
+        "blink2": ThemeValue,
+        "reverse": ThemeValue,
+        "strike": ThemeValue,
+        "black": ThemeValue,
+        "red": ThemeValue,
+        "green": ThemeValue,
+        "yellow": ThemeValue,
+        "magenta": ThemeValue,
+        "cyan": ThemeValue,
+        "white": ThemeValue,
+        "inspect.attr": ThemeValue,
+        "inspect.attr.dunder": ThemeValue,
+        "inspect.callable": ThemeValue,
+        "inspect.async_def": ThemeValue,
+        "inspect.def": ThemeValue,
+        "inspect.class": ThemeValue,
+        "inspect.error": ThemeValue,
+        "inspect.equals": ThemeValue,
+        "inspect.help": ThemeValue,
+        "inspect.doc": ThemeValue,
+        "inspect.value.border": ThemeValue,
+        "live.ellipsis": ThemeValue,
+        "layout.tree.row": ThemeValue,
+        "layout.tree.column": ThemeValue,
+        "logging.keyword": ThemeValue,
+        "logging.level.notset": ThemeValue,
+        "logging.level.debug": ThemeValue,
+        "logging.level.info": ThemeValue,
+        "logging.level.warning": ThemeValue,
+        "logging.level.error": ThemeValue,
+        "logging.level.critical": ThemeValue,
+        "log.level": ThemeValue,
+        "log.time": ThemeValue,
+        "log.message": ThemeValue,
+        "log.path": ThemeValue,
+        "repr.ellipsis": ThemeValue,
+        "repr.indent": ThemeValue,
+        "repr.error": ThemeValue,
+        "repr.str": ThemeValue,
+        "repr.brace": ThemeValue,
+        "repr.comma": ThemeValue,
+        "repr.ipv4": ThemeValue,
+        "repr.ipv6": ThemeValue,
+        "repr.eui48": ThemeValue,
+        "repr.eui64": ThemeValue,
+        "repr.tag_start": ThemeValue,
+        "repr.tag_name": ThemeValue,
+        "repr.tag_contents": ThemeValue,
+        "repr.tag_end": ThemeValue,
+        "repr.attrib_name": ThemeValue,
+        "repr.attrib_equal": ThemeValue,
+        "repr.attrib_value": ThemeValue,
+        "repr.number": ThemeValue,
+        "repr.number_complex": ThemeValue,
+        "repr.bool_true": ThemeValue,
+        "repr.bool_false": ThemeValue,
+        "repr.none": ThemeValue,
+        "repr.url": ThemeValue,
+        "repr.uuid": ThemeValue,
+        "repr.call": ThemeValue,
+        "repr.path": ThemeValue,
+        "repr.filename": ThemeValue,
+        "rule.line": ThemeValue,
+        "rule.text": ThemeValue,
+        "json.brace": ThemeValue,
+        "json.bool_true": ThemeValue,
+        "json.bool_false": ThemeValue,
+        "json.null": ThemeValue,
+        "json.number": ThemeValue,
+        "json.str": ThemeValue,
+        "json.key": ThemeValue,
+        "prompt": ThemeValue,
+        "prompt.choices": ThemeValue,
+        "prompt.default": ThemeValue,
+        "prompt.invalid": ThemeValue,
+        "prompt.invalid.choice": ThemeValue,
+        "pretty": ThemeValue,
+        "scope.border": ThemeValue,
+        "scope.key": ThemeValue,
+        "scope.key.special": ThemeValue,
+        "scope.equals": ThemeValue,
+        "table.header": ThemeValue,
+        "table.footer": ThemeValue,
+        "table.cell": ThemeValue,
+        "table.title": ThemeValue,
+        "table.caption": ThemeValue,
+        "traceback.error": ThemeValue,
+        "traceback.border.syntax_error": ThemeValue,
+        "traceback.border": ThemeValue,
+        "traceback.text": ThemeValue,
+        "traceback.title": ThemeValue,
+        "traceback.exc_type": ThemeValue,
+        "traceback.exc_value": ThemeValue,
+        "traceback.offset": ThemeValue,
+        "traceback.error_range": ThemeValue,
+        "traceback.note": ThemeValue,
+        "traceback.group.border": ThemeValue,
+        "bar.back": ThemeValue,
+        "bar.complete": ThemeValue,
+        "bar.finished": ThemeValue,
+        "bar.pulse": ThemeValue,
+        "progress.description": ThemeValue,
+        "progress.filesize": ThemeValue,
+        "progress.filesize.total": ThemeValue,
+        "progress.download": ThemeValue,
+        "progress.elapsed": ThemeValue,
+        "progress.percentage": ThemeValue,
+        "progress.remaining": ThemeValue,
+        "progress.data.speed": ThemeValue,
+        "progress.spinner": ThemeValue,
+        "status.spinner": ThemeValue,
+        "tree": ThemeValue,
+        "tree.line": ThemeValue,
+        "markdown.paragraph": ThemeValue,
+        "markdown.text": ThemeValue,
+        "markdown.em": ThemeValue,
+        "markdown.emph": ThemeValue,
+        "markdown.strong": ThemeValue,
+        "markdown.code": ThemeValue,
+        "markdown.code_block": ThemeValue,
+        "markdown.block_quote": ThemeValue,
+        "markdown.list": ThemeValue,
+        "markdown.item": ThemeValue,
+        "markdown.item.bullet": ThemeValue,
+        "markdown.item.number": ThemeValue,
+        "markdown.hr": ThemeValue,
+        "markdown.h1.border": ThemeValue,
+        "markdown.h1": ThemeValue,
+        "markdown.h2": ThemeValue,
+        "markdown.h3": ThemeValue,
+        "markdown.h4": ThemeValue,
+        "markdown.h5": ThemeValue,
+        "markdown.h6": ThemeValue,
+        "markdown.h7": ThemeValue,
+        "markdown.link": ThemeValue,
+        "markdown.link_url": ThemeValue,
+        "markdown.s": ThemeValue,
+        "markdown.table.border": ThemeValue,
+        "markdown.table.header": ThemeValue,
+        "markdown.kbd": ThemeValue,
+        "iso8601.date": ThemeValue,
+        "iso8601.time": ThemeValue,
+        "iso8601.timezone": ThemeValue,
+        "log.number": ThemeValue,
+        "log.hex": ThemeValue,
+        "log.uuid": ThemeValue,
+        "log.url": ThemeValue,
+        "log.duration": ThemeValue,
+        "log.bool": ThemeValue,
+        "log.none": ThemeValue,
+        "log.success": ThemeValue,
+        "log.warning": ThemeValue,
+        "log.failure": ThemeValue,
+        "log.logger": ThemeValue,
+        "log.context": ThemeValue,
+        "log.context.key": ThemeValue,
+        "log.context.value": ThemeValue,
+        "log.rule": ThemeValue,
+    },
+    total=False,
+)
 
 # ---------- palette + gradient helpers ----------
 
@@ -457,7 +698,13 @@ def _lerp(a: int, b: int, t: float) -> int:
 
 
 def gradient_colors(stops: Sequence[ColorLike], steps: int) -> list[str]:
-    if steps <= 1:
+    if not stops:
+        raise ValueError("gradient stops must contain at least one color")
+    if steps < 0:
+        raise ValueError("gradient steps must be greater than or equal to zero")
+    if steps == 0:
+        return []
+    if steps == 1:
         return [str(stops[0])]
     # expand across multiple stops
     triplets = [_to_triplet(c) for c in stops]
@@ -484,7 +731,11 @@ def gradient_colors(stops: Sequence[ColorLike], steps: int) -> list[str]:
 
 class GradientHighlighter(Highlighter):
     def __init__(self, stops: Sequence[ColorLike], max_chars: int = 200) -> None:
-        self.stops = stops
+        if not stops:
+            raise ValueError("gradient stops must contain at least one color")
+        if max_chars < 0:
+            raise ValueError("max_chars must be greater than or equal to zero")
+        self.stops = tuple(stops)
         self.max_chars = max_chars
 
     def highlight(self, text: Text) -> None:
@@ -500,11 +751,17 @@ class GradientHighlighter(Highlighter):
 class LogRegexHighlighter(RegexHighlighter):
     base_style = "log."
     highlights: ClassVar[Sequence[str]] = [
-        r"(?P<number>\b\d+(\.\d+)?\b)",
-        r"(?P<hex>0x[0-9a-fA-F]+)",
+        r"(?P<url>\b(?:https?|wss?|file)://[^\s<>]+)",
         r"(?P<uuid>\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b)",
-        r"(?P<path>(?:/[\w\-.]+)+)",
-        r"(?P<url>https?://\S+)",
+        r"(?P<hex>\b0x[0-9a-fA-F]+\b)",
+        r"(?P<duration>\b\d+(?:\.\d+)?\s?(?:ns|us|µs|ms|s|sec|secs|m|min|mins|h|hr|hrs)\b)",
+        r"\b(?P<bool>(?i:true|false))\b",
+        r"\b(?P<none>(?i:none|null))\b",
+        r"\b(?P<success>(?i:success(?:ful)?|succeeded|passed|complete(?:d)?|ok))\b",
+        r"\b(?P<warning>(?i:warn(?:ing)?|caution|retry(?:ing)?))\b",
+        r"\b(?P<failure>(?i:fail(?:ed|ure)?|error|exception|critical|fatal))\b",
+        r"(?P<path>(?<![\w:/])(?:~|\.{0,2})?/(?:[-\w.@+]+/)*[-\w.@+]*)",
+        r"(?P<number>(?<![\w.])-?\d+(?:\.\d+)?(?:e[+-]?\d+)?\b)",
     ]
 
 
@@ -522,49 +779,77 @@ class CompositeHighlighter(Highlighter):
 
 @dataclass(frozen=True)
 class LevelStyleProfile:
-    base: StyleLike | None = None  # ThemeStyle or Style object
+    base: StyleLike | None = None
     gradient: Sequence[ColorLike] | None = None
     highlighter: Highlighter | None = None
 
 
+LogLevelName = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
 LEVEL_PROFILES: dict[str, LevelStyleProfile] = {
-    "DEBUG": LevelStyleProfile(
-        base="logging.level.debug",
-        gradient=("#A809F2", "#0dccf6", "#10fabc"),
-        highlighter=CompositeHighlighter(LogRegexHighlighter()),
-    ),
-    "INFO": LevelStyleProfile(
-        base="logging.level.info",
-        gradient=("#0cf943", "#85f819"),
-        highlighter=CompositeHighlighter(LogRegexHighlighter()),
-    ),
-    "WARNING": LevelStyleProfile(
-        base="logging.level.warning",
-        gradient=("#ff9500", "#ebe707"),
-        highlighter=CompositeHighlighter(LogRegexHighlighter()),
-    ),
-    "ERROR": LevelStyleProfile(
-        base="logging.level.error",
-        gradient=("#fb0b0b", "#f43f7e"),
-        highlighter=CompositeHighlighter(LogRegexHighlighter()),
-    ),
+    "DEBUG": LevelStyleProfile(base="logging.level.debug", highlighter=CompositeHighlighter(LogRegexHighlighter())),
+    "INFO": LevelStyleProfile(base="logging.level.info", highlighter=CompositeHighlighter(LogRegexHighlighter())),
+    "WARNING": LevelStyleProfile(base="logging.level.warning", highlighter=CompositeHighlighter(LogRegexHighlighter())),
+    "ERROR": LevelStyleProfile(base="logging.level.error", highlighter=CompositeHighlighter(LogRegexHighlighter())),
     "CRITICAL": LevelStyleProfile(
-        base="logging.level.error",
-        gradient=("#c70f0f", "#8ae907"),
-        highlighter=CompositeHighlighter(LogRegexHighlighter()),
+        base="logging.level.critical", highlighter=CompositeHighlighter(LogRegexHighlighter())
     ),
 }
 
 
-# ---------------- themes ----------------
-
-
-LOG_THEME = Theme(
+_LOG_THEME_DEFAULTS: Mapping[str, ThemeValue] = MappingProxyType(
     {
-        "log.number": "bold cyan",
-        "log.hex": "magenta",
-        "log.uuid": "dim green",
-        "log.path": "yellow",
-        "log.url": "underline blue",
+        "logging.level.debug": StyleSpec(color="bright_black", dim=True),
+        "logging.level.info": StyleSpec(color="bright_blue", bold=True),
+        "logging.level.warning": StyleSpec(color="bright_yellow", bold=True),
+        "logging.level.error": StyleSpec(color="bright_red", bold=True),
+        "logging.level.critical": StyleSpec(color="white", bgcolor="red", bold=True),
+        "log.time": StyleSpec(color="bright_black", dim=True),
+        "log.path": StyleSpec(color="cyan", dim=True),
+        LogStyle.NUMBER.value: StyleSpec(color="bright_cyan", bold=True),
+        LogStyle.HEX.value: StyleSpec(color="magenta", bold=True),
+        LogStyle.UUID.value: StyleSpec(color="green", dim=True),
+        LogStyle.URL.value: StyleSpec(color="bright_blue", underline=True),
+        LogStyle.DURATION.value: StyleSpec(color="cyan", bold=True),
+        LogStyle.BOOLEAN.value: StyleSpec(color="magenta"),
+        LogStyle.NONE.value: StyleSpec(color="bright_black", italic=True),
+        LogStyle.SUCCESS.value: StyleSpec(color="bright_green", bold=True),
+        LogStyle.WARNING.value: StyleSpec(color="bright_yellow", bold=True),
+        LogStyle.FAILURE.value: StyleSpec(color="bright_red", bold=True),
+        LogStyle.LOGGER.value: StyleSpec(color="bright_blue", bold=True),
+        LogStyle.CONTEXT.value: StyleSpec(color="cyan", dim=True),
+        LogStyle.CONTEXT_KEY.value: StyleSpec(color="cyan"),
+        LogStyle.CONTEXT_VALUE.value: StyleSpec(color="white"),
+        LogStyle.RULE.value: StyleSpec(color="bright_black", dim=True),
     }
 )
+
+
+def _normalize_theme_value(value: object) -> RichStyleType:
+    if isinstance(value, StyleSpec):
+        return value.to_rich_style()
+    if isinstance(value, (Style, str)):
+        return value
+    raise TypeError(f"theme styles must be str, Style, or StyleSpec, not {type(value).__name__}")
+
+
+@overload
+def create_log_theme(overrides: ThemeStyles, *, inherit: bool = True) -> Theme: ...
+
+
+@overload
+def create_log_theme(overrides: Mapping[str, ThemeValue] | None = None, *, inherit: bool = True) -> Theme: ...
+
+
+def create_log_theme(overrides: ThemeStyles | Mapping[str, ThemeValue] | None = None, *, inherit: bool = True) -> Theme:
+    """Create an isolated Rich theme from wrapper defaults and caller overrides."""
+    styles: dict[str, RichStyleType] = {
+        name: _normalize_theme_value(value) for name, value in _LOG_THEME_DEFAULTS.items()
+    }
+    if overrides is not None:
+        styles.update({name: _normalize_theme_value(value) for name, value in overrides.items()})
+    return Theme(styles, inherit=inherit)
+
+
+LOG_THEME = create_log_theme()

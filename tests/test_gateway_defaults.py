@@ -4,14 +4,13 @@ import asyncio
 import errno
 import os
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
-from iterm2_api_wrapper import gateway as gateway_module
-from iterm2_api_wrapper import runtime_setup as runtime_setup_module
-from iterm2_api_wrapper.api.it2connection import Connection
-from iterm2_api_wrapper.gateway import (
+from iterm2_api_wrapper.core import gateway as gateway_module
+from iterm2_api_wrapper.core import runtime_setup as runtime_setup_module
+from iterm2_api_wrapper.core.gateway import (
     DefaultITermGateway,
     SetupCoroGateway,
     _get_connect_timeout_s,
@@ -74,7 +73,7 @@ def test_temporary_iterm_env_sets_values_and_restores_previous_environment(monke
 
 
 def test_async_create_connection_with_retry_retries_reset_errors() -> None:
-    connected = cast(Connection, object())
+    connected = object()
 
     class ResetThenSucceeds:
         attempts = 0
@@ -82,7 +81,7 @@ def test_async_create_connection_with_retry_retries_reset_errors() -> None:
         iterm2_protocol_version: tuple[int, int] = (1, 14)
 
         @classmethod
-        async def async_create(cls) -> Connection:
+        async def async_create(cls) -> object:
             cls.attempts += 1
             if cls.attempts == 1:
                 raise OSError(errno.ECONNRESET, "reset")

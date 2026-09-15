@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
 from iterm2_api_wrapper import pyobjc_adapter
-
-
-if TYPE_CHECKING:
-    from iterm2_api_wrapper.api.it2connection import Connection
 
 
 def test_iterm_not_open_reports_false_when_app_is_running(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -188,12 +184,13 @@ class FakeConnection:
     loop: asyncio.AbstractEventLoop | None = None
     iterm2_protocol_version: tuple[int, int] = (1, 14)
 
-    async def async_create(self) -> Connection:
-        return cast("Connection", object())
+    @classmethod
+    async def async_create(cls) -> FakeConnection:
+        return cls()
 
 
 def test_async_create_app_with_retry_launches_then_connects(monkeypatch: pytest.MonkeyPatch) -> None:
-    from iterm2_api_wrapper import gateway as gateway_module
+    from iterm2_api_wrapper.core import gateway as gateway_module
 
     # calls: list[tuple[str, Any]] = []
     app = FakeApplication()

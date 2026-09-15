@@ -13,7 +13,7 @@ import pytest
 from iterm2_api_wrapper import pyobjc_adapter
 from iterm2_api_wrapper.api import it2api as api_module
 from iterm2_api_wrapper.api.it2api import contains_matching_term, create_iterm_state, iTermAPI
-from iterm2_api_wrapper.errors import ProfileNotFoundError, TabNotFoundError
+from iterm2_api_wrapper.core.errors import ProfileNotFoundError, TabNotFoundError
 from iterm2_api_wrapper.utils import signal as signal_module
 
 from .fake import FakeSignal
@@ -21,27 +21,21 @@ from .fake import FakeSignal
 
 if TYPE_CHECKING:
     from iterm2_api_wrapper.api.it2app import App
-    from iterm2_api_wrapper.api.it2connection import Connection
     from iterm2_api_wrapper.api.it2profile import LocalWriteOnlyProfile, PartialProfile, Profile
     from iterm2_api_wrapper.api.it2session import Session
     from iterm2_api_wrapper.api.it2tab import Tab
     from iterm2_api_wrapper.api.it2window import Window
+    from iterm2_api_wrapper.core.gateway import Connection
 else:
     App = Connection = LocalWriteOnlyProfile = PartialProfile = Profile = Session = Tab = Window = object
 
 
-TProfile = TypeVar("TProfile", bound=Profile, covariant=True)
-TLocalWriteOnlyProfile = TypeVar("TLocalWriteOnlyProfile", bound=LocalWriteOnlyProfile, covariant=True)
-TApp = TypeVar("TApp", bound=App, covariant=True)
+TProfile_co = TypeVar("TProfile_co", bound=Profile, covariant=True)
+TLocalWriteOnlyProfile_co = TypeVar("TLocalWriteOnlyProfile_co", bound=LocalWriteOnlyProfile, covariant=True)
+TApp_co = TypeVar("TApp_co", bound=App, covariant=True)
 
 
-class _FakeProfile(Protocol[TProfile]):
-    name: str
-    guid: str
-    original_guid: str | None = None
-
-
-class FakeLocalWriteOnlyProfile(Protocol[TLocalWriteOnlyProfile]):
+class FakeLocalWriteOnlyProfile(Protocol[TLocalWriteOnlyProfile_co]):
     values: dict[str, Any]
 
 
@@ -133,7 +127,7 @@ class FakeWindow:
         return None
 
 
-class _FakeApp(Protocol[TApp]): ...
+class _FakeApp(Protocol[TApp_co]): ...
 
 
 class FakeApp(_FakeApp):
@@ -201,6 +195,14 @@ def as_session(session: FakeSession | None) -> Session | None:
     return cast(Session | None, session)
 
 
+def set_api_connection(connection: Connection | None) -> None:
+    type.__setattr__(iTermAPI, "_iTermAPI__connection", connection)
+
+
+def set_api_app(app: App | None) -> None:
+    type.__setattr__(iTermAPI, "_iTermAPI__app", app)
+
+
 def make_api(profile: FakeProfile, windows: list[FakeWindow]) -> iTermAPI:
     typed_profile = as_profile(profile)
     api = object.__new__(iTermAPI)
@@ -209,8 +211,8 @@ def make_api(profile: FakeProfile, windows: list[FakeWindow]) -> iTermAPI:
     api.debug = False
     api.profile_name = profile.name
     api.extra_id = None
-    api._connection = None
-    api._app = as_app(FakeApp(windows))
+    set_api_connection(None)
+    set_api_app(as_app(FakeApp(windows)))
     api._profile_cache = {}
     api.profile = typed_profile
     api.window = None
@@ -396,8 +398,8 @@ def test_sync_constructor_populates_from_api_owned_setup(monkeypatch: pytest.Mon
     assert configured == [("pyterm-mcp", True, True)]
     assert get_profile_calls == [None]
     assert get_app_calls >= 1
-    assert api.connection is conn
-    assert api.app is app
+    assert object.__getattribute__(iTermAPI, "_iTermAPI__connection") is conn
+    assert object.__getattribute__(iTermAPI, "_iTermAPI__app") is app
     assert api.profile is profile
     assert api.window is window
     assert api.tab is window.tabs[-1]
@@ -423,8 +425,8 @@ def test_create_iterm_state_builds_state_from_api_context(monkeypatch: pytest.Mo
         async def async_create(**kwargs: object) -> iTermAPI:
             calls.append(kwargs)
             api = make_api(profile, [window])
-            api._connection = conn
-            api._app = as_app(app)
+            set_api_connection(conn)
+            set_api_app(as_app(app))
             api.window = as_window(window)
             api.tab = as_tab(tab)
             api.session = as_session(session)
@@ -471,8 +473,8 @@ def test_create_iterm_state_skips_signal_install_for_unsupported_shell(monkeypat
 
         async def async_create(**_: object) -> iTermAPI:
             api = make_api(profile, [window])
-            api._connection = conn
-            api._app = as_app(app)
+            set_api_connection(conn)
+            set_api_app(as_app(app))
             api.window = as_window(window)
             api.tab = as_tab(tab)
             api.session = as_session(session)
@@ -505,8 +507,8 @@ def test_create_iterm_state_defers_signal_install_when_shell_is_busy(monkeypatch
 
         async def async_create(**_: object) -> iTermAPI:
             api = make_api(profile, [window])
-            api._connection = conn
-            api._app = as_app(app)
+            set_api_connection(conn)
+            set_api_app(as_app(app))
             api.window = as_window(window)
             api.tab = as_tab(tab)
             api.session = as_session(session)
@@ -723,10 +725,10 @@ def test_iter_sessions_walks_all_windows_tabs_sessions() -> None:
         window = FakeWindow("window-1", [tab_a, tab_b])
         api = make_api(profile, [window])
 
-        collected = [session.session_id async for _, _, session in api._iter_sessions()]
+        collected = [session.session_id async for _, _, session in api.iter_sessions()]
         assert collected == ["sid-0", "sid-1", "sid-2"]
 
-        scoped = [session.session_id async for _, _, session in api._iter_sessions(as_window(window))]
+        scoped = [session.session_id async for _, _, session in api.iter_sessions(window=as_window(window))]
         assert scoped == ["sid-0", "sid-1", "sid-2"]
 
     asyncio.run(scenario())
@@ -734,7 +736,7 @@ def test_iter_sessions_walks_all_windows_tabs_sessions() -> None:
 
 def test_version_property_formats_protocol_tuple() -> None:
     api = make_api(FakeProfile(name="p", guid="G"), [])
-    api._connection = as_connection(SimpleNamespace(iterm2_protocol_version=(3, 5)))
+    set_api_connection(as_connection(SimpleNamespace(iterm2_protocol_version=(3, 5))))
 
     assert api.version == "3.5"
 
@@ -822,8 +824,8 @@ def test_get_window_by_window_id_uses_app_lookup() -> None:
 def test_json_serializes_context_snapshot() -> None:
     profile = FakeProfile(name="pyterm-mcp", guid="GUID")
     api = make_api(profile, [])
-    api._connection = as_connection(SimpleNamespace(iterm2_protocol_version=(1, 5)))
-    api._app = as_app(
+    set_api_connection(as_connection(SimpleNamespace(iterm2_protocol_version=(1, 5))))
+    set_api_app(
         cast(FakeApp, SimpleNamespace(windows=[object(), object()], broadcast_domains=[], buried_sessions=[object()]))
     )
     api.window = as_window(cast(FakeWindow, SimpleNamespace(tabs=[object()], window_id="window-1", window_number=1)))
@@ -843,7 +845,8 @@ def test_json_serializes_context_snapshot() -> None:
 def test_create_window_delegates_to_window_factory(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         api = make_api(FakeProfile(name="p", guid="G"), [])
-        api._connection = as_connection(SimpleNamespace())
+        connection = as_connection(SimpleNamespace())
+        set_api_connection(connection)
         created = object()
         calls: list[tuple[object, str | None, str | None]] = []
 
@@ -855,7 +858,7 @@ def test_create_window_delegates_to_window_factory(monkeypatch: pytest.MonkeyPat
 
         result = await api.create_window(profile_name="Work", command="ls")
         assert result is created
-        assert calls == [(api._connection, "Work", "ls")]
+        assert calls == [(connection, "Work", "ls")]
 
     asyncio.run(scenario())
 
@@ -875,7 +878,7 @@ def test_create_tab_waits_for_matching_session_and_prompt_ready(monkeypatch: pyt
         window = CreatingWindow("window-1", [])
         api = make_api(profile, [window])
         conn = as_connection(SimpleNamespace())
-        api._connection = conn
+        set_api_connection(conn)
         new_session_events: list[str] = []
         prompt_monitors: list[Any] = []
 
@@ -948,7 +951,7 @@ def test_create_tab_treats_prompt_monitor_timeout_as_loaded(monkeypatch: pytest.
         window = CreatingWindow("window-1", [])
         api = make_api(profile, [window])
         conn = as_connection(SimpleNamespace())
-        api._connection = conn
+        set_api_connection(conn)
 
         class FakeNewSessionMonitor:
             def __init__(self, connection: object) -> None:
@@ -1005,7 +1008,7 @@ def test_create_tab_raises_when_loaded_session_cannot_be_resolved(monkeypatch: p
         window = CreatingWindow("window-1", [])
         api = make_api(profile, [])
         conn = as_connection(SimpleNamespace())
-        api._connection = conn
+        set_api_connection(conn)
 
         class FakeNewSessionMonitor:
             def __init__(self, connection: object) -> None:

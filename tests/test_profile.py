@@ -19,12 +19,14 @@ from iterm2_api_wrapper.api.it2profile import (
 
 
 if TYPE_CHECKING:
-    from iterm2_api_wrapper.api.it2connection import Connection
     from iterm2_api_wrapper.api.it2profile import DynamicProfilesPayload
+    from iterm2_api_wrapper.core.gateway import Connection
+
+from .fake import FakeConnection
 
 
 def _connection() -> Connection:
-    return cast("Connection", object())
+    return FakeConnection()
 
 
 def _profiles_response(*profiles: dict[str, object]) -> api_pb2.ServerOriginatedMessage:

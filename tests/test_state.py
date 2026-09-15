@@ -10,8 +10,9 @@ from typing import Any, cast
 import pytest
 
 from iterm2_api_wrapper import state as state_module
-from iterm2_api_wrapper.state import LoopManager, MarkedCommand, User, _validate_state, iTermState
-from iterm2_api_wrapper.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
+from iterm2_api_wrapper.core.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
+from iterm2_api_wrapper.core.validator import _validate_state
+from iterm2_api_wrapper.state import LoopManager, MarkedCommand, User, iTermState
 from iterm2_api_wrapper.utils.parser import ParseResult
 
 from .fake import (
@@ -162,7 +163,7 @@ def test_online_uses_passive_websocket_state() -> None:
         loop = asyncio.get_running_loop()
         websocket = FakeWebsocket(state="OPEN")
         state = make_state(loop)
-        as_fake_connection(state.connection).websocket = websocket
+        as_fake_connection(state.connection).websocket = cast(Any, websocket)
 
         assert await state._online() is True
         assert websocket.recv_calls == 0
@@ -714,7 +715,7 @@ def test_online_returns_false_without_websocket() -> None:
 def test_online_returns_false_when_close_code_present() -> None:
     async def scenario() -> None:
         state = make_state(asyncio.get_running_loop())
-        as_fake_connection(state.connection).websocket = FakeWebsocket(state="OPEN", close_code=1006)
+        as_fake_connection(state.connection).websocket = cast(Any, FakeWebsocket(state="OPEN", close_code=1006))
         assert await state._online() is False
 
     asyncio.run(scenario())
@@ -833,7 +834,7 @@ def test_snapshot_trims_trailing_blank_lines(monkeypatch: pytest.MonkeyPatch) ->
             async def __aenter__(self) -> Self:
                 return self
 
-            async def __aexit__(self, *exc: Any) -> bool:
+            async def __aexit__(self, *exc: object) -> bool:
                 return False
 
         monkeypatch.setattr(state_module, "Transaction", FakeTransaction)
@@ -888,7 +889,7 @@ class FakeTransaction:
     async def __aenter__(self) -> FakeTransaction:
         return self
 
-    async def __aexit__(self, *exc: Any) -> bool:
+    async def __aexit__(self, *exc: object) -> bool:
         return False
 
 
@@ -976,9 +977,9 @@ def test_run_parser_raises_when_prompt_unavailable() -> None:
 
         async def get_prompt(unique_id: str | None = None) -> None:
             if unique_id is None:
-                return None
+                return
             assert unique_id == "id"
-            return None
+            return
 
         patch_attr(state, "_get_prompt", get_prompt)
         with pytest.raises(RuntimeError, match="Failed to retrieve prompt"):
@@ -1125,7 +1126,7 @@ def test_probe_shell_integration_live_false_on_timeout(monkeypatch: pytest.Monke
 
 def test_run_command_uses_prompt_output_when_shell_integration_live() -> None:
     async def scenario() -> None:
-        from iterm2_api_wrapper.typings import CommandExecutionStatus
+        from iterm2_api_wrapper.core.typings import CommandExecutionStatus
 
         state = make_state(asyncio.get_running_loop())
 

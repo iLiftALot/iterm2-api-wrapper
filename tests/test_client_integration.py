@@ -7,7 +7,7 @@ from typing import Any, Coroutine, TypeVar
 
 import pytest
 
-from iterm2_api_wrapper.client import iTermClient
+from iterm2_api_wrapper.core.client import iTermClient
 from iterm2_api_wrapper.state import iTermState
 
 from .conftest import RUN_TIMEOUT, log_var

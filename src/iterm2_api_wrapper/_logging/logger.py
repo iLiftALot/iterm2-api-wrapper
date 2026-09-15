@@ -1,248 +1,58 @@
 from __future__ import annotations
 
-import atexit
-import datetime
-import os
 import sys
-import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from io import TextIOWrapper
-from pathlib import Path
-from typing import Any, ClassVar, Literal, cast, overload
-from urllib.parse import quote
+from dataclasses import dataclass, field
+from threading import RLock
+from typing import ClassVar, Generator
+from weakref import WeakSet
 
-from rich.console import Console, ConsoleOptions, JustifyMethod, RenderResult
-from rich.containers import Renderables
-from rich.measure import Measurement
+from rich.console import Console
 from rich.pretty import pprint
-from rich.scope import render_scope
-from rich.style import Style
-from rich.styled import Styled
-from rich.table import Table
-from rich.text import Text
 from rich.traceback import install as install_rich_traceback
+from typing_extensions import Unpack
 
+from ._render import LogRenderer
+from ._sinks import OutputSinks, _TerminalSink
 from .config import (
-    _LEVEL_STYLES,
-    AllLogConfig,
+    DEFAULT_LOG_PATH,
     ConsoleConfig,
     FileManagerConfig,
+    LogCallConfig,
     LogConfig,
     LogLevel,
     LogLevelLike,
+    LogMode,
+    PrettyLogConfig,
+    TracebackConfig,
     _resolve_level,
     _severity,
+    copy_pretty_config,
     get_default_log_config,
+    merge_pretty_config,
 )
-from .styles import LEVEL_PROFILES, LOG_THEME, GradientHighlighter, StyleAttribute, StyleLike, StyleType
 
 
-if sys.version_info >= (3, 12):
-    from typing import Unpack
-else:
-    from typing_extensions import Unpack
+LOG_PATH = DEFAULT_LOG_PATH
+LogFilter = Callable[[LogLevel, tuple[object, ...]], bool]
 
-
-# Install rich tracebacks globally for better error output
-install_rich_traceback(show_locals=True, width=120, locals_max_depth=2, locals_max_length=5, locals_max_string=120)
-# install_rich_traceback(show_locals=True, width=120)
-LOG_PATH = Path(__file__).resolve().parents[3] / "logs" / "iterm2_api_wrapper.log"
-
-
-class _PrefixRule:
-    """Prefix text followed by a dim rule filling the remaining width.
-
-    Renders as a single line: ``[INFO] [name] ─────────── path:line``
-    so the rule sits between the prefix and the path column of the log table.
-    """
-
-    __slots__ = ("prefix", "rule_style")
-
-    def __init__(self, prefix: Text, rule_style: StyleAttribute | Style = "dim") -> None:
-        self.prefix = prefix
-        self.rule_style = rule_style
-
-    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
-        prefix = self.prefix.copy()
-        prefix_len = prefix.cell_len
-        remaining = options.max_width - prefix_len - 1  # 1 space before rule
-        if remaining > 0:
-            prefix.append(" ")
-            prefix.append("─" * remaining, style=self.rule_style)
-        yield prefix
-
-    def __rich_measure__(self, console: Console, options: ConsoleOptions) -> Measurement:
-        prefix_len = self.prefix.cell_len
-        return Measurement(prefix_len, options.max_width)
-
-
-class _FileConsoleManager:
-    """Lazy, atexit-safe manager for the file-backed Rich Console.
-
-    The log file is created and truncated on first write, not on import.
-    The underlying file handle is closed automatically at interpreter exit.
-
-    Config updates are merged dynamically without destroying the active
-    console or re-truncating the log file. Console instance options are
-    applied on (re)build and may trigger a rebuild if changed.
-    """
-
-    # Per-path singleton registry so every PrettyLog that targets the same
-    # file shares ONE file handle (and one truncation decision).
-    _instances: ClassVar[dict[Path, _FileConsoleManager]] = {}
-
-    def __init__(
-        self,
-        path: Path,
-        *,
-        file_manager_config: FileManagerConfig | None = None,
-        console_config: ConsoleConfig | None = None,
-    ) -> None:
-        self._path = path
-        self._handle: TextIOWrapper | None = None
-        self._console: Console | None = None
-        self._file_manager_config: FileManagerConfig = file_manager_config or {}
-        self._console_config: ConsoleConfig = console_config or {}
-        self._initialized: bool = False
-        atexit.register(self.close)
-
-    @classmethod
-    def get_or_create(
-        cls,
-        path: Path,
-        *,
-        file_manager_config: FileManagerConfig | None = None,
-        console_config: ConsoleConfig | None = None,
-    ) -> _FileConsoleManager:
-        """Return the singleton instance for *path*, creating it on first call.
-
-        Subsequent calls with the same resolved path merge config into the
-        existing instance without re-truncating the log file.
-        """
-        resolved = path.resolve()
-        if resolved in cls._instances:
-            instance = cls._instances[resolved]
-            instance.reset_config(file_manager_config=file_manager_config, console_config=console_config)
-            return instance
-        instance = cls(path, file_manager_config=file_manager_config, console_config=console_config)
-        cls._instances[resolved] = instance
-        return instance
-
-    @property
-    def console(self) -> Console:
-        """Return the Console, lazily creating the file handle on first access.
-
-        The log file is only truncated on the *true* first initialisation
-        (when ``clear_file_on_init`` is ``True``).  Subsequent rebuilds
-        triggered by config changes append to the existing file.
-        """
-        if self._console is None:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            if not self._initialized and self._file_manager_config.get("clear_file_on_init", False):
-                self._path.write_text("")
-            self._handle = self._path.open("a")
-            self._console_config["file"] = self._handle
-            self._console = Console(**self._console_config)
-            self._initialized = True
-        return self._console
-
-    def reset_config(
-        self, *, file_manager_config: FileManagerConfig | None = None, console_config: ConsoleConfig | None = None
-    ) -> None:
-        """Merge new config values without destroying the active console.
-
-        Console instance changes trigger a rebuild when the console is
-        already active. File manager config changes never re-truncate
-        the log file.
-        """
-        if not file_manager_config and not console_config:
-            return
-        needs_rebuild = False
-        if console_config:
-            needs_rebuild = any(self._console_config.get(k) != v for k, v in console_config.items())
-            self._console_config.update(console_config)
-        if file_manager_config:
-            self._file_manager_config.update(file_manager_config)
-        if needs_rebuild and self._console is not None:
-            self._rebuild()
-
-    def _rebuild(self) -> None:
-        """Tear down the current Console and file handle.
-
-        The next ``.console`` access will re-create them.  Because
-        ``_initialized`` remains ``True``, the file will **not** be
-        re-truncated.
-        """
-        if self._handle is not None:
-            self._handle.flush()
-            self._handle.close()
-            self._handle = None
-        self._console = None
-
-    def close(self) -> None:
-        """Flush and close the file handle (idempotent)."""
-        if self._handle is not None:
-            self._handle.close()
-            self._handle = None
-            self._console = None
-
-
-class _TerminalConsoleManager:
-    """Lazy, atexit-safe manager for the terminal Rich Console.
-
-    Allows dynamic updates to Console instance settings by rebuilding the
-    Console when configuration changes.
-    """
-
-    _instance: ClassVar[_TerminalConsoleManager | None] = None
-
-    def __init__(self, **config: Unpack[ConsoleConfig]) -> None:
-        self._config: ConsoleConfig = config
-        self._console: Console | None = None
-        atexit.register(self.close)
-
-    @classmethod
-    def get_or_create(cls, **config: Unpack[ConsoleConfig]) -> _TerminalConsoleManager:
-        if cls._instance is None:
-            cls._instance = cls(**config)
-        else:
-            cls._instance.reset_config(**config)
-        return cls._instance
-
-    @property
-    def console(self) -> Console:
-        if self._console is None:
-            self._console = Console(**self._config)
-        return self._console
-
-    def reset_config(self, **config: Unpack[ConsoleConfig]) -> None:
-        if not config:
-            return
-        needs_rebuild = any(self._config.get(k) != v for k, v in config.items())
-        self._config.update(config)
-        if needs_rebuild and self._console is not None:
-            self._rebuild()
-
-    def _rebuild(self) -> None:
-        self._console = None
-
-    def close(self) -> None:
-        self._console = None
-
-
-_terminal_console_manager = _TerminalConsoleManager.get_or_create()
+_standalone_terminal_lock = RLock()
+_standalone_terminal: _TerminalSink | None = None
 
 
 def get_terminal_console() -> Console:
-    """Return the active terminal console (recreated on config updates)."""
-    global terminal_console
-    terminal_console = _terminal_console_manager.console
-    return terminal_console
+    """Return a lazily constructed terminal Console using fresh defaults."""
+    global _standalone_terminal
 
+    with _standalone_terminal_lock:
+        if _standalone_terminal is None:
+            defaults = get_default_log_config()
+            terminal_config = defaults.get("terminal_console_config", {})
+            _standalone_terminal = _TerminalSink(terminal_config)
 
-terminal_console = get_terminal_console()
+        return _standalone_terminal.console
 
 
 def pp(
@@ -254,10 +64,10 @@ def pp(
     max_depth: int | None = None,
     expand_all: bool = True,
 ) -> None:
-    """Pretty print to the active terminal console."""
+    """Pretty-print one object or a tuple of objects to a lazy terminal Console."""
+    value: object = objects[0] if len(objects) == 1 else objects
     pprint(
-        # objects[0] if len(list(objects)) == 1 else [f"{obj=}" for obj in list(objects)],
-        objects,
+        value,
         console=console or get_terminal_console(),
         indent_guides=indent_guides,
         max_length=max_length,
@@ -267,81 +77,189 @@ def pp(
     )
 
 
+def install_pretty_tracebacks(config: TracebackConfig | None = None) -> None:
+    """Explicitly install Rich's process-wide exception hook with safe defaults."""
+    defaults = get_default_log_config().get("traceback_config", {})
+    resolved = defaults.copy()
+
+    if config is not None:
+        resolved.update(config)
+
+    install_rich_traceback(**resolved)
+
+
+def _validate_mode(mode: str) -> LogMode:
+    log_modes = ("terminal", "file", "all")
+
+    if mode not in log_modes:
+        raise ValueError(f"Invalid log mode: {mode!r}. Expected 'terminal', 'file', or 'all'.")
+
+    return mode
+
+
+def _log_overrides(call: LogCallConfig) -> LogConfig:
+    """Copy direct per-entry keys from the combined per-call contract."""
+    result: LogConfig = {}
+
+    if "sep" in call:
+        result["sep"] = call["sep"]
+    if "end" in call:
+        result["end"] = call["end"]
+    if "style" in call:
+        result["style"] = call["style"]
+    if "justify" in call:
+        result["justify"] = call["justify"]
+    if "overflow" in call:
+        result["overflow"] = call["overflow"]
+    if "no_wrap" in call:
+        result["no_wrap"] = call["no_wrap"]
+    if "emoji" in call:
+        result["emoji"] = call["emoji"]
+    if "markup" in call:
+        result["markup"] = call["markup"]
+    if "highlight" in call:
+        result["highlight"] = call["highlight"]
+    if "width" in call:
+        result["width"] = call["width"]
+    if "height" in call:
+        result["height"] = call["height"]
+    if "crop" in call:
+        result["crop"] = call["crop"]
+    if "soft_wrap" in call:
+        result["soft_wrap"] = call["soft_wrap"]
+    if "new_line_start" in call:
+        result["new_line_start"] = call["new_line_start"]
+    if "log_locals" in call:
+        result["log_locals"] = call["log_locals"]
+    if "source_link" in call:
+        result["source_link"] = call["source_link"]
+
+    return result
+
+
+@dataclass(slots=True)
+class _ResolvedCall:
+    log_config: LogConfig
+    terminal_config: ConsoleConfig
+    file_config: ConsoleConfig
+    traceback_config: TracebackConfig
+    sinks: OutputSinks
+    _released: bool = field(default=False, init=False, repr=False)
+
+    def close(self) -> None:
+        if self._released:
+            return
+
+        self.sinks.release()
+        self._released = True
+
+
 class PrettyLog:
-    """Dual-output Rich logger with log-level filtering, timing, and context.
+    """A typed, hierarchical Rich logger with terminal and plain-file sinks."""
 
-    Supports writing to the terminal, a log file, or both simultaneously.
-    Messages below the configured *level* threshold are silently discarded.
-    Thread-safe via an internal lock.
-
-    :param name: Logger name (dot-separated for hierarchy, e.g. ``"app.gateway"``).
-    :param mode: Output destination — ``"terminal"``, ``"file"``, or ``"all"``.
-    :param level: Minimum severity required for a message to be emitted.
-    :param pretty_config: Optional config bundle with keys:
-        - ``logger_config``: default ``Console.log`` kwargs
-        - ``terminal_console_config``: terminal ``Console`` instance settings
-        - ``file_console_config``: file ``Console`` instance settings
-        - ``file_manager_config``: file manager settings (e.g., truncation)
-    """
-
-    _LEVEL_LABELS: ClassVar[dict[LogLevel, str]] = {
-        LogLevel.DEBUG: "DEBUG",
-        LogLevel.INFO: "INFO",
-        LogLevel.WARNING: "WARN",
-        LogLevel.ERROR: "ERROR",
-        LogLevel.CRITICAL: "CRITICAL",
-    }
     _registry: ClassVar[dict[str, PrettyLog]] = {}
-    _CALL_CONFIG_KEYS: ClassVar[frozenset[str]] = frozenset(
-        {"logger_config", "file_manager_config", "terminal_console_config", "file_console_config"}
-    )
-    _RENDER_KWARGS_KEYS: ClassVar[frozenset[str]] = frozenset(
-        {"sep", "end", "style", "justify", "emoji", "markup", "highlight"}
-    )
-
-    @staticmethod
-    def _normalize_pretty_config(pretty_config: dict[str, Any] | None) -> AllLogConfig:
-        """Normalize legacy config keys and return a clean config dict."""
-        if pretty_config is None:
-            return get_default_log_config()
-        normalized: dict[str, Any] = dict(pretty_config)
-        allowed_keys = {"logger_config", "file_manager_config", "terminal_console_config", "file_console_config"}
-        return cast(AllLogConfig, {k: v for k, v in normalized.items() if k in allowed_keys})
+    _registry_lock: ClassVar[RLock] = RLock()
+    _instances: ClassVar[WeakSet[PrettyLog]] = WeakSet()
 
     def __init__(
         self,
         name: str = "root",
-        mode: Literal["terminal", "file", "all"] = "all",
+        mode: LogMode = "all",
         level: LogLevelLike = LogLevel.INFO,
         *,
-        pretty_config: AllLogConfig | None = None,
+        pretty_config: PrettyLogConfig | None = None,
+        _shared_sinks: OutputSinks | None = None,
     ) -> None:
-        pretty_config = self._normalize_pretty_config(pretty_config if pretty_config is None else dict(**pretty_config))
-        self.name = name
-        self.mode: Literal["terminal", "file", "all"] = mode
-        self.level: LogLevel = _resolve_level(level)
-        self._log_config: LogConfig = pretty_config.get("logger_config", {})
-        self._terminal_console_config: ConsoleConfig = pretty_config.get("terminal_console_config", {})
-        self._file_console_config: ConsoleConfig = pretty_config.get("file_console_config", {})
-        self._file_manager_config: FileManagerConfig = pretty_config.get(
-            "file_manager_config", FileManagerConfig(clear_file_on_init=True)
-        )
-        self._terminal_console_manager = _TerminalConsoleManager.get_or_create(**self._terminal_console_config)
-        self._terminal_console_config.setdefault("theme", LOG_THEME)
-        self._file_manager = _FileConsoleManager.get_or_create(
-            LOG_PATH, file_manager_config=self._file_manager_config, console_config=self._file_console_config
-        )
-        self._lock = threading.Lock()
-        self._enabled = True
-        self._context: dict[str, str] = {}
-        self._filters: list[Callable[[LogLevel, tuple[object, ...]], bool]] = []
-        self._children: dict[str, PrettyLog] = {}
-        self._parent: PrettyLog = self._find_ancestor(name) if name != "root" else self
-        if self._parent is not self:
-            self._parent._children[self.name] = self
-        PrettyLog._registry[name] = self
+        defaults = get_default_log_config()
+        defaults.setdefault("file_manager_config", {})["path"] = LOG_PATH
 
-    # -- configuration --------------------------------------------------------
+        with self._registry_lock:
+            inferred_parent = self._find_existing_ancestor(name)
+
+        base_config = inferred_parent.pretty_config if inferred_parent is not None else defaults
+        config = merge_pretty_config(base_config, pretty_config)
+        output_override = pretty_config is not None and any(
+            key in pretty_config for key in ("terminal_console_config", "file_console_config", "file_manager_config")
+        )
+        inherited_sinks = (
+            _shared_sinks
+            if _shared_sinks is not None
+            else inferred_parent._sinks
+            if inferred_parent is not None and not output_override
+            else None
+        )
+
+        self.name = name
+        self.mode: LogMode = _validate_mode(mode)
+        self.level = _resolve_level(level)
+        self._lock = RLock()
+        self._enabled = True
+        self._closed = False
+        self._context: dict[str, object] = {}
+        self._filters: list[LogFilter] = []
+        self._children: dict[str, PrettyLog] = {}
+        self._renderer = LogRenderer()
+        self._replace_config(config)
+        self._sinks = inherited_sinks.acquire() if inherited_sinks is not None else self._create_sinks(config)
+
+        with self._registry_lock:
+            self._parent = inferred_parent or self
+
+            if self._parent is not self:
+                self._parent._children[name] = self
+
+            self._registry[name] = self
+            self._instances.add(self)
+
+    @staticmethod
+    def _create_sinks(config: PrettyLogConfig) -> OutputSinks:
+        terminal = config.get("terminal_console_config", {})
+        file_console = config.get("file_console_config", {})
+        file_manager = config.get("file_manager_config", {})
+
+        if "path" not in file_manager:
+            file_manager = file_manager.copy()
+            file_manager["path"] = LOG_PATH
+
+        return OutputSinks(terminal, file_console, file_manager)
+
+    def _replace_config(self, config: PrettyLogConfig) -> None:
+        self._log_config = config.get("logger_config", {}).copy()
+        self._terminal_console_config = config.get("terminal_console_config", {}).copy()
+        self._file_console_config = config.get("file_console_config", {}).copy()
+        self._file_manager_config = config.get("file_manager_config", {}).copy()
+        self._traceback_config = config.get("traceback_config", {}).copy()
+
+    @property
+    def pretty_config(self) -> PrettyLogConfig:
+        """Return a deep, mutation-isolated configuration snapshot."""
+        with self._lock:
+            return copy_pretty_config(
+                {
+                    "logger_config": self._log_config,
+                    "terminal_console_config": self._terminal_console_config,
+                    "file_console_config": self._file_console_config,
+                    "file_manager_config": self._file_manager_config,
+                    "traceback_config": self._traceback_config,
+                }
+            )
+
+    @classmethod
+    def _find_existing_ancestor(cls, name: str) -> PrettyLog | None:
+        parent_name = name.rsplit(".", 1)[0] if "." in name else ""
+        while parent_name:
+            parent = cls._registry.get(parent_name)
+            if parent is not None:
+                return parent
+            parent_name = parent_name.rsplit(".", 1)[0] if "." in parent_name else ""
+        return cls._registry.get("root")
+
+    @classmethod
+    def _find_ancestor(cls, name: str) -> PrettyLog:
+        """Return the closest registered ancestor, creating root if necessary."""
+        with cls._registry_lock:
+            ancestor = cls._find_existing_ancestor(name)
+            return ancestor if ancestor is not None else PrettyLog(name="root")
 
     @classmethod
     def get_logger(
@@ -349,75 +267,59 @@ class PrettyLog:
         name: str | None = None,
         *,
         level: LogLevelLike | None = None,
-        mode: Literal["terminal", "file", "all"] | None = None,
-        pretty_config: AllLogConfig | None = None,
+        mode: LogMode | None = None,
+        pretty_config: PrettyLogConfig | None = None,
     ) -> PrettyLog:
-        """Retrieve a logger by name, or create one inheriting from the closest ancestor.
+        """Return or create a logger using dot-separated hierarchy inheritance."""
+        target_name = name or "root"
 
-        Uses dot-separated hierarchy: ``get_logger("app.gateway")`` will inherit
-        from ``"app"`` if it exists, then ``"root"``.
+        with cls._registry_lock:
+            existing = cls._registry.get(target_name)
 
-        Optional *level*, *mode*, and *pretty_config* override the inherited
-        defaults for the newly created child logger.
+            if existing is not None:
+                if level is not None:
+                    existing.set_level(level)
 
-        Example::
+                if mode is not None:
+                    existing.mode = _validate_mode(mode)
 
-            gw = PrettyLog.get_logger("app.gateway")
-            gw.info("ready")  # inherits root settings + adds "app.gateway" name
+                if pretty_config is not None:
+                    existing.configure(**pretty_config)
 
-            # With per-module overrides:
-            dbg = PrettyLog.get_logger("app.debug", level="DEBUG")
-        """
-        if name is None:
-            return cls._registry["root"] if "root" in cls._registry else PrettyLog(name="root")
-        if name in cls._registry:
-            logger = cls._registry[name]
-            # Apply overrides to an existing logger if provided
-            if level is not None:
-                logger.set_level(level)
-            if mode is not None:
-                logger.mode = mode
-            if pretty_config is not None:
-                normalized = cls._normalize_pretty_config(dict(**pretty_config))
-                logger.configure(**normalized)
-            return logger
+                return existing
 
-        # Walk up the dot hierarchy to find the closest ancestor
-        parent = cls._find_ancestor(name)
-        # Strip parent prefix so child() doesn't double it
-        suffix = name[len(parent.name) + 1 :] if name.startswith(parent.name + ".") else name
-        child = parent.child(suffix, level=level, mode=mode, pretty_config=pretty_config)
-        return child
+            if target_name == "root":
+                return PrettyLog(
+                    name="root", level=level or LogLevel.INFO, mode=mode or "all", pretty_config=pretty_config
+                )
 
-    @classmethod
-    def _find_ancestor(cls, name: str) -> PrettyLog:
-        """Walk up the dot-separated name hierarchy to find the closest registered ancestor."""
-        parts = name.rsplit(".", 1)
-        while len(parts) > 1:
-            parent_name = parts[0]
-            if parent_name in cls._registry:
-                return cls._registry[parent_name]
-            parts = parent_name.rsplit(".", 1)
-        return cls._registry["root"] if "root" in cls._registry else PrettyLog(name="root")
+            parent = cls._find_ancestor(target_name)
+            suffix = target_name[len(parent.name) + 1 :] if target_name.startswith(f"{parent.name}.") else target_name
+
+            return parent.child(suffix, level=level, mode=mode, pretty_config=pretty_config)
 
     @classmethod
     def list_loggers(cls) -> dict[str, PrettyLog]:
-        """Return a snapshot of all registered loggers."""
-        return dict(cls._registry)
+        """Return a registry snapshot."""
+        with cls._registry_lock:
+            return dict(cls._registry)
 
     @property
     def children(self) -> dict[str, PrettyLog]:
-        """Return direct children of this logger."""
-        return dict(self._children)
+        """Return a snapshot of direct child loggers."""
+        with self._lock:
+            return dict(self._children)
 
     @property
     def parent(self) -> PrettyLog:
-        """Return the parent logger, or ``None`` for root."""
+        """Return the parent logger; a root logger is its own parent."""
         return self._parent
 
     def __iter__(self) -> Iterator[PrettyLog]:
-        """Iterate over all descendants (depth-first)."""
-        for child in self._children.values():
+        with self._lock:
+            children = tuple(self._children.values())
+
+        for child in children:
             yield child
             yield from child
 
@@ -428,16 +330,30 @@ class PrettyLog:
         )
 
     def set_level(self, level: LogLevelLike, *, propagate: bool = False) -> None:
-        """Change the minimum log level at runtime.
-
-        If ``propagate`` is ``True``, recursively apply the level to all
-        currently registered descendant loggers.
-        """
+        """Set the minimum severity, optionally for every descendant."""
         resolved = _resolve_level(level)
-        self.level = resolved
-        if propagate:
-            for child in self._children.values():
-                child.set_level(resolved, propagate=True)
+
+        with self._lock:
+            self.level = resolved
+            children = tuple(self._children.values()) if propagate else ()
+
+        for child in children:
+            child.set_level(resolved, propagate=True)
+
+    def set_mode(self, mode: LogMode, *, propagate: bool = False):
+        """Set the mode, optionally for every descendant."""
+        with self._lock:
+            self.mode = mode
+            children = tuple(self._children.values()) if propagate else ()
+
+        for child in children:
+            child.set_mode(mode, propagate=True)
+
+    def is_enabled_for(self, level: LogLevelLike) -> bool:
+        """Return whether this logger would admit the supplied severity."""
+        resolved = _resolve_level(level)
+        with self._lock:
+            return not self._closed and self._enabled and _severity(resolved) >= _severity(self.level)
 
     def configure(
         self,
@@ -446,631 +362,323 @@ class PrettyLog:
         terminal_console_config: ConsoleConfig | None = None,
         file_console_config: ConsoleConfig | None = None,
         file_manager_config: FileManagerConfig | None = None,
+        traceback_config: TracebackConfig | None = None,
     ) -> None:
-        """Apply configuration updates to this logger instance."""
-        if logger_config:
-            self._log_config.update(logger_config)
-        if terminal_console_config:
-            self._terminal_console_config.update(terminal_console_config)
-            self._terminal_console_manager.reset_config(**self._terminal_console_config)
-        if file_console_config:
-            self._file_console_config.update(file_console_config)
-            self._file_manager.reset_config(console_config=self._file_console_config)
-        if file_manager_config:
-            self._file_manager_config.update(file_manager_config)
-            self._file_manager.reset_config(file_manager_config=self._file_manager_config)
+        """Apply isolated configuration updates to this logger."""
+        overrides: PrettyLogConfig = {}
+        if logger_config is not None:
+            overrides["logger_config"] = logger_config
+        if terminal_console_config is not None:
+            overrides["terminal_console_config"] = terminal_console_config
+        if file_console_config is not None:
+            overrides["file_console_config"] = file_console_config
+        if file_manager_config is not None:
+            overrides["file_manager_config"] = file_manager_config
+        if traceback_config is not None:
+            overrides["traceback_config"] = traceback_config
+
+        output_changed = any(
+            value is not None for value in (terminal_console_config, file_console_config, file_manager_config)
+        )
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("logger is closed")
+            merged = merge_pretty_config(self.pretty_config, overrides)
+            if output_changed:
+                previous = self._sinks
+                self._sinks = self._create_sinks(merged)
+                previous.release()
+            self._replace_config(merged)
 
     def enable(self) -> None:
-        """Enable log output."""
-        self._enabled = True
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("logger is closed")
+            self._enabled = True
 
     def disable(self) -> None:
-        """Suppress all log output until :meth:`enable` is called."""
-        self._enabled = False
+        with self._lock:
+            self._enabled = False
 
-    def add_context(self, **ctx: str) -> None:
-        """Add persistent key-value context that prefixes every message.
-
-        Example::
-
-            log.add_context(component="gateway")
-            log.info("Connected")  # terminal shows: [gateway] Connected
-        """
-        self._context.update(ctx)
+    def add_context(self, **context: object) -> None:
+        with self._lock:
+            self._context.update(context)
 
     def remove_context(self, *keys: str) -> None:
-        """Remove previously added context keys."""
-        for key in keys:
-            self._context.pop(key, None)
-
-    def add_filter(self, fn: Callable[[LogLevel, tuple[object, ...]], bool]) -> None:
-        """Register a filter function.
-
-        *fn* receives ``(level, messages)`` and should return ``True`` to
-        allow the message, ``False`` to suppress it.
-        """
-        self._filters.append(fn)
-
-    # -- context manager for temporary overrides ------------------------------
-
-    @contextmanager
-    def scoped_level(self, level: LogLevelLike):
-        """Temporarily override the log level within a ``with`` block.
-
-        Example::
-
-            with log.scoped_level(LogLevel.DEBUG):
-                log.debug("verbose details only inside this block")
-        """
-        previous = self.level
-        self.level = _resolve_level(level)
-        try:
-            yield self
-        finally:
-            self.level = previous
-
-    @contextmanager
-    def scoped_context(self, **ctx: str):
-        """Temporarily add context keys within a ``with`` block.
-
-        Example::
-
-            with log.scoped_context(request_id="abc-123"):
-                log.info("processing")
-        """
-        self.add_context(**ctx)
-        try:
-            yield self
-        finally:
-            self.remove_context(*ctx)
-
-    @contextmanager
-    def timer(self, label: str, level: LogLevelLike | LogLevel | None = None):
-        """Context manager that logs elapsed wall-clock time on exit.
-
-        Example::
-
-            with log.timer("database query"):
-                await db.fetch(...)
-            # logs: "database query completed in 0.123s"
-        """
-        start = time.perf_counter()
-        yield
-        elapsed = time.perf_counter() - start
-        self(f"{label} completed in {elapsed:.3f}s", level=level or self.level, stack_offset=5)
-
-    # -- internal helpers -----------------------------------------------------
-
-    def _build_prefix(self, level: LogLevel) -> Text:
-        """Build a Rich ``Text`` prefix with level label, logger name, and context tags."""
-        label = self._LEVEL_LABELS.get(level, "???")
-        style = _LEVEL_STYLES.get(level, None)
-        parts = Text.assemble((f"[{label}]", style or "bold"))
-        parts.append(f" [{self.name}]", style="dim magenta")
-        if self._context:
-            ctx_str = " ".join(f"[{v}]" for v in self._context.values())
-            parts.append(f" {ctx_str}", style="dim cyan")
-        parts.append("")
-        return parts
-
-    def _merge_log_config(self, call_kwargs: dict[str, Any], level: LogLevel) -> dict[str, Any]:
-        """Merge init-common → init-terminal → call-time kwargs for terminal."""
-        merged = {**self._log_config, **call_kwargs}
-        level_style = _LEVEL_STYLES.get(level, None)
-        if level_style and "style" not in merged:
-            merged["style"] = level_style
-        return merged
-
-    def _merge_file_manager_config(self, call_kwargs: dict[str, Any]) -> None:
-        """Merge init-time file config with call-time overrides.
-
-        Short-circuits when *call_kwargs* is empty to avoid unnecessary
-        diff checks on every log call.
-        """
-        if not call_kwargs:
-            return
-        merged_file_manager = {**self._file_manager_config, **call_kwargs}
-        self._file_manager.reset_config(file_manager_config=cast(FileManagerConfig, merged_file_manager))
-
-    def _merge_terminal_console_config(self, call_kwargs: dict[str, Any]) -> None:
-        """Merge init-time terminal Console config with call-time overrides."""
-        if not call_kwargs:
-            return
-        self._terminal_console_config.update(cast(ConsoleConfig, call_kwargs))
-        self._terminal_console_manager.reset_config(**self._terminal_console_config)
-
-    def _merge_file_console_config(self, call_kwargs: dict[str, Any]) -> None:
-        """Merge init-time file Console config with call-time overrides."""
-        if not call_kwargs:
-            return
-        self._file_console_config.update(cast(ConsoleConfig, call_kwargs))
-        self._file_manager.reset_config(console_config=self._file_console_config)
-
-    def _extract_log_kwargs(self, call_kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Extract Console.log kwargs from a mixed call-time dict."""
-        if "logger_config" in call_kwargs:
-            return dict(call_kwargs.get("logger_config", {}))
-        return {k: v for k, v in call_kwargs.items() if k not in self._CALL_CONFIG_KEYS}
-
-    def _select_render_kwargs(self, log_kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Return render kwargs from log config."""
-        return {k: log_kwargs[k] for k in self._RENDER_KWARGS_KEYS if k in log_kwargs}
-
-    @staticmethod
-    def _vscode_file_uri(filename: str, line_no: int | None = None, column_no: int = 1) -> str:
-        """Return a VS Code deep link for *filename* and optional line/column."""
-        abs_path = os.path.abspath(filename)
-        uri = f"vscode://file{quote(abs_path, safe='/:')}"
-        if line_no is not None:
-            uri = f"{uri}:{line_no}:{column_no}"
-        return uri
-
-    def _build_path_text(self, filename: str, line_no: int | None) -> Text:
-        """Build compact path text with VS Code-native click targets."""
-        path = filename.rpartition(os.sep)[-1]
-        if filename.startswith("<"):
-            if line_no is None:
-                return Text(path)
-            return Text(f"{path}:{line_no}")
-
-        path_text = Text()
-        path_text.append(path, style=f"link {self._vscode_file_uri(filename)}")
-        if line_no is not None:
-            path_text.append(":")
-            path_text.append(str(line_no), style=f"link {self._vscode_file_uri(filename, line_no)}")
-        return path_text
-
-    @staticmethod
-    def _build_log_time(console: Console) -> Text:
-        """Build the time column using the active Rich Console log settings."""
-        log_render = console._log_render
-        log_time = console.get_datetime()
-        time_format: Callable[[datetime.datetime], Text] | str = log_render.time_format
-        if not isinstance(time_format, str):
-            log_time_display = time_format(log_time)
-        else:
-            log_time_display = Text(log_time.strftime(time_format))
-        if log_time_display == log_render._last_time and log_render.omit_repeated_times:
-            return Text(" " * len(log_time_display))
-        log_render._last_time = log_time_display
-        return log_time_display
-
-    def _build_log_table(
-        self, console: Console, renderables: list[Any], *, filename: str, line_no: int | None
-    ) -> Table:
-        """Build a Rich log table without Rich's hardcoded file:// path links."""
-        log_render = console._log_render
-        output = Table.grid(padding=(0, 1))
-        output.expand = True
-        if log_render.show_time:
-            output.add_column(style="log.time")
-        if log_render.show_level:
-            output.add_column(style="log.level", width=log_render.level_width)
-        output.add_column(ratio=1, style="log.message", overflow="fold")
-        show_path = log_render.show_path and line_no is not None
-        if show_path:
-            output.add_column(style="log.path")
-        row: list[Any] = []
-        if log_render.show_time:
-            row.append(self._build_log_time(console))
-        if log_render.show_level:
-            row.append("")
-        row.append(Renderables(renderables))
-        if show_path:
-            row.append(self._build_path_text(filename, line_no))
-        output.add_row(*row)
-        return output
-
-    def _build_log_renderable(
-        self, console: Console, renderables: list[Any], *, stack_offset: int, log_locals: bool, include_path: bool
-    ) -> Any:
-        """Build a Rich log-style renderable with time/path columns."""
-        renderables = [*renderables]  # ensure log_locals table is separated from message
-        filename, line_no, locals_map = console._caller_frame_info(stack_offset + 1)
-        if log_locals:
-            locals_display = {key: value for key, value in locals_map.items() if not key.startswith("__")}
-            renderables.append(render_scope(locals_display, title="[i]locals"))
-        return self._build_log_table(console, renderables, filename=filename, line_no=line_no if include_path else None)
-
-    def _emit(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file", "all"] | None,
-        resolved_level: LogLevel,
-        stack_offset: int,
-        include_path: bool,
-        **kwargs: Any,
-    ) -> None:
-        """Emit a log-style entry using Console.print with full customization."""
-        effective_mode = mode or self.mode
-
-        log_kwargs = self._extract_log_kwargs(kwargs)
-
-        self._merge_terminal_console_config(kwargs.get("terminal_console_config", {}))
-        self._merge_file_console_config(kwargs.get("file_console_config", {}))
-        self._merge_file_manager_config(kwargs.get("file_manager_config", {}))
-
-        merged_log = self._merge_log_config(log_kwargs, resolved_level)
-        log_locals = bool(merged_log.pop("log_locals", False))
-
-        render_kwargs = self._select_render_kwargs(merged_log)
-        sep: str = render_kwargs.get("sep", " ")
-        end: str = render_kwargs.get("end", "\n")
-        justify: JustifyMethod | None = render_kwargs.get("justify")
-        emoji: bool | None = render_kwargs.get("emoji")
-        markup: bool | None = render_kwargs.get("markup")
-        highlight: bool | None = render_kwargs.get("highlight")
-        style: StyleLike | None = render_kwargs.get("style")
-
-        level_profile = LEVEL_PROFILES[resolved_level]
-        if style is None and level_profile and level_profile.base:
-            style = level_profile.base
-
-        print_kwargs = {k: v for k, v in merged_log.items() if k not in self._RENDER_KWARGS_KEYS}
-
-        prefix = self._build_prefix(resolved_level)
-        prefix_width = len(prefix.plain)
-
-        render_messages: list[object] = []
-        gradient = None
-        if level_profile and level_profile.gradient:
-            gradient = GradientHighlighter(level_profile.gradient)
-        for msg in messages:
-            if isinstance(msg, Text):
-                text = msg
-            elif isinstance(msg, str):
-                text = Text.from_markup(msg) if markup is not False else Text(msg)
-            else:
-                render_messages.append(msg)
-                continue
-            if level_profile and level_profile.highlighter:
-                level_profile.highlighter.highlight(text)
-            if gradient:
-                gradient.highlight(text)
-            render_messages.append(text)
-
-        aligned = tuple(self._indent_continuation(m, prefix_width) for m in render_messages)
-        objects = (_PrefixRule(prefix), *aligned) if aligned else (prefix,)
-
-        def emit_to_console(console: Console) -> None:
-            nonlocal style
-            renderables = console._collect_renderables(
-                objects, sep, end, justify=justify, emoji=emoji, markup=markup, highlight=highlight
-            )
-            if style is not None:
-                if isinstance(style, StyleType):
-                    style = Style(
-                        color=style.color,
-                        bgcolor=style.bgcolor,
-                        link=style.link,
-                        **{s: True for s in (style.attributes or []) if s and s != "meta"},
-                        meta=None,
-                    )
-                renderables = [Styled(renderable, style) for renderable in renderables]
-            log_renderable = self._build_log_renderable(
-                console, renderables, stack_offset=stack_offset, log_locals=log_locals, include_path=include_path
-            )
-
-            console.print(log_renderable, **print_kwargs)
-
         with self._lock:
-            if effective_mode in ["terminal", "file"]:
-                if effective_mode == "terminal":
-                    emit_to_console(self._terminal_console_manager.console)
-                elif effective_mode == "file":
-                    emit_to_console(self._file_manager.console)
-            elif effective_mode == "all":
-                emit_to_console(self._terminal_console_manager.console)
-                emit_to_console(self._file_manager.console)
-            else:
-                raise ValueError(f"Invalid log mode: {effective_mode}")
+            for key in keys:
+                self._context.pop(key, None)
+
+    def add_filter(self, filter_function: LogFilter) -> None:
+        with self._lock:
+            self._filters.append(filter_function)
+
+    def remove_filter(self, filter_function: LogFilter) -> bool:
+        """Remove one filter and report whether it was registered."""
+        with self._lock:
+            try:
+                self._filters.remove(filter_function)
+            except ValueError:
+                return False
+            return True
+
+    def clear_filters(self) -> None:
+        with self._lock:
+            self._filters.clear()
+
+    @contextmanager
+    def scoped_level(self, level: LogLevelLike) -> Generator[PrettyLog]:
+        previous = self.level
+        self.set_level(level)
+        try:
+            yield self
+        finally:
+            self.set_level(previous)
+
+    @contextmanager
+    def scoped_context(self, **context: object) -> Generator[PrettyLog]:
+        missing = object()
+        with self._lock:
+            previous = {key: self._context.get(key, missing) for key in context}
+            self._context.update(context)
+        try:
+            yield self
+        finally:
+            with self._lock:
+                for key, value in previous.items():
+                    if value is missing:
+                        self._context.pop(key, None)
+                    else:
+                        self._context[key] = value
+
+    @contextmanager
+    def timer(self, label: str, level: LogLevelLike | None = None) -> Generator[PrettyLog]:
+        """Log success/failure elapsed time and re-raise failures unchanged."""
+        start = time.perf_counter()
+        try:
+            yield self
+        except Exception as exception:
+            elapsed = time.perf_counter() - start
+            self.error(f"{label} failed after {elapsed:.3f}s: {exception}", stack_offset=1)
+            raise
+        else:
+            elapsed = time.perf_counter() - start
+            self(f"{label} completed in {elapsed:.3f}s", level=level or self.level, stack_offset=1)
 
     def _passes_filters(self, level: LogLevel, messages: tuple[object, ...]) -> bool:
-        """Return True if all registered filters allow this message."""
-        return all(fn(level, messages) for fn in self._filters)
+        with self._lock:
+            filters = tuple(self._filters)
+        return all(filter_function(level, messages) for filter_function in filters)
 
-    @staticmethod
-    def _indent_continuation(message: object, prefix_width: int) -> object:
-        """Pad newlines in string messages so continuation lines align with the first."""
-        if not isinstance(message, str) or "\n" not in message:
-            return message
-        pad = " " * prefix_width
-        return message.replace("\n", f"\n{pad}")
+    def _resolve_call(self, call: LogCallConfig) -> _ResolvedCall:
+        owns_sinks = any(
+            key in call for key in ("terminal_console_config", "file_console_config", "file_manager_config")
+        )
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("logger is closed")
+            base = self.pretty_config
+            shared_sinks = None if owns_sinks else self._sinks.acquire()
+        log_config = base.get("logger_config", {}).copy()
+        log_config.update(_log_overrides(call))
 
-    # -- overloads for per-mode type safety -----------------------------------
+        sink_overrides: PrettyLogConfig = {}
+        if "terminal_console_config" in call:
+            sink_overrides["terminal_console_config"] = call["terminal_console_config"]
+        if "file_console_config" in call:
+            sink_overrides["file_console_config"] = call["file_console_config"]
+        if "file_manager_config" in call:
+            sink_overrides["file_manager_config"] = call["file_manager_config"]
+        if "traceback_config" in call:
+            sink_overrides["traceback_config"] = call["traceback_config"]
+        resolved = merge_pretty_config(base, sink_overrides)
 
-    @overload
-    def __call__(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file"],
-        level: LogLevelLike = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[LogConfig],
-    ) -> None: ...
-    @overload
-    def __call__(
-        self,
-        *messages: object,
-        mode: Literal["all"] = "all",
-        level: LogLevelLike = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[AllLogConfig],
-    ) -> None: ...
-    @overload
-    def __call__(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file", "all"] | None = ...,
-        level: LogLevelLike = ...,
-        stack_offset: int = ...,
-        **kwargs: Any,
-    ) -> None: ...
+        terminal_config = resolved.get("terminal_console_config", {}).copy()
+        file_config = resolved.get("file_console_config", {}).copy()
+        traceback_config = resolved.get("traceback_config", {}).copy()
+        if "log_locals" in call and ("traceback_config" not in call or "show_locals" not in call["traceback_config"]):
+            traceback_config["show_locals"] = call["log_locals"]
 
-    def __call__(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file", "all"] | None = None,
-        level: LogLevelLike = LogLevel.INFO,
-        stack_offset: int = 3,
-        **kwargs: Any,
-    ) -> None:
-        resolved_level = _resolve_level(level)
-        if not self._enabled or _severity(resolved_level) < _severity(self.level):
-            return
-        if not self._passes_filters(resolved_level, messages):
-            return
-
-        self._emit(
-            *messages, mode=mode, resolved_level=resolved_level, stack_offset=stack_offset, include_path=True, **kwargs
+        sinks = self._create_sinks(resolved) if owns_sinks else shared_sinks
+        if sinks is None:  # pragma: no cover - guarded by owns_sinks
+            raise RuntimeError("log call failed to acquire output sinks")
+        return _ResolvedCall(
+            log_config=log_config,
+            terminal_config=terminal_config,
+            file_config=file_config,
+            traceback_config=traceback_config,
+            sinks=sinks,
         )
 
-    # -- convenience shortcuts ------------------------------------------------
+    def _emit_entry(
+        self,
+        messages: tuple[object, ...],
+        *,
+        level: LogLevel,
+        mode: LogMode | None,
+        stack_offset: int,
+        call: LogCallConfig,
+        exception: BaseException | None = None,
+    ) -> bool:
+        if not self.is_enabled_for(level) or not self._passes_filters(level, messages):
+            return False
+        effective_mode = self.mode if mode is None else _validate_mode(mode)
+        resolved = self._resolve_call(call)
+        try:
+            caller = self._renderer.capture_caller(stack_offset + 2)
+            locals_map = (
+                self._renderer.capture_locals(stack_offset + 2)
+                if resolved.log_config.get("log_locals", False)
+                else None
+            )
+            with self._lock:
+                context = dict(self._context)
+            if messages or exception is None:
+                terminal_renderable = self._renderer.render_entry(
+                    messages,
+                    level=level,
+                    logger_name=self.name,
+                    context=context,
+                    caller=caller,
+                    config=resolved.log_config,
+                    console_config=resolved.terminal_config,
+                    locals_map=locals_map,
+                )
+                file_renderable = self._renderer.render_entry(
+                    messages,
+                    level=level,
+                    logger_name=self.name,
+                    context=context,
+                    caller=caller,
+                    config=resolved.log_config,
+                    console_config=resolved.file_config,
+                    locals_map=locals_map,
+                )
+                resolved.sinks.emit(
+                    effective_mode,
+                    terminal_renderable,
+                    file_renderable,
+                    end=resolved.log_config.get("end", "\n"),
+                    config=resolved.log_config,
+                )
+            if exception is not None:
+                traceback_renderable = self._renderer.render_exception(exception, resolved.traceback_config)
+                resolved.sinks.emit(
+                    effective_mode, traceback_renderable, traceback_renderable, config=resolved.log_config
+                )
+            return True
+        finally:
+            resolved.close()
 
-    @overload
+    def __call__(
+        self,
+        *messages: object,
+        mode: LogMode | None = None,
+        level: LogLevelLike = LogLevel.INFO,
+        stack_offset: int = 0,
+        **kwargs: Unpack[LogCallConfig],
+    ) -> None:
+        self._emit_entry(messages, level=_resolve_level(level), mode=mode, stack_offset=stack_offset, call=kwargs)
+
     def debug(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[LogConfig],
-    ) -> None: ...
-    @overload
-    def debug(
-        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
-    ) -> None: ...
-    def debug(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file", "all"] | None = None,
-        stack_offset: int = 4,
-        **kwargs: Any,
+        self, *messages: object, mode: LogMode | None = None, stack_offset: int = 0, **kwargs: Unpack[LogCallConfig]
     ) -> None:
-        """Log at :attr:`LogLevel.DEBUG`."""
-        if isinstance(kwargs.get("logger_config"), dict):
-            if "style" not in kwargs["logger_config"]:
-                kwargs["logger_config"]["style"] = LEVEL_PROFILES["DEBUG"].base
-        else:
-            if "style" not in kwargs:
-                kwargs["style"] = LEVEL_PROFILES["DEBUG"].base
-        self(*messages, mode=mode, level=LogLevel.DEBUG, stack_offset=stack_offset, **kwargs)
+        self._emit_entry(messages, level=LogLevel.DEBUG, mode=mode, stack_offset=stack_offset, call=kwargs)
 
-    @overload
     def info(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[LogConfig],
-    ) -> None: ...
-    @overload
-    def info(
-        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
-    ) -> None: ...
-    def info(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file", "all"] | None = None,
-        stack_offset: int = 4,
-        **kwargs: Any,
+        self, *messages: object, mode: LogMode | None = None, stack_offset: int = 0, **kwargs: Unpack[LogCallConfig]
     ) -> None:
-        """Log at :attr:`LogLevel.INFO`."""
-        if isinstance(kwargs.get("logger_config"), dict):
-            if "style" not in kwargs["logger_config"]:
-                kwargs["logger_config"]["style"] = LEVEL_PROFILES["INFO"].base
-        else:
-            if "style" not in kwargs:
-                kwargs["style"] = LEVEL_PROFILES["INFO"].base
-        self(*messages, mode=mode, level=LogLevel.INFO, stack_offset=stack_offset, **kwargs)
+        self._emit_entry(messages, level=LogLevel.INFO, mode=mode, stack_offset=stack_offset, call=kwargs)
 
-    @overload
     def warning(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[LogConfig],
-    ) -> None: ...
-    @overload
-    def warning(
-        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
-    ) -> None: ...
-    def warning(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file", "all"] | None = None,
-        stack_offset: int = 4,
-        **kwargs: Any,
+        self, *messages: object, mode: LogMode | None = None, stack_offset: int = 0, **kwargs: Unpack[LogCallConfig]
     ) -> None:
-        """Log at :attr:`LogLevel.WARNING`."""
-        if isinstance(kwargs.get("logger_config"), dict):
-            if "style" not in kwargs["logger_config"]:
-                kwargs["logger_config"]["style"] = LEVEL_PROFILES["WARNING"].base
-        else:
-            if "style" not in kwargs:
-                kwargs["style"] = LEVEL_PROFILES["WARNING"].base
-        self(*messages, mode=mode, level=LogLevel.WARNING, stack_offset=stack_offset, **kwargs)
+        self._emit_entry(messages, level=LogLevel.WARNING, mode=mode, stack_offset=stack_offset, call=kwargs)
 
-    @overload
     def error(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[LogConfig],
-    ) -> None: ...
-    @overload
-    def error(
-        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
-    ) -> None: ...
-    def error(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file", "all"] | None = None,
-        stack_offset: int = 4,
-        **kwargs: Any,
+        self, *messages: object, mode: LogMode | None = None, stack_offset: int = 0, **kwargs: Unpack[LogCallConfig]
     ) -> None:
-        """Log at :attr:`LogLevel.ERROR`."""
-        if isinstance(kwargs.get("logger_config"), dict):
-            if "log_locals" not in kwargs["logger_config"]:
-                kwargs["logger_config"]["log_locals"] = True
-            if "style" not in kwargs["logger_config"]:
-                kwargs["logger_config"]["style"] = LEVEL_PROFILES["ERROR"].base
-        else:
-            if not kwargs:
-                kwargs["log_locals"] = True
-            if "style" not in kwargs:
-                kwargs["style"] = LEVEL_PROFILES["ERROR"].base
-        self(*messages, mode=mode, level=LogLevel.ERROR, stack_offset=stack_offset, **kwargs)
+        self._emit_entry(messages, level=LogLevel.ERROR, mode=mode, stack_offset=stack_offset, call=kwargs)
 
-    @overload
     def critical(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[LogConfig],
-    ) -> None: ...
-    @overload
-    def critical(
-        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
-    ) -> None: ...
-    def critical(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file", "all"] | None = None,
-        stack_offset: int = 3,
-        **kwargs: Any,
+        self, *messages: object, mode: LogMode | None = None, stack_offset: int = 0, **kwargs: Unpack[LogCallConfig]
     ) -> None:
-        """Log at :attr:`LogLevel.CRITICAL`."""
-        if isinstance(kwargs.get("logger_config"), dict):
-            if "log_locals" not in kwargs["logger_config"]:
-                kwargs["logger_config"]["log_locals"] = True
-            if "style" not in kwargs["logger_config"]:
-                kwargs["logger_config"]["style"] = LEVEL_PROFILES["CRITICAL"].base
-        else:
-            if "log_locals" not in kwargs:
-                kwargs["log_locals"] = True  # Ensure locals are logged for error-level messages
-            if "style" not in kwargs:
-                kwargs["style"] = LEVEL_PROFILES["CRITICAL"].base
-        self(*messages, mode=mode, level=LogLevel.CRITICAL, stack_offset=stack_offset, **kwargs)
+        self._emit_entry(messages, level=LogLevel.CRITICAL, mode=mode, stack_offset=stack_offset, call=kwargs)
 
-    @overload
     def exception(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file"] = ...,
-        stack_offset: int = ...,
-        **kwargs: Unpack[LogConfig],
-    ) -> None: ...
-    @overload
-    def exception(
-        self, *messages: object, mode: Literal["all"] = ..., stack_offset: int = ..., **kwargs: Unpack[AllLogConfig]
-    ) -> None: ...
-    def exception(
-        self,
-        *messages: object,
-        mode: Literal["terminal", "file", "all"] | None = None,
-        stack_offset: int = 3,
-        **kwargs: Any,
+        self, *messages: object, mode: LogMode | None = None, stack_offset: int = 0, **kwargs: Unpack[LogCallConfig]
     ) -> None:
-        """Log at :attr:`LogLevel.ERROR` and print the current exception traceback."""
-        if isinstance(kwargs.get("logger_config"), dict):
-            if "log_locals" not in kwargs["logger_config"]:
-                kwargs["logger_config"]["log_locals"] = True
-            if "style" not in kwargs["logger_config"]:
-                kwargs["logger_config"]["style"] = LEVEL_PROFILES["ERROR"].base
-        else:
-            if "log_locals" not in kwargs:
-                kwargs["log_locals"] = True  # Ensure locals are logged for error-level messages
-            if "style" not in kwargs:
-                kwargs["style"] = LEVEL_PROFILES["ERROR"].base
-
-        self(*messages, mode=mode, level=LogLevel.ERROR, stack_offset=stack_offset, **kwargs)
-        self._terminal_console_manager.console.print_exception(show_locals=True)
-        self._file_manager.console.print_exception(show_locals=False)
-
-    # -- child logger ---------------------------------------------------------
+        current_exception = sys.exc_info()[1]
+        self._emit_entry(
+            messages,
+            level=LogLevel.ERROR,
+            mode=mode,
+            stack_offset=stack_offset,
+            call=kwargs,
+            exception=current_exception,
+        )
 
     def child(
         self,
         name: str | None = None,
         *,
         level: LogLevelLike | None = None,
-        mode: Literal["terminal", "file", "all"] | None = None,
-        pretty_config: AllLogConfig | None = None,
-        **ctx: str,
+        mode: LogMode | None = None,
+        pretty_config: PrettyLogConfig | None = None,
+        **context: object,
     ) -> PrettyLog:
-        """Create a child logger that inherits all settings and adds extra context.
-
-        The child is automatically registered in the global logger registry and
-        linked to this parent. If *name* is not given, a dot-separated name is
-        generated from the context values.
-
-        Optional *level*, *mode*, and *pretty_config* override the inherited
-        defaults. Unspecified values are inherited from the parent.
-
-        Example::
-
-            gw_log = log.child("gateway")
-            gw_log.info("ready")  # prints: [INFO] [gateway] ready
-
-            # With overrides:
-            dbg_log = log.child("debug", level="DEBUG", stack_offset=4)
-
-            # Or with auto-name from context:
-            gw_log = log.child(component="gateway")
-        """
+        """Create a registered child with isolated policy and inherited output."""
         if name is None:
-            if ctx:
-                suffix = ".".join(ctx.values())
-            else:
-                suffix = f"child_{len(self._children)}"
-            child_name = f"{self.name}.{suffix}" if self.name and self.name != "root" else suffix
+            suffix = ".".join(str(value) for value in context.values()) if context else f"child_{len(self.children)}"
         else:
-            child_name = f"{self.name}.{name}" if self.name and self.name != "root" else name
+            suffix = name
 
-        # Merge parent config with overrides
-        inherited_config: AllLogConfig = {
-            "logger_config": self._log_config,
-            "terminal_console_config": self._terminal_console_config,
-            "file_console_config": self._file_console_config,
-            "file_manager_config": self._file_manager_config,
-        }
-        if pretty_config is not None:
-            cfg: AllLogConfig = cast(AllLogConfig, dict(**inherited_config))
-            normalized = self._normalize_pretty_config(dict(**pretty_config))
-            for key in self._CALL_CONFIG_KEYS:
-                if key in normalized:
-                    cfg[key] = {**cfg.get(key, {}), **normalized[key]}  # ty:ignore[invalid-key]
-            inherited_config = cfg
+        child_name = f"{self.name}.{suffix}" if self.name and self.name != "root" else suffix
 
-        child_logger = PrettyLog(
-            name=child_name, mode=mode or self.mode, level=level or self.level, pretty_config=inherited_config
+        inherited = self.pretty_config
+        child_config = merge_pretty_config(inherited, pretty_config)
+        output_override = pretty_config is not None and any(
+            key in pretty_config for key in ("terminal_console_config", "file_console_config", "file_manager_config")
         )
-        child_logger._context = {**self._context, **ctx}
-        child_logger._filters = list(self._filters)
-        child_logger._enabled = self._enabled
-        child_logger._parent = self
-        self._children[child_name] = child_logger
-        return child_logger
+        child = PrettyLog(
+            child_name,
+            mode=mode or self.mode,
+            level=level or self.level,
+            pretty_config=child_config,
+            _shared_sinks=None if output_override else self._sinks,
+        )
+        with self._lock:
+            child._context = {**self._context, **context}
+            child._filters = list(self._filters)
+            child._enabled = self._enabled
+            child._parent = self
+            self._children[child_name] = child
+        return child
+
+    def flush(self) -> None:
+        """Flush initialized output streams without forcing lazy creation."""
+        with self._lock:
+            self._sinks.flush()
+
+    def close(self) -> None:
+        """Release this logger's sink ownership and registry links once."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._sinks.release()
+        with self._registry_lock:
+            if self._registry.get(self.name) is self:
+                self._registry.pop(self.name, None)
+            if self._parent is not self:
+                self._parent._children.pop(self.name, None)
+
+    @classmethod
+    def shutdown_all(cls) -> None:
+        """Close every live logger and clear the registry."""
+        with cls._registry_lock:
+            instances = tuple(cls._instances)
+        for logger in instances:
+            logger.close()
+        with cls._registry_lock:
+            cls._registry.clear()

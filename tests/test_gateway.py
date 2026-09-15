@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import errno
-from typing import Any
 
 import pytest
 
-from iterm2_api_wrapper.gateway import _async_create_connection_with_retry
+from iterm2_api_wrapper.core.gateway import _async_create_connection_with_retry
 
 
 class FlakyConnection:
@@ -17,7 +16,7 @@ class FlakyConnection:
     iterm2_protocol_version: tuple[int, int] = (1, 14)
 
     @classmethod
-    async def async_create(cls) -> Any:
+    async def async_create(cls) -> str:
         cls.attempts += 1
         if cls.attempts < 3:
             raise ConnectionRefusedError(errno.ECONNREFUSED, "connection refused")
@@ -30,7 +29,7 @@ class AlwaysRefusesConnection:
     iterm2_protocol_version: tuple[int, int] = (1, 14)
 
     @classmethod
-    async def async_create(cls) -> Any:
+    async def async_create(cls) -> str:
         cls.attempts += 1
         raise ConnectionRefusedError(errno.ECONNREFUSED, "connection refused")
 
@@ -41,7 +40,7 @@ class FatalConnection:
     iterm2_protocol_version: tuple[int, int] = (1, 14)
 
     @classmethod
-    async def async_create(cls) -> Any:
+    async def async_create(cls) -> str:
         cls.attempts += 1
         raise OSError(errno.EPERM, "nope")
 
@@ -79,3 +78,14 @@ def test_async_create_connection_with_retry_does_not_retry_fatal_oserror() -> No
         )
 
     assert FatalConnection.attempts == 1
+
+
+def test_async_create_connection_with_retry_accepts_static_factory() -> None:
+    class StaticFactory:
+        @staticmethod
+        async def async_create() -> int:
+            return 42
+
+    result = asyncio.run(_async_create_connection_with_retry(StaticFactory, timeout_s=1.0))
+
+    assert result == 42
