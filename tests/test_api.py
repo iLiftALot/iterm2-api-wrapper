@@ -111,7 +111,7 @@ class FakeWindow:
         self.created_profiles: list[str] = []
         self.is_hotkey_window = is_hotkey_window
 
-    async def async_create_tab(self, profile: str) -> FakeTab:
+    async def async_create_tab(self, profile: str, select: bool) -> FakeTab:
         self.created_profiles.append(profile)
         created_profile = FakeProfile(name=profile, guid=f"created-{profile}")
         created_session = FakeSession(
@@ -382,7 +382,7 @@ def test_sync_constructor_populates_from_api_owned_setup(monkeypatch: pytest.Mon
         del timeout
         assert target_window is not None
         assert target_profile is not None
-        created_tab = await target_window.async_create_tab(profile=target_profile.name)
+        created_tab = await target_window.async_create_tab(profile=target_profile.name, select=False)
         if with_session:
             assert created_tab.current_session is not None
             return created_tab, created_tab.current_session
@@ -870,7 +870,7 @@ def test_create_tab_waits_for_matching_session_and_prompt_ready(monkeypatch: pyt
         created_tab = FakeTab("created-tab", [created_session])
 
         class CreatingWindow(FakeWindow):
-            async def async_create_tab(self, profile: str) -> FakeTab:
+            async def async_create_tab(self, profile: str, select: bool) -> FakeTab:
                 self.created_profiles.append(profile)
                 self.tabs.append(created_tab)
                 return created_tab
@@ -944,7 +944,7 @@ def test_create_tab_treats_prompt_monitor_timeout_as_loaded(monkeypatch: pytest.
         created_tab = FakeTab("created-tab", [created_session])
 
         class CreatingWindow(FakeWindow):
-            async def async_create_tab(self, profile: str) -> FakeTab:
+            async def async_create_tab(self, profile: str, select: bool) -> FakeTab:
                 self.created_profiles.append(profile)
                 return created_tab
 
@@ -1001,7 +1001,7 @@ def test_create_tab_raises_when_loaded_session_cannot_be_resolved(monkeypatch: p
         created_tab = FakeTab("created-tab", [])
 
         class CreatingWindow(FakeWindow):
-            async def async_create_tab(self, profile: str) -> FakeTab:
+            async def async_create_tab(self, profile: str, select: bool) -> FakeTab:
                 self.created_profiles.append(profile)
                 return created_tab
 

@@ -48,14 +48,16 @@ def test_cli_boolean_coercion_accepts_known_values_and_rejects_unknown_values() 
 
 def test_variable_values_for_scope_falls_back_when_dynamic_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     cli._SCOPE_VARIABLE_CACHE.clear()
-    monkeypatch.setattr(cli, "_static_variable_values_for_scope", lambda scope: [f"{scope}.fallback"])
+    monkeypatch.setattr(
+        cli, "_static_variable_values_for_scope", lambda scope: [(f"{scope}.fallback", f"{scope} fallback variable")]
+    )
 
     def fail_create_client(**kwargs: Any) -> object:
         raise RuntimeError("offline")
 
     monkeypatch.setattr(cli, "create_iterm_client", fail_create_client)
 
-    assert cli._variable_values_for_scope("session") == ["session.fallback"]
+    assert cli._variable_values_for_scope("session") == [("session.fallback", "session fallback variable")]
 
 
 def test_func_to_args_completion_returns_remaining_function_parameters() -> None:
@@ -82,21 +84,33 @@ def test_get_variable_completion_returns_scopes_before_scope_is_known() -> None:
 
 
 def test_get_variable_completion_returns_variables_for_scope(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli, "_variable_values_for_scope", lambda scope: ["gitBranch", "gitRepo", "home"])
+    monkeypatch.setattr(
+        cli,
+        "_variable_values_for_scope",
+        lambda scope, *, refresh=False: [
+            ("gitBranch", "Current Git branch"),
+            ("gitRepo", "Current Git repository"),
+            ("home", "Home directory"),
+        ],
+    )
     ctx = as_ctx(SimpleNamespace(params={"func_name": "get_variable", "args": ("user",)}))
 
     completions = cli.func_to_args_completion("git", ctx)
 
-    assert completions == [("gitBranch", "user variable"), ("gitRepo", "user variable")]
+    assert completions == [("gitBranch", "Current Git branch"), ("gitRepo", "Current Git repository")]
 
 
 def test_get_variable_completion_supports_keyword_style(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli, "_variable_values_for_scope", lambda scope: ["path", "profileName"])
+    monkeypatch.setattr(
+        cli,
+        "_variable_values_for_scope",
+        lambda scope, *, refresh=False: [("path", "Current path"), ("profileName", "Current profile name")],
+    )
     ctx = as_ctx(SimpleNamespace(params={"func_name": "get_variable", "args": ("scope=session",)}))
 
     completions = cli.func_to_args_completion("variable=p", ctx)
 
-    assert completions == [("variable=path", "session variable"), ("variable=profileName", "session variable")]
+    assert completions == [("variable=path", "Current path"), ("variable=profileName", "Current profile name")]
 
 
 def test_send_hex_codes_completion_uses_hex_code_enum_members() -> None:
@@ -128,8 +142,12 @@ def test_variable_values_for_scope_suppresses_completion_probe_output(
     monkeypatch.setattr(cli, "run_coro", lambda coro, event_loop: {"user.gitBranch": "main"})
     cli._SCOPE_VARIABLE_CACHE.clear()
 
-    assert cli._variable_values_for_scope("user", refresh=True) == ["user.gitBranch"]
-    assert capsys.readouterr().out == ""
+    assert cli._variable_values_for_scope("user", refresh=True) == [
+        ("user.gitBranch", "'user' variable 'user.gitBranch'")
+    ]
+    captured = capsys.readouterr()
+    assert "noisy setup stdout" not in captured.out
+    assert "noisy teardown stdout" not in captured.out
 
 
 def test_run_coro_executes_on_supplied_loop() -> None:
@@ -303,7 +321,9 @@ def test_main_dispatches_selected_function(monkeypatch: pytest.MonkeyPatch) -> N
 
     cli.main("send_command", ["echo hi"], new_tab=True, profile_name="Default", debug=True)
 
-    assert calls == [{"timeout": None, "debug": True, "new_tab": True, "dedicated_profile_name": "Default"}]
+    assert calls == [
+        {"timeout": None, "debug": True, "new_tab": True, "activate": False, "dedicated_profile_name": "Default"}
+    ]
 
 
 def test_main_dispatches_send_hex_codes(monkeypatch: pytest.MonkeyPatch) -> None:

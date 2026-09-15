@@ -25,11 +25,11 @@ classifiers = [
 ]
 dependencies = [
   "async_timeout==5.0.1",
-  "iterm2==2.22",
-  "pyobjc==12.2.1",
-  "python-dotenv==1.2.2",
+  "iterm2==2.23",
+  "pyobjc==12.2.2",
+  "python-dotenv==1.2.3",
   "rich==15.0.0",
-  "typer==0.27.1",
+  "typer==0.27.2",
   "typing_extensions==4.16.0"
 ]
 optional-dependencies = { "applescript" = ["py-applescript"] }
@@ -52,7 +52,7 @@ dev = [
   "pickleshare==0.7.5",  # Used in iPython functions
   "pytest==9.1.1",
   "pytest-cov==7.1.0",
-  "rust-just==1.53.0",
+  "rust-just==1.58.0",
   "sphinx==8.1.3",
   "sphinx-autobuild==2024.10.03",
   "watchdog==6.0.0",
@@ -60,7 +60,7 @@ dev = [
 ci = ["pyright", "ruff"]
 
 [build-system]
-requires = ["uv_build >= 0.12.1, <0.13.0"]
+requires = ["uv_build >= 0.12.0, <0.12.9"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
