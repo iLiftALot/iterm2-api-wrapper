@@ -25,9 +25,9 @@ classifiers = [
 ]
 dependencies = [
   "async_timeout==5.0.1",
-  "iterm2==2.23",
+  "iterm2==2.25",
   "pyobjc==12.2.2",
-  "python-dotenv==1.2.3",
+  "python-dotenv==1.2.4",
   "rich==15.0.0",
   "typer==0.27.2",
   "typing_extensions==4.16.0"

@@ -483,15 +483,15 @@ wheels = [
 
 [[package]]
 name = "iterm2"
-version = "2.23"
+version = "2.25"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "protobuf" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/69/837ae2d73964d26e282c2504cc90ed866f681fff67e04f717abbf8c05f65/iterm2-2.23.tar.gz", hash = "sha256:366423ccabc72221357631278dced66edb1e8274d13333fb99f50081463b9745", size = 184095, upload-time = "2026-09-10T00:47:53.145Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/be/ce305245d48e43d014d5de6fa4df05ed5900e50c24830b69ea26eca8e358/iterm2-2.25.tar.gz", hash = "sha256:19a214bc27e780265527edd99403297432b1611ff2b8213b4675b25d646cb4a8", size = 188527, upload-time = "2026-09-26T18:35:51.254Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3c/c6/eb6978a99a4cb08d76c218f394fa84b10a29d71f8dad23452b227950eb28/iterm2-2.23-py3-none-any.whl", hash = "sha256:a88356b13141f3f522acef62a78af052b080998ac5f67d26018eedce98c565fb", size = 190155, upload-time = "2026-09-10T00:47:52.003Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/7b/858ea3473f6bc7e2752f270bec317e5f57789c510ebb5f0ef091afb04f0b/iterm2-2.25-py3-none-any.whl", hash = "sha256:490eca3a93696396e19414d244c41784c282e816c0ab4b9e568df177b30e52a0", size = 194200, upload-time = "2026-09-26T18:35:50.071Z" },
 ]
 
 [[package]]
@@ -536,10 +536,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "async-timeout", specifier = "==5.0.1" },
-    { name = "iterm2", specifier = "==2.23" },
+    { name = "iterm2", specifier = "==2.25" },
     { name = "py-applescript", marker = "extra == 'applescript'" },
     { name = "pyobjc", specifier = "==12.2.2" },
-    { name = "python-dotenv", specifier = "==1.2.3" },
+    { name = "python-dotenv", specifier = "==1.2.4" },
     { name = "rich", specifier = "==15.0.0" },
     { name = "typer", specifier = "==0.27.2" },
     { name = "typing-extensions", specifier = "==4.16.0" },
@@ -4008,11 +4008,11 @@ wheels = [
 
 [[package]]
 name = "python-dotenv"
-version = "1.2.3"
+version = "1.2.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6a/53/ed9d74092561d4b01a2ef1349d52cdbc135e526c245f366b089cfca6de49/python_dotenv-1.2.3.tar.gz", hash = "sha256:a20a594dabeaa385725aa239d5244871c143ecb356add8a20fcf23773a6c3a35", size = 58945, upload-time = "2026-08-16T16:54:54.067Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/26/2fbeedb218a787a5eea551c7532cac4e009f83d689dd2faa0d0353473f86/python_dotenv-1.2.4.tar.gz", hash = "sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0", size = 60824, upload-time = "2026-10-01T05:36:10Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0d/17/c5c6b53ddc18f297992099b3d9ec16c855c0ccc83263a21fe4d1c625ec6c/python_dotenv-1.2.3-py3-none-any.whl", hash = "sha256:904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9", size = 22780, upload-time = "2026-08-16T16:54:52.473Z" },
+    { url = "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl", hash = "sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc", size = 23266, upload-time = "2026-10-01T05:36:08.633Z" },
 ]
 
 [[package]]
