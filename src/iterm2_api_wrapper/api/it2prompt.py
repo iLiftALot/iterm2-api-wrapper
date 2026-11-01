@@ -95,6 +95,10 @@ class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
     async def async_get(self, include_id: Literal[True], *, mode: None = None) -> PromptMonitorEventWithId: ...
     @overload
     async def async_get(
+        self, include_id: bool, *, mode: None = None
+    ) -> PromptMonitorEvent | PromptMonitorEventWithId: ...
+    @overload
+    async def async_get(
         self, include_id: Literal[False] = False, *, mode: Literal[prompt.PromptMonitor.Mode.PROMPT]
     ) -> PromptEvent: ...
     @overload
@@ -117,6 +121,22 @@ class PromptMonitor(prompt.PromptMonitor, Generic[SnapshotT]):
     async def async_get(
         self, include_id: Literal[True], *, mode: Literal[prompt.PromptMonitor.Mode.COMMAND_END]
     ) -> CommandEndEventWithId: ...
+    @overload
+    async def async_get(
+        self, include_id: bool, *, mode: Literal[prompt.PromptMonitor.Mode.PROMPT]
+    ) -> PromptEvent | PromptEventWithId: ...
+    @overload
+    async def async_get(
+        self, include_id: bool, *, mode: Literal[prompt.PromptMonitor.Mode.COMMAND_START]
+    ) -> CommandStartEvent | CommandStartEventWithId: ...
+    @overload
+    async def async_get(
+        self, include_id: bool, *, mode: Literal[prompt.PromptMonitor.Mode.COMMAND_END]
+    ) -> CommandEndEvent | CommandEndEventWithId: ...
+    @overload
+    async def async_get(
+        self, include_id: bool = False, *, mode: prompt.PromptMonitor.Mode | None = None
+    ) -> PromptMonitorEvent | PromptMonitorEventWithId: ...
 
     async def async_get(
         self, include_id: bool = False, *, mode: prompt.PromptMonitor.Mode | None = None
@@ -157,9 +177,11 @@ async def async_get_prompt(
     """
 
     if prompt_id:
-        capabilities.check_supports_prompt_id(connection)
+        capabilities.check_supports_prompt_id(_as_upstream_connection(connection))
 
-    response: api_pb2.ServerOriginatedMessage = await rpc.async_get_prompt(connection, session_id, prompt_id)
+    response: api_pb2.ServerOriginatedMessage = await rpc.async_get_prompt(
+        _as_upstream_connection(connection), session_id, prompt_id
+    )
     status: api_pb2.GetPromptResponse.Status.ValueType = response.get_prompt_response.status
     if status == api_pb2.GetPromptResponse.Status.Value("OK"):  # 0
         return Prompt(response.get_prompt_response)
@@ -176,7 +198,7 @@ async def async_get_prompt(
 
 def check_supports_prompt_monitor_modes(connection: Connection) -> None:
     """Die if you can't monitor multiple prompt monitor modes."""
-    if not capabilities.supports_prompt_monitor_modes(connection):
+    if not capabilities.supports_prompt_monitor_modes(_as_upstream_connection(connection)):
         raise capabilities.AppVersionTooOld(
             "This version of iTerm2 is too old to monitor the "
             "prompt in different modes. You should upgrade to "

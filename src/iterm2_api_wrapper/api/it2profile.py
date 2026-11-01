@@ -24,8 +24,10 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, cast, overl
 from uuid import NAMESPACE_URL, uuid5
 
 from iterm2 import BadGUIDException, capabilities, profile, rpc
+from iterm2.api_pb2 import ProfileProperty as WireProfileProperty
 
 from ..core.errors import ProfileNotFoundError, SessionNotFoundError
+from ._connection_compat import _as_upstream_connection
 from .it2app import async_get_app
 
 
@@ -37,6 +39,7 @@ else:
 
 if TYPE_CHECKING:
     from iterm2.api_pb2 import ServerOriginatedMessage
+    from iterm2.connection import Connection as UpstreamConnection
 
     from ..core.gateway import Connection
 
@@ -879,18 +882,21 @@ class ProfileProperty:
 
 class LocalWriteOnlyProfile(profile.LocalWriteOnlyProfile):
     def __init__(self, values: ProfileProperties | None = None):
-        super().__init__(values)
+        super().__init__()
+        # Upstream's constructor annotation only permits strings, although
+        # profile properties include numbers, colors, and nested structures.
+        # Populate its public JSON-encoded values without double encoding.
+        self.values.update({key: json.dumps(value) for key, value in (values or {}).items()})
 
 
 class Profile(profile.Profile):
     _Profile__props: ProfileProperties
-    connection: Connection
     session_id: str | None
 
     def __init__(
         self,
         session_id: str | None,
-        connection: Connection,
+        connection: Connection | UpstreamConnection,
         profile_properties: ProfileProperties | Sequence[ProfilePropertyLike],
     ) -> None:
         profile_property_list: list[ProfilePropertyLike]
@@ -903,7 +909,10 @@ class Profile(profile.Profile):
                 for k, v in profile_properties.items()
             ]
 
-        super().__init__(session_id, connection, profile_property_list)
+        wire_properties = [
+            WireProfileProperty(key=prop.key, json_value=prop.json_value) for prop in profile_property_list
+        ]
+        super().__init__(session_id, _as_upstream_connection(connection), wire_properties)
         self.__props = self._Profile__props
 
     @property
@@ -932,13 +941,13 @@ class Profile(profile.Profile):
     async def all_names(connection: Connection) -> set[str]:
         """Returns all profile names."""
         profiles = await PartialProfile.async_query(connection, properties=["Name"])
-        return {p.name for p in profiles}
+        return {p.name or f"<unknown>{p.guid}" for p in profiles}
 
     @staticmethod
     async def to_dict(connection: Connection) -> dict[str, Profile]:
         """Returns a dictionary containing profile names as keys with their corresponding :class:`Profile` object."""
         profiles = await Profile.async_get(connection)
-        return {p.name: p for p in profiles}
+        return {p.name or f"<unknown>{p.guid}": p for p in profiles}
 
     async def async_local_update(self, properties: ProfileProperties) -> Profile:
         """Apply temporary property overrides to this profile's live session.
@@ -960,7 +969,7 @@ class Profile(profile.Profile):
                 "applying a session-local update."
             )
 
-        app = await async_get_app(self.connection, create_if_needed=True)
+        app = await async_get_app(cast("Connection", self.connection), create_if_needed=True)
         session = app.get_session_by_id(session_id)
         if session is None:
             raise SessionNotFoundError(session_id)
@@ -1025,7 +1034,9 @@ class Profile(profile.Profile):
 
         :returns: A list of :class:`Profile` objects.
         """
-        response: ServerOriginatedMessage = await rpc.async_list_profiles(connection, guids, None)
+        response: ServerOriginatedMessage = await rpc.async_list_profiles(
+            _as_upstream_connection(connection), guids, None
+        )
         profiles: list[Profile] = [
             Profile(None, connection, cast(list[ProfilePropertyLike], response_profile.properties))
             for response_profile in response.list_profiles_response.profiles
@@ -1033,12 +1044,12 @@ class Profile(profile.Profile):
         return profiles
 
     @staticmethod
-    async def async_get_default(connection: Connection) -> Profile:
+    async def async_get_default(connection: Connection | UpstreamConnection) -> Profile:
         """Returns the default profile."""
-        capabilities.check_supports_get_default_profile(connection)
-        result: ServerOriginatedMessage = await rpc.async_get_default_profile(connection)
+        capabilities.check_supports_get_default_profile(_as_upstream_connection(connection))
+        result: ServerOriginatedMessage = await rpc.async_get_default_profile(_as_upstream_connection(connection))
         guid: str = result.preferences_response.results[0].get_default_profile_result.guid
-        profiles = await Profile.async_get(connection, [guid])
+        profiles = await Profile.async_get(cast("Connection", connection), [guid])
         return profiles[0]
 
 
@@ -1064,7 +1075,9 @@ class PartialProfile(Profile):
 
         :returns: A list of :class:`PartialProfile` objects with only the specified properties set.
         """
-        response: ServerOriginatedMessage = await rpc.async_list_profiles(connection, guids, properties)
+        response: ServerOriginatedMessage = await rpc.async_list_profiles(
+            _as_upstream_connection(connection), guids, properties
+        )
         return [
             PartialProfile(None, connection, response_profile.properties)
             for response_profile in response.list_profiles_response.profiles
@@ -1090,12 +1103,13 @@ class PartialProfile(Profile):
 
     @staticmethod
     async def async_get_default(
-        connection: Connection, properties: Sequence[str] | None = DEFAULT_PARTIAL_PROFILE_PROPERTIES
+        connection: Connection | UpstreamConnection,
+        properties: Sequence[str] | None = DEFAULT_PARTIAL_PROFILE_PROPERTIES,
     ) -> PartialProfile:
-        capabilities.check_supports_get_default_profile(connection)
-        result: ServerOriginatedMessage = await rpc.async_get_default_profile(connection)
+        capabilities.check_supports_get_default_profile(_as_upstream_connection(connection))
+        result: ServerOriginatedMessage = await rpc.async_get_default_profile(_as_upstream_connection(connection))
         guid: str = result.preferences_response.results[0].get_default_profile_result.guid
-        profiles = await PartialProfile.async_query(connection, [guid], properties)
+        profiles = await PartialProfile.async_query(cast("Connection", connection), [guid], properties)
         return profiles[0]
 
     async def async_make_default(self) -> None:
@@ -1304,7 +1318,7 @@ class DynamicProfile:
                 profile_data=(await Profile.to_dict(self.__connection)),
             )
 
-        profile_data = {profile.name: profile for profile in profiles}
+        profile_data = {name: profile for profile in profiles if (name := profile.name) is not None}
         parent_profile = profile_data.get(self.__parent_name)
 
         if parent_profile is None:

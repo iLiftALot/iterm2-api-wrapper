@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast, overload
 from iterm2 import app, rpc, session, tab, tmux, window
 
 from .._logging import PrettyLog
+from ._connection_compat import _as_upstream_connection
 from .it2connection import add_disconnect_callback
 
 
@@ -72,19 +73,22 @@ class App(app.App):
     @staticmethod
     async def async_construct(connection: Connection) -> App:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Construct a wrapper App instead of upstream iterm2.app.App."""
-        response: ServerOriginatedMessage = await rpc.async_list_sessions(connection)
+        upstream_connection = _as_upstream_connection(connection)
+        response: ServerOriginatedMessage = await rpc.async_list_sessions(upstream_connection)
         list_sessions_response: ListSessionsResponse = response.list_sessions_response
 
-        windows = app.App._windows_from_list_sessions_response(connection, list_sessions_response)
-        buried_sessions = app.App._buried_sessions_from_list_sessions_response(connection, list_sessions_response)
+        windows = app.App._windows_from_list_sessions_response(upstream_connection, list_sessions_response)
+        buried_sessions = app.App._buried_sessions_from_list_sessions_response(
+            upstream_connection, list_sessions_response
+        )
 
-        wrapper_app = App(connection, windows, buried_sessions)
+        wrapper_app = App(upstream_connection, windows, buried_sessions)
         wrapper_app._promote_runtime_hierarchy()
 
         session.Session.delegate = wrapper_app
         tab.Tab.delegate = wrapper_app
         window.Window.delegate = wrapper_app
-        tmux.DELEGATE = wrapper_app
+        tmux.gDELEGATE = wrapper_app
 
         await wrapper_app._async_listen()
         await wrapper_app.async_refresh_focus()
@@ -124,7 +128,7 @@ class App(app.App):
     def get_window_by_id(self, window_id: str) -> Window | None:
         return cast("Window | None", super().get_window_by_id(window_id))
 
-    def get_session_by_id(self, session_id: str, include_buried: bool = True) -> Session | None:
+    def get_session_by_id(self, session_id: str | None, include_buried: bool = True) -> Session | None:
         return cast("Session | None", super().get_session_by_id(session_id, include_buried))
 
     def get_tab_by_id(self, tab_id: str) -> Tab | None:

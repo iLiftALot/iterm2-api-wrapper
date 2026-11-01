@@ -206,3 +206,23 @@ def test_async_get_filters_by_requested_mode(monkeypatch: pytest.MonkeyPatch) ->
         assert result[0] == Mode.PROMPT
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("include_id", [False, True])
+def test_async_get_accepts_runtime_bool_with_and_without_mode(
+    monkeypatch: pytest.MonkeyPatch, include_id: bool
+) -> None:
+    async def scenario() -> None:
+        monitor = cast(PromptMonitor[None], object.__new__(PromptMonitor))
+        event = (prompt.PromptMonitor.Mode.COMMAND_END, 0, "prompt-1")
+
+        async def base_get(self: object, include_id: bool = False) -> object:
+            return event if include_id else event[:2]
+
+        monkeypatch.setattr(prompt.PromptMonitor, "async_get", base_get)
+        expected = event if include_id else event[:2]
+
+        assert await monitor.async_get(include_id) == expected
+        assert await monitor.async_get(include_id, mode=prompt.PromptMonitor.Mode.COMMAND_END) == expected
+
+    asyncio.run(scenario())

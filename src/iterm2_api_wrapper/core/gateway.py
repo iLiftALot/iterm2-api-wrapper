@@ -6,7 +6,7 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from .._logging import PrettyLog
 
@@ -39,10 +39,10 @@ class ConnectionLike(Protocol):
     @property
     def iterm2_protocol_version(self) -> tuple[int, int]: ...
     async def async_send_message(self, message: ClientOriginatedMessage) -> None: ...
-    async def async_dispatch_until_id(self, reqid: str) -> ServerOriginatedMessage: ...
+    async def async_dispatch_until_id(self, reqid: int) -> ServerOriginatedMessage: ...
 
 
-Connection: TypeAlias = ConnectionLike
+Connection = ConnectionLike
 
 
 class ConnectionFactory(Protocol[ConnectionT_co]):

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from iterm2.capabilities import check_supports_get_default_profile, check_supports_prompt_id
 
 from .._logging import PrettyLog
+from ..api._connection_compat import _as_upstream_connection
 from ..api.it2prompt import check_supports_prompt_monitor_modes
 
 
@@ -158,8 +159,8 @@ def _enhance_docstrings() -> None:
 def _check_version(connection: Connection) -> None:
     """Validate the capabilities required by iTermAPI for this connection."""
     check_supports_prompt_monitor_modes(connection)  # Protocol 1.1
-    check_supports_get_default_profile(connection)  # Protocol 1.4
-    check_supports_prompt_id(connection)  # Protocol 1.5
+    check_supports_get_default_profile(_as_upstream_connection(connection))  # Protocol 1.4
+    check_supports_prompt_id(_as_upstream_connection(connection))  # Protocol 1.5
 
     major_version, minor_version = connection.iterm2_protocol_version
     log.debug(f"iTerm protocol version {major_version}.{minor_version}")

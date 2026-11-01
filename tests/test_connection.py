@@ -239,14 +239,14 @@ def test_receiver_helpers_match_and_pop_by_id() -> None:
 def test_async_dispatch_until_id_resolves_when_future_completes() -> None:
     async def scenario() -> None:
         conn = Connection()
-        message = SimpleNamespace(id="abc")
+        message = connection_module.api_pb2.ServerOriginatedMessage(id=42)
 
-        waiter = asyncio.ensure_future(conn.async_dispatch_until_id("abc"))
+        waiter = asyncio.ensure_future(conn.async_dispatch_until_id(42))
         await asyncio.sleep(0)  # let the receiver register
 
-        future = conn._get_receiver_future(cast(Any, message))
+        future = conn._get_receiver_future(message)
         assert future is not None
-        future.set_result(cast(Any, message))
+        future.set_result(message)
 
         assert await waiter is message
 

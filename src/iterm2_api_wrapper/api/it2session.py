@@ -6,11 +6,13 @@ from iterm2 import api_pb2, rpc, session
 from typing_extensions import override
 
 from .it2profile import Profile
+from .it2selection import Selection as WrapperSelection
 
 
 if TYPE_CHECKING:
     from iterm2.selection import Selection as IT2Selection
 
+    from ..core.gateway import Connection
     from .it2selection import Selection as _Selection
     from .it2tab import Tab
 
@@ -28,7 +30,9 @@ class Session(session.Session):
         status = response.get_profile_property_response.status
         if status == api_pb2.GetProfilePropertyResponse.Status.Value("OK"):
             return Profile(
-                self._Session__session_id, self.connection, response.get_profile_property_response.properties
+                self._Session__session_id,
+                cast("Connection", self.connection),
+                response.get_profile_property_response.properties,
             )
         raise rpc.RPCException(api_pb2.GetProfilePropertyResponse.Status.Name(status))
 
@@ -37,11 +41,17 @@ class Session(session.Session):
 
     @override
     async def async_get_selection_text(self, selection: Selection | None = None) -> str:
+        grid_size = self.grid_size
+        if grid_size is None:
+            raise rpc.RPCException("Session has no grid size (it may be buried or a proxy)")
+
         sel = selection
         if sel is None:
             sel = await self.async_get_selection()
 
-        return await sel.async_get_string(self.connection, self.session_id, self.grid_size.width)
+        if isinstance(sel, WrapperSelection):
+            return await sel.async_get_string(cast("Connection", self.connection), self.session_id, grid_size.width)
+        return await sel.async_get_string(self.connection, self.session_id, grid_size.width)
 
     @property
     def tab(self) -> Tab | None:

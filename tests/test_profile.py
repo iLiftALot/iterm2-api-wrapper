@@ -10,9 +10,11 @@ from iterm2 import api_pb2, rpc
 
 from iterm2_api_wrapper.api.it2profile import (
     DynamicProfile,
+    LocalWriteOnlyProfile,
     PartialProfile,
     Profile,
     ProfileProperties,
+    ProfileProperty,
     ProfilePropertyKey,
     process_dynamic_profiles_payload,
 )
@@ -40,6 +42,43 @@ def _profiles_response(*profiles: dict[str, object]) -> api_pb2.ServerOriginated
             prop.json_value = json.dumps(value)
 
     return response
+
+
+def test_local_profile_encodes_typed_values_once_without_mutating_input() -> None:
+    properties: ProfileProperties = {
+        "Normal Font": "Monaco 12",
+        "Transparency": 0.25,
+        "Load Shell Integration Automatically": 1,
+        "Tags": ["work"],
+        "Background Color": {
+            "Alpha Component": 1.0,
+            "Blue Component": 0.1,
+            "Green Component": 0.2,
+            "Red Component": 0.3,
+        },
+    }
+    original_json = json.dumps(properties)
+
+    local_profile = LocalWriteOnlyProfile(properties)
+
+    assert {key: json.loads(value) for key, value in local_profile.values.items()} == properties
+    local_profile.set_name("local-only")
+    assert local_profile.values["Name"] == json.dumps("local-only")
+    assert json.dumps(properties) == original_json
+
+
+def test_profile_normalizes_wire_like_properties_and_returns_defensive_copy() -> None:
+    connection = _connection()
+    properties = [ProfileProperty("Guid", "GUID-1"), ProfileProperty("Transparency", "0.25", json_auto_convert=False)]
+
+    wrapped = Profile(None, connection, properties)
+
+    assert wrapped.connection is connection
+    assert wrapped.guid == "GUID-1"
+    assert wrapped.all_properties.get("Transparency") == 0.25
+    copied_properties = wrapped.all_properties
+    copied_properties["Transparency"] = 0.5
+    assert wrapped.all_properties.get("Transparency") == 0.25
 
 
 def test_profile_async_get_returns_typed_wrapper(monkeypatch: pytest.MonkeyPatch) -> None:

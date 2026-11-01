@@ -17,11 +17,12 @@ from types import FunctionType
 from typing import TYPE_CHECKING, Annotated, Any, Concatenate, Literal, ParamSpec, TypeVar, cast
 
 import typer
-from iterm2 import alert, profile
+from iterm2 import alert
 
 from ._logging import PrettyLog
 from .alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
 from .api.it2connection import run_until_complete
+from .api.it2profile import PartialProfile, Profile
 from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
 from .core.client import create_iterm_client
 from .core.typings import HexCodeEnum
@@ -118,7 +119,15 @@ _SCOPE_VARIABLE_CACHE_TTL_SECONDS = 30.0
 _SCOPE_VARIABLE_CACHE_DIR = Path.home() / "Library" / "Caches" / "iterm2-api-wrapper" / "completion"
 _SCOPE_VARIABLE_CACHE: dict[VariableScopeName, tuple[float, list[tuple[str, str]]]] = {}
 
-_COMPLETION_PROFILE_NAME = os.getenv("IT2_DEFAULT_PROFILE", run_until_complete(profile.Profile.async_get_default).name)
+
+def _default_profile_name() -> str:
+    profile = run_until_complete(PartialProfile.async_get_default)
+    if profile.name is None:
+        raise RuntimeError("The iTerm2 default profile does not have a name.")
+    return profile.name
+
+
+_COMPLETION_PROFILE_NAME = os.getenv("IT2_DEFAULT_PROFILE") or _default_profile_name()
 _DEBUG = bool(int(os.getenv("IT2_DEBUG", "0")))
 _CLI_CLIENT_TIMEOUT: float | None = None
 
@@ -352,8 +361,12 @@ def run_coro(coro: Coroutine[Any, Any, T], event_loop: asyncio.AbstractEventLoop
 
 
 def profiles_completion(incomplete: str, ctx: typer.Context) -> list[tuple[str, str]]:
-    profiles: list[profile.Profile] = run_until_complete(profile.Profile.async_get)
-    return [(p.name, f"Profile: {p.name} ({p.guid})") for p in profiles if p.name.startswith(incomplete)]
+    profiles = run_until_complete(Profile.async_get)
+    return [
+        (name, f"Profile: {name} ({profile.guid})")
+        for profile in profiles
+        if (name := profile.name) is not None and name.startswith(incomplete)
+    ]
 
 
 def func_to_args_completion(incomplete: str, ctx: typer.Context) -> list[tuple[str, str]]:
@@ -578,7 +591,7 @@ def main(
             help="The iTerm2 profile to use for the session.",
             autocompletion=profiles_completion,
             envvar="IT2_DEFAULT_PROFILE",
-            default_factory=lambda: run_until_complete(profile.Profile.async_get_default).name,
+            default_factory=_default_profile_name,
             metavar="PROFILE_NAME",
             rich_help_panel="iTerm Setup Options",
         ),

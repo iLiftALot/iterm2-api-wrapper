@@ -42,7 +42,7 @@ class FakeConnection:
     async def async_send_message(self, message: ClientOriginatedMessage) -> None:
         return
 
-    async def async_dispatch_until_id(self, reqid: str) -> ServerOriginatedMessage:
+    async def async_dispatch_until_id(self, reqid: int) -> ServerOriginatedMessage:
         return cast("ServerOriginatedMessage", FakeNotificationResponse())
 
 

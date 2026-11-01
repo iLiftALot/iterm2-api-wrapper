@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, overload
 from iterm2 import api_pb2, broadcast, rpc
 from typing_extensions import override
 
+from ._connection_compat import _as_upstream_connection
+
 
 if TYPE_CHECKING:
     from iterm2 import Session as UpstreamSession
@@ -48,7 +50,7 @@ async def async_set_broadcast_domains(connection: Connection, broadcast_domains:
     """
     list_of_sessionid_lists: list[list[str]] = [[s.session_id for s in d.sessions] for d in broadcast_domains]
     response: api_pb2.ServerOriginatedMessage = await rpc.async_set_broadcast_domains(
-        connection, list_of_sessionid_lists
+        _as_upstream_connection(connection), list_of_sessionid_lists
     )
 
     if response.set_broadcast_domains_response.status != api_pb2.SetBroadcastDomainsResponse.Status.Value("OK"):

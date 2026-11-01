@@ -166,13 +166,30 @@ def test_run_coro_executes_on_supplied_loop() -> None:
 
 
 def test_profiles_completion_filters_profile_names(monkeypatch: pytest.MonkeyPatch) -> None:
-    profiles = [SimpleNamespace(name="Default", guid="1"), SimpleNamespace(name="Dev", guid="2")]
+    profiles = [
+        SimpleNamespace(name="Default", guid="1"),
+        SimpleNamespace(name="Dev", guid="2"),
+        SimpleNamespace(name=None, guid="3"),
+    ]
     monkeypatch.setattr(cli, "run_until_complete", lambda fn: profiles)
 
     assert cli.profiles_completion("De", as_ctx(SimpleNamespace())) == [
         ("Default", "Profile: Default (1)"),
         ("Dev", "Profile: Dev (2)"),
     ]
+
+
+def test_default_profile_name_uses_wrapper_and_rejects_missing_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run_default_profile(fn: object) -> object:
+        assert fn is cli.PartialProfile.async_get_default
+        return SimpleNamespace(name="Default")
+
+    monkeypatch.setattr(cli, "run_until_complete", run_default_profile)
+    assert cli._default_profile_name() == "Default"
+
+    monkeypatch.setattr(cli, "run_until_complete", lambda fn: SimpleNamespace(name=None))
+    with pytest.raises(RuntimeError, match="default profile does not have a name"):
+        cli._default_profile_name()
 
 
 def test_send_command_uses_default_command_and_resolves_path() -> None:

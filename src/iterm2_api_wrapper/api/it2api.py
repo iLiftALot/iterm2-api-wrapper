@@ -230,16 +230,19 @@ class iTermAPI:
 
         if target_profile_name is None:
             profile = await Profile.async_get_default(conn)
-            self._profile_cache[profile.name] = profile
+            if profile.name is not None:
+                self._profile_cache[profile.name] = profile
             return profile
 
-        profile_entries: dict[str, Profile] = {p.name: p for p in await Profile.async_get(conn)}
+        profile_entries: dict[str, Profile] = {
+            name: profile for profile in await Profile.async_get(conn) if (name := profile.name) is not None
+        }
         profile = profile_entries.get(target_profile_name)
 
         if profile is None:
             raise ProfileNotFoundError(target_profile_name=f"{target_profile_name}", profile_data=profile_entries)
 
-        self._profile_cache[profile.name] = profile
+        self._profile_cache[target_profile_name] = profile
         return profile
 
     @classmethod
@@ -257,9 +260,10 @@ class iTermAPI:
     @profile.setter
     def profile(self, value: Profile | PartialProfile | None) -> None:
         if not value and self._profile is not None:
-            self._profile_cache.pop(self._profile.name)
-        elif value:
-            self._profile_cache[value.name] = value
+            if (name := self._profile.name) is not None:
+                self._profile_cache.pop(name, None)
+        elif value and (name := value.name) is not None:
+            self._profile_cache[name] = value
         self._profile = value
         self.profile_name = value.name if value else None
 
@@ -518,7 +522,8 @@ class iTermAPI:
                 log.debug("Configuring custom profile properties:", self.profile_properties)
                 self.profile = await self.configure_profile(session, self.profile_properties)
                 self.profile_name = self.profile.name
-                self._profile_cache[self.profile_name] = self.profile
+                if self.profile_name is not None:
+                    self._profile_cache[self.profile_name] = self.profile
 
         await _configure_profile(session)
         return session

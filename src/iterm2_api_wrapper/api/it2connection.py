@@ -499,7 +499,7 @@ class Connection:
 
         return None
 
-    async def async_dispatch_until_id(self, reqid: str) -> api_pb2.ServerOriginatedMessage:
+    async def async_dispatch_until_id(self, reqid: int) -> api_pb2.ServerOriginatedMessage:
         """Dispatch incoming messages until the response with ``reqid`` arrives."""
         future: asyncio.Future[api_pb2.ServerOriginatedMessage] = asyncio.Future()
 
