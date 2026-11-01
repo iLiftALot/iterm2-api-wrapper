@@ -224,6 +224,12 @@ def make_api(profile: FakeProfile, windows: list[FakeWindow]) -> iTermAPI:
     return api
 
 
+@pytest.fixture(autouse=True)
+def isolate_api_caches(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(iTermAPI, "_iTermAPI__connection", None)
+    monkeypatch.setattr(iTermAPI, "_iTermAPI__app", None)
+
+
 def test_profile_guid_prefers_session_original_guid() -> None:
     session_local = FakeProfile(name="pyterm-mcp", guid="SESSION-LOCAL-GUID", original_guid="CONFIGURED-GUID")
 
