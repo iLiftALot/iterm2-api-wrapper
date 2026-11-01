@@ -25,11 +25,11 @@ classifiers = [
 ]
 dependencies = [
   "async_timeout==5.0.1",
-  "iterm2==2.25",
+  "iterm2==2.30",
   "pyobjc==12.2.2",
   "python-dotenv==1.2.4",
   "rich==15.0.0",
-  "typer==0.27.2",
+  "typer==0.27.3",
   "typing_extensions==4.16.0"
 ]
 optional-dependencies = { "applescript" = ["py-applescript"] }
@@ -50,9 +50,9 @@ dev = [
   "ipython>=8.39.0",
   "myst-parser==4.0.1",
   "pickleshare==0.7.5",  # Used in iPython functions
-  "pytest==9.1.1",
+  "pytest==9.2.0",
   "pytest-cov==7.1.0",
-  "rust-just==1.58.0",
+  "rust-just==1.59.0",
   "sphinx==8.1.3",
   "sphinx-autobuild==2024.10.03",
   "watchdog==6.0.0",
