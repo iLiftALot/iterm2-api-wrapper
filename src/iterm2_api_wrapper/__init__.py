@@ -31,11 +31,12 @@ from .core.client import (
     get_shared_client,
     iTermClient,
 )
-from .core.typings import CommandExecutionStatus, CommandExitCode
+from .core.typings import CommandExecutionResult, CommandExecutionStatus, CommandExitCode
 from .state import iTermState
 
 
 __all__ = [
+    "CommandExecutionResult",
     "CommandExecutionStatus",
     "CommandExitCode",
     "PrettyLog",
