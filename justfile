@@ -70,14 +70,14 @@ test-coverage open="false":
 
 # Build and sync the project, useful for checking that packaging is correct
 build:
-    @uv sync --active
+    @uv sync --active --all-groups
     @rm -rf build
     @rm -rf dist
     @uv build
     @uv build-backend build-sdist .
     @uv build-backend build-wheel .
     @uv build-backend build-editable .
-    @uv sync --active
+    @uv sync --active --all-groups
     @uv tool uninstall iterm2_api_wrapper 2>/dev/null || echo "❌ '{{BOLD + ITALIC + RED}}iterm2_api_wrapper{{NORMAL}}' {{RED}}executable is {{UNDERLINE + BOLD}}not yet installed{{NORMAL}}.\n⏳{{GREEN}}Installing now...{{NORMAL}}"
     @uv tool install . --editable
 
