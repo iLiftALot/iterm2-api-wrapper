@@ -398,7 +398,9 @@ def log_info(message: str) -> None:
 def pytest_configure(config: pytest.Config) -> None:
     # faulthandler_timeout only covers test execution; this also dumps stacks if collection/imports stall.
     stderr_fd = config.stash.get(fault_handler_stderr_fd_key, None)
-    faulthandler.dump_traceback_later(120, exit=True, file=stderr_fd if stderr_fd is not None else sys.__stderr__)
+    target = stderr_fd if stderr_fd is not None else sys.__stderr__
+    if target is not None:
+        faulthandler.dump_traceback_later(120, exit=True, file=target)
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
