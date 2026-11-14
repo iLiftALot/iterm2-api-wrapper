@@ -1,3 +1,4 @@
+import faulthandler
 import io
 import os
 import platform
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Any, Generator, Literal
 
 import pytest
+from _pytest.faulthandler import fault_handler_stderr_fd_key
 from dotenv import load_dotenv
 from pluggy._result import Result
 from rich.color_triplet import ColorTriplet
@@ -390,6 +392,17 @@ def log_var(name: str, value: object) -> None:
 def log_info(message: str) -> None:
     """Log an info message with consistent formatting."""
     console.print(f"    [dim]│ {message}[/]")
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_configure(config: pytest.Config) -> None:
+    # faulthandler_timeout only covers test execution; this also dumps stacks if collection/imports stall.
+    stderr_fd = config.stash.get(fault_handler_stderr_fd_key, None)
+    faulthandler.dump_traceback_later(120, exit=True, file=stderr_fd if stderr_fd is not None else sys.__stderr__)
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    faulthandler.cancel_dump_traceback_later()
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
