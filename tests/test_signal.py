@@ -532,6 +532,6 @@ _iterm2_api_wrapper_signal_activate
 """
 
     completed = subprocess.run(
-        ["/bin/zsh", "-fc", command], check=True, capture_output=True, env=environment, text=True
+        ["/bin/zsh", "-fc", command], check=True, capture_output=True, env=environment, text=True, timeout=30
     )
     assert completed.stdout.splitlines() == ["ready", "inactive", "reactivated", "replaced"]

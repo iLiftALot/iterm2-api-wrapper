@@ -66,6 +66,8 @@ build-backend = "uv_build"
 [tool.pytest.ini_options]
 addopts = "-v -rfe --exitfirst --debug=trace"
 console_output_style = "progress"
+faulthandler_exit_on_timeout = true
+faulthandler_timeout = 120
 filterwarnings = [
   "ignore:websockets.legacy is deprecated:DeprecationWarning",
   "ignore:In 3.13 classes created inside an enum will not become a member:DeprecationWarning",
