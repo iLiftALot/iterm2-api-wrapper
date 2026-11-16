@@ -197,11 +197,11 @@ def as_session(session: FakeSession | None) -> Session | None:
 
 
 def set_api_connection(connection: Connection | None) -> None:
-    object.__setattr__(iTermAPI, "_iTermAPI__connection", connection)
+    type.__setattr__(iTermAPI, "_iTermAPI__connection", connection)
 
 
 def set_api_app(app: App | None) -> None:
-    object.__setattr__(iTermAPI, "_iTermAPI__app", app)
+    type.__setattr__(iTermAPI, "_iTermAPI__app", app)
 
 
 def make_api(profile: FakeProfile, windows: list[FakeWindow]) -> iTermAPI:
