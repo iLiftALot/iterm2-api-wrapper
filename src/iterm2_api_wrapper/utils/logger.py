@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import sys
-from functools import partialmethod
+from functools import partialmethod, singledispatch
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Literal
 
+from loguru import _logger as LoguruLoggerModule
 from loguru import logger as loguru_logger
 from rich.console import Console
 
@@ -17,8 +18,8 @@ if TYPE_CHECKING:
     from loguru import BasicHandlerConfig, FileHandlerConfig, Record
     from loguru import Logger as LoguruLogger
 
-_LogLevelName = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL", "CRITICAL"]
-_LogLevelNumber = Literal[5, 10, 20, 30, 40, 50]
+_LogLevelName = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL", "CRITICAL"] | str
+_LogLevelNumber = Literal[5, 10, 20, 30, 40, 50] | int
 LogLevel = _LogLevelName | _LogLevelNumber
 
 
@@ -32,6 +33,7 @@ def _json_argument(value: object) -> object:
 class JsonLogger:
     def __init__(self, logger: LoguruLogger) -> None:
         self._logger = logger
+        self._core = getattr(logger, "_core", LoguruLoggerModule.Core())
         self.disable = logger.disable
         self.enable = logger.enable
         self.level = logger.level
@@ -49,7 +51,7 @@ class JsonLogger:
         self.start = logger.start
         self.stop = logger.stop
 
-    def log(self, level: LogLevel | str | int, message: str, /, *args: object, **kwargs: object) -> None:
+    def log(self, level: LogLevel, message: str, /, *args: object, **kwargs: object) -> None:
         # self._logger.bind(**kwargs).opt(depth=1, capture=False).log(
         self.bind(**kwargs).opt(depth=1, capture=False).log(
             level,
@@ -58,14 +60,14 @@ class JsonLogger:
             **{key: _json_argument(value) for key, value in kwargs.items()},
         )
 
-    trace = partialmethod(log, "TRACE")  # type: ignore
-    debug = partialmethod(log, "DEBUG")  # type: ignore
-    info = partialmethod(log, "INFO")  # type: ignore
-    success = partialmethod(log, "SUCCESS")  # type: ignore
-    warning = partialmethod(log, "WARNING")  # type: ignore
-    error = partialmethod(log, "ERROR")  # type: ignore
-    fatal = partialmethod(log, "FATAL")  # type: ignore
-    critical = partialmethod(log, "CRITICAL")  # type: ignore
+    trace = partialmethod(log, "TRACE")
+    debug = partialmethod(log, "DEBUG")
+    info = partialmethod(log, "INFO")
+    success = partialmethod(log, "SUCCESS")
+    warning = partialmethod(log, "WARNING")
+    error = partialmethod(log, "ERROR")
+    fatal = partialmethod(log, "FATAL")
+    critical = partialmethod(log, "CRITICAL")
 
     def exception(self, message: str, /, *args: object, **kwargs: object) -> None:
         # self._logger.bind(**kwargs).opt(depth=1, capture=False).exception(

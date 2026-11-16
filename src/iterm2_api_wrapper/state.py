@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, ParamSpec, TypedDict, 
 
 from websockets import ConcurrencyError, ConnectionClosed
 
+from iterm2_api_wrapper.screenshot import ScreenshotResult, screenshot
 from iterm2_api_wrapper.utils.async_path import AsyncPath
 
 from ._logging import PrettyLog
@@ -582,6 +583,9 @@ class iTermState:
             )
 
         return selection_text or "<|==| No selections found ==|>"
+
+    async def get_screenshot(self) -> ScreenshotResult:
+        return await screenshot(self)
 
     async def broadcast(self) -> None:
         if iTermState._broadcast_active is True:
