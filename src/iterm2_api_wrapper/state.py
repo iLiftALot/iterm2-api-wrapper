@@ -12,9 +12,6 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, ParamSpec, TypedDict, 
 
 from websockets import ConcurrencyError, ConnectionClosed
 
-from iterm2_api_wrapper.screenshot import ScreenshotResult, screenshot
-from iterm2_api_wrapper.utils.async_path import AsyncPath
-
 from ._logging import PrettyLog
 from .alert import poly_modal_alert_handler
 from .api.it2api import iTermAPI
@@ -25,6 +22,8 @@ from .api.it2transaction import Transaction
 from .api.it2variable import AppVarEnum, SessionVarEnum, TabVarEnum, UserVarEnum, WindowVarEnum
 from .core.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
 from .core.validator import validator
+from .screenshot import ScreenshotResult, screenshot
+from .utils.async_path import AsyncPath
 from .utils.enumerate import async_enumerate
 from .utils.loop_manager import LoopManager
 from .utils.marked_command import MarkedCommand

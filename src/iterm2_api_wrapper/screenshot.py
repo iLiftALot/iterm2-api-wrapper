@@ -5,13 +5,15 @@ import base64
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo
 
 from iterm2_api_wrapper.api.it2window import maximum_visible_window_frame
-from iterm2_api_wrapper.state import iTermState
 from iterm2_api_wrapper.utils.logger import get_logger
 
+
+if TYPE_CHECKING:
+    from iterm2_api_wrapper.state import iTermState
 
 logger = get_logger()
 
