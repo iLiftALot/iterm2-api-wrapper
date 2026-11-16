@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import PosixPath
 from typing import TypeVar
 
 from typing_extensions import ParamSpec
@@ -16,7 +16,7 @@ async def to_thread(func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwar
     return await asyncio.to_thread(func, *args, **kwargs)
 
 
-class AsyncPath(Path):
+class AsyncPath(PosixPath):
     async def aresolve(self) -> AsyncPath:
         return await to_thread(self.resolve, strict=False)
 
