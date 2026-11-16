@@ -31,35 +31,10 @@
           "message": 4
         }
       }
-    },
-    {
-      "label": "Copilot: Profile precedence regression",
-      "type": "shell",
-      "command": "env",
-      "args": [
-        "IT2_PYTEST_INTEGRATION=0",
-        "IT2_DEFAULT_PROFILE=iterm2-api-test",
-        "uv", "run", "--python=3.11", "--group", "dev", "pytest",
-        "--maxfail=0", "-q"
-      ],
-      "problemMatcher": []
-    },
-    {
-      "label": "Copilot: Profile lint",
-      "type": "shell",
-      "command": "uv",
-      "args": ["run", "--python=3.11", "--group", "dev", "--group", "ci", "ruff", "check", "."],
-      "problemMatcher": []
-    },
-    {
-      "label": "Copilot: Profile format",
-      "type": "shell",
-      "command": "uv",
-      "args": ["run", "--python=3.11", "--group", "dev", "--group", "ci", "ruff", "format", "--check", "."],
-      "problemMatcher": []
     }
   ]
 }
+
 
 
 
