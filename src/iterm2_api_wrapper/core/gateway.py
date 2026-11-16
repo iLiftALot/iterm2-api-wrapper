@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import errno
-import os
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+
+from iterm2_api_wrapper.utils.env import Env
 
 from .._logging import PrettyLog
 
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
 def _debug_enabled(debug: bool | None) -> bool:
     if debug is not None:
         return debug
-    return os.getenv("IT2_DEBUG", "false").strip().lower() in {"1", "true"}
+    return Env("IT2_DEBUG", "false").isTrue()
 
 
 StateTAny = TypeVar("StateTAny")
@@ -90,11 +91,7 @@ def _get_connect_timeout_s() -> float:
 
     Override via the `IT2_CONNECT_TIMEOUT` environment variable.
     """
-    raw = os.getenv(_ENV_CONNECT_TIMEOUT)
-
-    if raw is None:
-        return _DEFAULT_CONNECT_TIMEOUT_S
-
+    raw = Env(_ENV_CONNECT_TIMEOUT, str(_DEFAULT_CONNECT_TIMEOUT_S)).value
     try:
         value = float(raw)
     except ValueError:
@@ -133,19 +130,19 @@ async def _async_create_connection_with_retry(
 @contextmanager
 def _temporary_iterm_env(*, it2_suite: str | None = None, it2_app_path: str | None = None):
     managed = {"IT2_SUITE": it2_suite, "IT2_APP_PATH": it2_app_path}
-    previous = {key: os.environ.get(key) for key in managed}
+    previous = {key: Env.get(key) for key in managed}
 
     try:
         for key, value in managed.items():
             if value:
-                os.environ[key] = value
+                Env[key] = value
         yield
     finally:
         for key, old_value in previous.items():
             if old_value is None:
-                os.environ.pop(key, None)
+                Env.pop(key)
             else:
-                os.environ[key] = old_value
+                Env[key] = old_value
 
 
 class ITermGateway(Protocol[StateTRefreshable_co]):

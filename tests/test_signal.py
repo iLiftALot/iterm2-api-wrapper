@@ -406,13 +406,11 @@ def test_zsh_handler_executes_general_commands_in_parent_scope(tmp_path: Path) -
     target.mkdir()
 
     environment = os.environ.copy()
-    environment.update(
-        {
-            "SIGNAL_TEST_CONTROL": str(control),
-            "SIGNAL_TEST_HANDLER": str(Signal.SIGNAL_SCRIPT),
-            "SIGNAL_TEST_HOOK": str(hook_output),
-        }
-    )
+    environment.update({
+        "SIGNAL_TEST_CONTROL": str(control),
+        "SIGNAL_TEST_HANDLER": str(Signal.SIGNAL_SCRIPT),
+        "SIGNAL_TEST_HOOK": str(hook_output),
+    })
     digest = "a" * 64
     install_nonce = "0123456789abcdef0123456789abcdef"
     command = f"""

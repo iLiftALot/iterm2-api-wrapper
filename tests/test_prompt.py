@@ -190,9 +190,11 @@ def test_async_get_filters_by_requested_mode(monkeypatch: pytest.MonkeyPatch) ->
         Mode = prompt.PromptMonitor.Mode
         monitor = cast(PromptMonitor[Any], object.__new__(PromptMonitor))
 
-        events = iter(
-            [(Mode.COMMAND_START, "echo hi"), (Mode.COMMAND_END, 0), (Mode.PROMPT, SimpleNamespace(unique_id="p-1"))]
-        )
+        events = iter([
+            (Mode.COMMAND_START, "echo hi"),
+            (Mode.COMMAND_END, 0),
+            (Mode.PROMPT, SimpleNamespace(unique_id="p-1")),
+        ])
 
         # The override delegates to ``super().async_get`` which resolves to the
         # upstream base method; patching it lets us drive the event stream.

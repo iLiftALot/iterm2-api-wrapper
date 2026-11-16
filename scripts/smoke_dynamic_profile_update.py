@@ -26,7 +26,7 @@ Quick Run:
 ```
 IT2_PYTEST_INTEGRATION=1 \
 UV_CACHE_DIR=/private/tmp/iterm2-api-wrapper-uv-cache \
-uv run --active --python=3.10 --group dev \
+uv run --active --python=3.11 --group dev \
 python scripts/smoke_dynamic_profile_update.py
 ```
 """

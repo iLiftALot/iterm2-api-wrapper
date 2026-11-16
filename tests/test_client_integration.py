@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from collections.abc import Generator
 from typing import Any, Coroutine, TypeVar
 
@@ -9,6 +8,7 @@ import pytest
 
 from iterm2_api_wrapper.core.client import iTermClient
 from iterm2_api_wrapper.state import iTermState
+from iterm2_api_wrapper.utils.env import Env
 
 from .conftest import RUN_TIMEOUT, log_var
 
@@ -17,7 +17,7 @@ T = TypeVar("T")
 
 
 pytestmark = pytest.mark.skipif(
-    str(os.getenv("IT2_PYTEST_INTEGRATION", "")).lower() not in {"1", "true", "yes"},
+    Env("IT2_PYTEST_INTEGRATION", "0").isFalse(),
     reason=(
         "Integration tests require iTerm2 running with the Python API enabled. Set IT2_PYTEST_INTEGRATION=1 to run."
     ),

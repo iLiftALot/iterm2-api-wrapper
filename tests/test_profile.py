@@ -192,31 +192,27 @@ def test_dynamic_profile_async_create_returns_existing_profile(monkeypatch: pyte
 
         dynamic_profiles_directory.mkdir(parents=True)
         dynamic_profile_path.write_text(
-            json.dumps(
-                {
-                    "Profiles": [
-                        {
-                            "Name": "iterm2-api-test",
-                            "Guid": dynamic_profile.guid,
-                            "Rewritable": True,
-                            "Dynamic Profile Parent Name": "Default",
-                        }
-                    ]
-                }
-            ),
+            json.dumps({
+                "Profiles": [
+                    {
+                        "Name": "iterm2-api-test",
+                        "Guid": dynamic_profile.guid,
+                        "Rewritable": True,
+                        "Dynamic Profile Parent Name": "Default",
+                    }
+                ]
+            }),
             encoding="utf-8",
         )
 
         async def fake_list_profiles(connection: Connection, guids: list[str] | None, properties: object):
             calls.append((guids, properties))
-            return _profiles_response(
-                {
-                    "Guid": dynamic_profile.guid,
-                    "Name": "iterm2-api-test",
-                    "Is Dynamic Profile": 1,
-                    "Dynamic Profile Filename": str(dynamic_profile_path),
-                }
-            )
+            return _profiles_response({
+                "Guid": dynamic_profile.guid,
+                "Name": "iterm2-api-test",
+                "Is Dynamic Profile": 1,
+                "Dynamic Profile Filename": str(dynamic_profile_path),
+            })
 
         monkeypatch.setattr(DynamicProfile, "DYNAMIC_PROFILES_DIRECTORY", dynamic_profiles_directory)
         monkeypatch.setattr(DynamicProfile, "DYNAMIC_PROFILE_PATH", dynamic_profile_path)
@@ -248,19 +244,17 @@ def test_dynamic_profile_async_update_removal_converges_to_parent_value(
 
         dynamic_profiles_directory.mkdir(parents=True)
         dynamic_profile_path.write_text(
-            json.dumps(
-                {
-                    "Profiles": [
-                        {
-                            "Name": "iterm2-api-test",
-                            "Guid": dynamic_profile.guid,
-                            "Rewritable": True,
-                            "Dynamic Profile Parent GUID": "PARENT-GUID",
-                            "Badge Text": "explicit-child-value",
-                        }
-                    ]
-                }
-            ),
+            json.dumps({
+                "Profiles": [
+                    {
+                        "Name": "iterm2-api-test",
+                        "Guid": dynamic_profile.guid,
+                        "Rewritable": True,
+                        "Dynamic Profile Parent GUID": "PARENT-GUID",
+                        "Badge Text": "explicit-child-value",
+                    }
+                ]
+            }),
             encoding="utf-8",
         )
 
@@ -274,9 +268,11 @@ def test_dynamic_profile_async_update_removal_converges_to_parent_value(
             calls.append((guids, properties))
 
             if guids == ["PARENT-GUID"]:
-                return _profiles_response(
-                    {"Guid": "PARENT-GUID", "Name": "Parent", "Badge Text": "inherited-parent-value"}
-                )
+                return _profiles_response({
+                    "Guid": "PARENT-GUID",
+                    "Name": "Parent",
+                    "Badge Text": "inherited-parent-value",
+                })
 
             if guids == [dynamic_profile.guid]:
                 target_profile_queries += 1
@@ -284,28 +280,24 @@ def test_dynamic_profile_async_update_removal_converges_to_parent_value(
                 if target_profile_queries == 1:
                     # The dynamic profile before iTerm2 reloads the updated
                     # definition.
-                    return _profiles_response(
-                        {
-                            "Guid": dynamic_profile.guid,
-                            "Name": "iterm2-api-test",
-                            "Badge Text": "explicit-child-value",
-                            "Is Dynamic Profile": 1,
-                            "Dynamic Profile Filename": str(dynamic_profile_path),
-                        }
-                    )
+                    return _profiles_response({
+                        "Guid": dynamic_profile.guid,
+                        "Name": "iterm2-api-test",
+                        "Badge Text": "explicit-child-value",
+                        "Is Dynamic Profile": 1,
+                        "Dynamic Profile Filename": str(dynamic_profile_path),
+                    })
 
                 # After reload, the explicit key is absent from the JSON
                 # definition, but the effective profile inherits the parent's
                 # value.
-                return _profiles_response(
-                    {
-                        "Guid": dynamic_profile.guid,
-                        "Name": "iterm2-api-test",
-                        "Badge Text": "inherited-parent-value",
-                        "Is Dynamic Profile": 1,
-                        "Dynamic Profile Filename": str(dynamic_profile_path),
-                    }
-                )
+                return _profiles_response({
+                    "Guid": dynamic_profile.guid,
+                    "Name": "iterm2-api-test",
+                    "Badge Text": "inherited-parent-value",
+                    "Is Dynamic Profile": 1,
+                    "Dynamic Profile Filename": str(dynamic_profile_path),
+                })
 
             raise AssertionError(f"Unexpected profile query: {guids!r}")
 

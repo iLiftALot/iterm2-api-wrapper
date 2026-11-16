@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-import os
 import re
 import shlex
 from collections.abc import Awaitable, Callable, Coroutine
@@ -12,6 +11,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, ParamSpec, TypedDict, TypeVar, cast, overload
 
 from websockets import ConcurrencyError, ConnectionClosed
+
+from iterm2_api_wrapper.utils.async_path import AsyncPath
 
 from ._logging import PrettyLog
 from .alert import poly_modal_alert_handler
@@ -473,13 +474,14 @@ class iTermState:
     ) -> bool:
         """Send one or more escape/control sequences to the session.
 
-        Each argument may be a :class:`HexCode` member, a `HexCode` member name,
+        Each argument may be a :class:`HexCodeEnum` member, a :obj:`~iterm2_api_wrapper.core.typings.HexCodeKey`,
         or a raw string. Member names are resolved to their underlying control bytes.
 
         Multiple arguments are concatenated in order, so
-        ``send_escape_sequence(HexCode.ESC, "B")`` sends ``"\\x1bb"``.
+        ``send_escape_sequence(HexCode.ESC, "B")`` sends `\\x1bb`.
 
-        :param sequences: :class:`HexCode` members, member names, and/or raw strings.
+        :param sequences: :class:`HexCodeEnum` members, :obj:`~iterm2_api_wrapper.core.typings.HexCodeKey` names,
+            and/or raw strings.
         :type sequences: `tuple[HexCode | str, ...]`
         :param broadcast: If `False`, suppress broadcast to other sessions.
         :type broadcast: `bool`, optional, default=`False`
@@ -534,20 +536,18 @@ class iTermState:
         seperator = "\n---\n"
         selection_text_template = "{header}\n{sections}"
         selection_text_header_template = "# Selections Across {total_sessions} iTerm Sessions"
-        selection_info_section_template = "\n".join(
-            [
-                f"{seperator}",
-                "## Session {session_idx}\n",
-                "<selection>",
-                "{session_selection}",
-                "</selection>\n",
-                "<session_metadata>",
-                "- Session Name: {session_name}",
-                "- Session ID: {session_id}",
-                "- Session Directory: {session_directory}",
-                "</session_metadata>",
-            ]
-        )
+        selection_info_section_template = "\n".join([
+            f"{seperator}",
+            "## Session {session_idx}\n",
+            "<selection>",
+            "{session_selection}",
+            "</selection>\n",
+            "<session_metadata>",
+            "- Session Name: {session_name}",
+            "- Session ID: {session_id}",
+            "- Session Directory: {session_directory}",
+            "</session_metadata>",
+        ])
         selection_info_sections: list[str] = []
 
         async for session_idx, (*_, session) in async_enumerate(iTermAPI.iter_sessions(self.app, self.window), 1):
@@ -581,7 +581,7 @@ class iTermState:
                 header=selection_text_header, sections=selection_text_sections
             )
 
-        return selection_text if selection_text else "<|==| No selections found ==|>"
+        return selection_text or "<|==| No selections found ==|>"
 
     async def broadcast(self) -> None:
         if iTermState._broadcast_active is True:
@@ -606,15 +606,18 @@ class iTermState:
 
         async with self._run_command_lock:
             current_path = await self.get_session_var("path")
-            target_path: str | None = None
+            target_path: AsyncPath | None = None
             if path:
-                target_path = os.path.abspath(os.path.expanduser(path))
-                if not os.path.isdir(target_path):
+                target_path = await AsyncPath(path).absolute().aexpanduser()
+
+                if not await target_path.ais_dir():
                     raise NotADirectoryError(target_path)
 
             if target_path is not None and current_path != target_path:
                 shell_type = await self.get_session_var("shell")
-                signal_result = await Signal(self, shell_type).execute(f"builtin cd -- {shlex.quote(target_path)}")
+                signal_result = await Signal(self, shell_type).execute(
+                    f"builtin cd -- {shlex.quote(target_path.string())}"
+                )
                 if signal_result.returncode != 0:
                     detail = signal_result.stderr.strip() or signal_result.stdout.strip() or "no shell error output"
                     raise RuntimeError(
@@ -930,7 +933,7 @@ class iTermState:
         if skip_confirm is False:
             load_si_prompt_response = await load_si_prompt_response
             should_load_shell_integration = str(load_si_prompt_response.button).lower() == "yes"
-            si_path = Path(load_si_prompt_response.tf_text or si_path).expanduser().resolve()
+            si_path = await AsyncPath(load_si_prompt_response.tf_text or si_path).expanduser().aresolve()
 
         log.debug(f"{should_load_shell_integration=}")
 

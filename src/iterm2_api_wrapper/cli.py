@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Concatenate, Literal, ParamSpe
 import typer
 from iterm2 import alert
 
+from iterm2_api_wrapper.utils.env import Env
+
 from ._logging import PrettyLog
 from .alert import alert_handler, poly_modal_alert_handler, text_input_alert_handler
 from .api.it2connection import run_until_complete
@@ -127,8 +129,8 @@ def _default_profile_name() -> str:
     return profile.name
 
 
-_COMPLETION_PROFILE_NAME = os.getenv("IT2_DEFAULT_PROFILE") or _default_profile_name()
-_DEBUG = bool(int(os.getenv("IT2_DEBUG", "0")))
+_COMPLETION_PROFILE_NAME = Env.get("IT2_DEFAULT_PROFILE") or _default_profile_name()
+_DEBUG = Env("IT2_DEBUG", "0").isTrue()
 _CLI_CLIENT_TIMEOUT: float | None = None
 
 

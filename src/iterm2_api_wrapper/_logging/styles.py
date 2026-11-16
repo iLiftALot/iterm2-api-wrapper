@@ -798,32 +798,30 @@ LEVEL_PROFILES: dict[str, LevelStyleProfile] = {
 }
 
 
-_LOG_THEME_DEFAULTS: Mapping[str, ThemeValue] = MappingProxyType(
-    {
-        "logging.level.debug": StyleSpec(color="bright_black", dim=True),
-        "logging.level.info": StyleSpec(color="bright_blue", bold=True),
-        "logging.level.warning": StyleSpec(color="bright_yellow", bold=True),
-        "logging.level.error": StyleSpec(color="bright_red", bold=True),
-        "logging.level.critical": StyleSpec(color="white", bgcolor="red", bold=True),
-        "log.time": StyleSpec(color="bright_black", dim=True),
-        "log.path": StyleSpec(color="cyan", dim=True),
-        LogStyle.NUMBER.value: StyleSpec(color="bright_cyan", bold=True),
-        LogStyle.HEX.value: StyleSpec(color="magenta", bold=True),
-        LogStyle.UUID.value: StyleSpec(color="green", dim=True),
-        LogStyle.URL.value: StyleSpec(color="bright_blue", underline=True),
-        LogStyle.DURATION.value: StyleSpec(color="cyan", bold=True),
-        LogStyle.BOOLEAN.value: StyleSpec(color="magenta"),
-        LogStyle.NONE.value: StyleSpec(color="bright_black", italic=True),
-        LogStyle.SUCCESS.value: StyleSpec(color="bright_green", bold=True),
-        LogStyle.WARNING.value: StyleSpec(color="bright_yellow", bold=True),
-        LogStyle.FAILURE.value: StyleSpec(color="bright_red", bold=True),
-        LogStyle.LOGGER.value: StyleSpec(color="bright_blue", bold=True),
-        LogStyle.CONTEXT.value: StyleSpec(color="cyan", dim=True),
-        LogStyle.CONTEXT_KEY.value: StyleSpec(color="cyan"),
-        LogStyle.CONTEXT_VALUE.value: StyleSpec(color="white"),
-        LogStyle.RULE.value: StyleSpec(color="bright_black", dim=True),
-    }
-)
+_LOG_THEME_DEFAULTS: Mapping[str, ThemeValue] = MappingProxyType({
+    "logging.level.debug": StyleSpec(color="bright_black", dim=True),
+    "logging.level.info": StyleSpec(color="bright_blue", bold=True),
+    "logging.level.warning": StyleSpec(color="bright_yellow", bold=True),
+    "logging.level.error": StyleSpec(color="bright_red", bold=True),
+    "logging.level.critical": StyleSpec(color="white", bgcolor="red", bold=True),
+    "log.time": StyleSpec(color="bright_black", dim=True),
+    "log.path": StyleSpec(color="cyan", dim=True),
+    LogStyle.NUMBER.value: StyleSpec(color="bright_cyan", bold=True),
+    LogStyle.HEX.value: StyleSpec(color="magenta", bold=True),
+    LogStyle.UUID.value: StyleSpec(color="green", dim=True),
+    LogStyle.URL.value: StyleSpec(color="bright_blue", underline=True),
+    LogStyle.DURATION.value: StyleSpec(color="cyan", bold=True),
+    LogStyle.BOOLEAN.value: StyleSpec(color="magenta"),
+    LogStyle.NONE.value: StyleSpec(color="bright_black", italic=True),
+    LogStyle.SUCCESS.value: StyleSpec(color="bright_green", bold=True),
+    LogStyle.WARNING.value: StyleSpec(color="bright_yellow", bold=True),
+    LogStyle.FAILURE.value: StyleSpec(color="bright_red", bold=True),
+    LogStyle.LOGGER.value: StyleSpec(color="bright_blue", bold=True),
+    LogStyle.CONTEXT.value: StyleSpec(color="cyan", dim=True),
+    LogStyle.CONTEXT_KEY.value: StyleSpec(color="cyan"),
+    LogStyle.CONTEXT_VALUE.value: StyleSpec(color="white"),
+    LogStyle.RULE.value: StyleSpec(color="bright_black", dim=True),
+})
 
 
 def _normalize_theme_value(value: object) -> RichStyleType:

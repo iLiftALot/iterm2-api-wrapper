@@ -37,11 +37,14 @@ _changedPaths() {
 }
 
 callFmt() {
+  echo "callFmt():\n- command_name: $command_name\n- ruffArgs: $ruffArgs[@]"
+
   local check_output output format_output exit_code=0
+
   _checkFormat || return $?
   output=$(_changedPaths)
 
-  format_output=$(ruff "${ruffArgs[@]}" 2>&1) || exit_code=$?
+  format_output=$(ruff "${ruffArgs[@]}" --no-respect-gitignore 2>&1) || exit_code=$?
   if (( exit_code != 0 )); then
     print -r -- "$format_output" >&2
     return "$exit_code"
@@ -58,6 +61,8 @@ callFmt() {
 }
 
 callCheck() {
+  echo "callCheck():\n- command_name: $command_name\n- ruffArgs: $ruffArgs[@]"
+
   local check_output output
   _checkFormat || return $?
   output=$(_changedPaths)
@@ -73,6 +78,8 @@ callCheck() {
 }
 
 callOutput() {
+  echo "callOutput():\n- command_name: $command_name\n- ruffArgs: $ruffArgs[@]"
+
   local check_output paths file_path rel_path decimalPlaces index curDecimalPlaces suffix
   local -a output
   _checkFormat || return $?

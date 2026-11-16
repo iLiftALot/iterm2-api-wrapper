@@ -11,7 +11,7 @@ export UV_CACHE_DIR="/private/tmp/$PACKAGE-uv-cache"
 export UV_SYSTEM_CERTS="true"
 unset SSL_CERT_FILE
 
-PYTHON_VERSION="${PYTHON_VERSION:-$(cat .python-version 2>/dev/null || printf '3.10')}"
+PYTHON_VERSION="${PYTHON_VERSION:-$(cat .python-version 2>/dev/null || printf '3.11')}"
 
 uv sync --python="$PYTHON_VERSION" --group dev --group ci
 

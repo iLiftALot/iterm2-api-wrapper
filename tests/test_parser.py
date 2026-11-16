@@ -231,9 +231,13 @@ def test_parser_diff_edge_cases() -> None:
 
 
 def test_parser_prompt_marker_lines_removes_wrapped_command_text() -> None:
-    prompt_text = "\n".join(
-        ["~ master* 1m 27s", "14:44:51", "❯ brew install python-tk@3.13", "brew install python-gdbm@3.13", "br"]
-    )
+    prompt_text = "\n".join([
+        "~ master* 1m 27s",
+        "14:44:51",
+        "❯ brew install python-tk@3.13",
+        "brew install python-gdbm@3.13",
+        "br",
+    ])
     command = "\n".join(["brew install python-tk@3.13", "brew install python-gdbm@3.13", "brew install node"])
 
     assert Parser.prompt_marker_lines(prompt_text, command) == ["~ master* 1m 27s", "14:44:51", "❯"]

@@ -56,9 +56,9 @@ class ProfileNotFoundError(iTermError):
         known_guids = [p.guid for _, p in profile_data.items()]
 
         max_name_length = max(map(len, known_names), default=0)
-        pretty_profile_list = "\n".join(
-            [f"- {name}{' ' * (max_name_length - len(name) + 1)}{guid}" for name, guid in zip(known_names, known_guids)]
-        )
+        pretty_profile_list = "\n".join([
+            f"- {name}{' ' * (max_name_length - len(name) + 1)}{guid}" for name, guid in zip(known_names, known_guids)
+        ])
 
         super().__init__(target_profile_name=target_profile_name, profile_data=pretty_profile_list)
 

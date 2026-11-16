@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+
 set -u
 
 # Debugging
@@ -19,7 +20,7 @@ osa_abs_dir="${first_applescript:h}"
 osa_rel_dir="${osa_abs_dir#$repo_root/}"
 applescript_files=("$osa_abs_dir"/*.applescript(N))
 
-if (( ${#applescript_files[@]} == 0 )); then
+if ((${#applescript_files[@]} == 0)); then
     warn "No AppleScript files found in ${c_bold}$repo_name/$osa_rel_dir${c_reset}"
     exit 1
 fi

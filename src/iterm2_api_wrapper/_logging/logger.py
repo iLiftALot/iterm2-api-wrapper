@@ -234,15 +234,13 @@ class PrettyLog:
     def pretty_config(self) -> PrettyLogConfig:
         """Return a deep, mutation-isolated configuration snapshot."""
         with self._lock:
-            return copy_pretty_config(
-                {
-                    "logger_config": self._log_config,
-                    "terminal_console_config": self._terminal_console_config,
-                    "file_console_config": self._file_console_config,
-                    "file_manager_config": self._file_manager_config,
-                    "traceback_config": self._traceback_config,
-                }
-            )
+            return copy_pretty_config({
+                "logger_config": self._log_config,
+                "terminal_console_config": self._terminal_console_config,
+                "file_console_config": self._file_console_config,
+                "file_manager_config": self._file_manager_config,
+                "traceback_config": self._traceback_config,
+            })
 
     @classmethod
     def _find_existing_ancestor(cls, name: str) -> PrettyLog | None:

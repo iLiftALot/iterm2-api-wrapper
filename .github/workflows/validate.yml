@@ -16,7 +16,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     env:
-      PYTHON_VERSION: "3.10"
+      PYTHON_VERSION: "3.11"
       IT2_PYTEST_INTEGRATION: "0"
 
     steps:

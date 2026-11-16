@@ -6,7 +6,7 @@ Requirements
 
 * macOS (this package uses ``pyobjc`` / ``AppKit``)
 * iTerm2 installed
-* Python 3.10 or higher
+* Python 3.11 or higher
 
 Enable the iTerm2 Python API
 ----------------------------

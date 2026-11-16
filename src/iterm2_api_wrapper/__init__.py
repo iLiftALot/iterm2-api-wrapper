@@ -1,9 +1,7 @@
 """Top-level package for Iterm2 Scripts."""
+# ruff: file-ignore[non-empty-init-module, module-import-not-at-top-of-file]
 
-# ruff: noqa: E402
 from __future__ import annotations
-
-import os
 
 
 __package__ = "iterm2_api_wrapper"
@@ -16,11 +14,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from ._logging import PrettyLog, get_default_log_config
+from .utils.logger import get_logger
 
 
-logger = PrettyLog(__package__, level="DEBUG" if os.getenv("IT2_DEBUG") else "INFO")
-
+logger = get_logger()
+logger.disable(__package__)
 
 from .api.it2api import create_iterm_state, iTermAPI
 from .api.it2connection import Connection as iTermConnection
@@ -35,16 +33,18 @@ from .core.typings import CommandExecutionResult, CommandExecutionStatus, Comman
 from .state import iTermState
 
 
+logger.debug("Initializing package: {}", __package__)
+
+
 __all__ = [
     "CommandExecutionResult",
     "CommandExecutionStatus",
     "CommandExitCode",
-    "PrettyLog",
     "close_all_shared_clients",
     "close_shared_client",
     "create_iterm_client",
     "create_iterm_state",
-    "get_default_log_config",
+    "get_logger",
     "get_shared_client",
     "iTermAPI",
     "iTermClient",

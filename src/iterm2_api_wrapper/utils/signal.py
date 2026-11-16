@@ -242,15 +242,13 @@ class Signal:
         install_nonce = secrets.token_hex(16)
         ack_path = signal_dir / f"install.{install_nonce}"
 
-        command = " ".join(
-            (
-                "builtin source",
-                shlex.quote(str(self.SIGNAL_SCRIPT)),
-                shlex.quote(str(signal_dir)),
-                shlex.quote(install_nonce),
-                shlex.quote(handler_digest),
-            )
-        )
+        command = " ".join((
+            "builtin source",
+            shlex.quote(str(self.SIGNAL_SCRIPT)),
+            shlex.quote(str(signal_dir)),
+            shlex.quote(install_nonce),
+            shlex.quote(handler_digest),
+        ))
 
         try:
             # async_send_text acknowledges delivery to iTerm2, not execution by
@@ -457,18 +455,16 @@ class Signal:
 
     @classmethod
     def _write_identity(cls, path: Path, binding: _SignalBinding) -> None:
-        payload = "\t".join(
-            (
-                cls.PROTOCOL_VERSION,
-                "cached",
-                str(binding.pid),
-                binding.signal_number.name.removeprefix("SIG"),
-                binding.handler_digest,
-                binding.generation,
-                binding.tty,
-                binding.process_start,
-            )
-        )
+        payload = "\t".join((
+            cls.PROTOCOL_VERSION,
+            "cached",
+            str(binding.pid),
+            binding.signal_number.name.removeprefix("SIG"),
+            binding.handler_digest,
+            binding.generation,
+            binding.tty,
+            binding.process_start,
+        ))
         cls._atomic_write(path, payload.encode("utf-8") + b"\n")
 
     @classmethod

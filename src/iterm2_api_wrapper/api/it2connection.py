@@ -16,6 +16,8 @@ from websockets.asyncio.client import connect as WebSocketConnect
 from websockets.exceptions import InvalidMessage, InvalidStatus
 from websockets.typing import Subprotocol
 
+from iterm2_api_wrapper.utils.env import Env
+
 from .._logging import PrettyLog
 
 
@@ -38,7 +40,7 @@ def _run_disconnect_callbacks() -> None:
 
 
 def _getenv(key: str) -> str | None:
-    return os.environ.get(key)
+    return Env(key).value
 
 
 def _cookie_and_key() -> tuple[str | None, str | None]:
@@ -203,7 +205,7 @@ class Connection:
         return (int(parts[0]), int(parts[1]))
 
     def _unix_domain_socket_path(self) -> str:
-        suite = os.environ.get("IT2_SUITE", "iTerm2")
+        suite = Env("IT2_SUITE", "iTerm2").value
         application_support = os.path.expanduser("~/Library/Application Support/" + suite)
         return os.path.join(application_support, "private", "socket")
 
@@ -520,7 +522,7 @@ class Connection:
 
     def _remove_auth(self) -> None:
         for var in ("ITERM2_COOKIE", "ITERM2_KEY"):
-            os.environ.pop(var, None)
+            Env.pop(var)
 
     def authenticate(self, force: bool) -> bool:
         """Request an iTerm2 auth cookie through AppleScript."""

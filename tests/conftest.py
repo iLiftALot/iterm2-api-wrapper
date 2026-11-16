@@ -1,6 +1,5 @@
 import faulthandler
 import io
-import os
 import platform
 import plistlib
 import re
@@ -8,24 +7,28 @@ import subprocess
 import sys
 import time
 import webbrowser
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Generator, Literal
+from typing import Any, Generator, Literal, TypedDict, Unpack, overload
 
 import pytest
 from _pytest.faulthandler import fault_handler_stderr_fd_key
 from dotenv import load_dotenv
-from pluggy._result import Result
+from rich.align import AlignMethod
 from rich.color_triplet import ColorTriplet
-from rich.console import Console, ConsoleRenderable, RichCast
+from rich.console import Console, ConsoleRenderable, JustifyMethod, OverflowMethod, RichCast
 from rich.panel import Panel
+from rich.style import Style
 from rich.table import Table
 from rich.terminal_theme import TerminalTheme
 from rich.text import Text
 
+from iterm2_api_wrapper.utils.env import Env
+
 
 load_dotenv()
-RUN_TIMEOUT = float(os.getenv("IT2_INTEGRATION_TIMEOUT", "60"))
-log_path_env = os.getenv("IT2_INTEGRATION_LOG")
+RUN_TIMEOUT = float(Env.get("IT2_INTEGRATION_TIMEOUT", "60"))
+log_path_env = Env.get("IT2_INTEGRATION_LOG", "")
 log_path = (
     Path(log_path_env).expanduser().resolve()
     if log_path_env
@@ -43,7 +46,7 @@ _file_console = Console(
     log_path=False,
     log_time=False,
     file=log_path.open("a"),
-    width=100,
+    # width=100,
     force_terminal=False,
     no_color=True,
 )
@@ -55,14 +58,39 @@ _html_console = Console(
     log_path=False,
     log_time=False,
     file=_html_buffer,  # Write to buffer, not stdout
-    width=100,
+    # width=100,
     force_terminal=True,
+    color_system="truecolor",
 )
 
 # Terminal console for colored stderr output (avoids pytest stdout capture)
-_terminal_console = Console(record=False, log_path=False, log_time=False, stderr=True, width=100)
+_terminal_console = Console(
+    record=False,
+    log_path=False,
+    log_time=False,
+    stderr=True,
+    color_system="truecolor",
+    # width=100
+)
 
 BrowserChoice = Literal["default", "safari", "chrome", "firefox", "edge", "mozilla"]
+
+
+class _PrintOptions(TypedDict, total=False):
+    sep: str
+    end: str
+    style: str | Style | None
+    justify: JustifyMethod | None
+    overflow: OverflowMethod | None
+    no_wrap: bool | None
+    emoji: bool | None
+    markup: bool | None
+    highlight: bool | None
+    width: int | None
+    height: int | None
+    crop: bool
+    soft_wrap: bool | None
+    new_line_start: bool
 
 
 class MultiConsole:
@@ -81,18 +109,29 @@ class MultiConsole:
         self._terminal = terminal_console
         self._browser = browser
 
-    def _call_all(self, method_name: str, *args, **kwargs):
-        if args:
-            args = (_linkify_text(args[0]), *args[1:])
-        getattr(self._file, method_name)(*args, **kwargs)
-        getattr(self._html, method_name)(*args, **kwargs)
-        getattr(self._terminal, method_name)(*args, **kwargs)
+    def print(self, *objects: object, terminal: bool = True, **kwargs: Unpack[_PrintOptions]) -> None:
+        targets = (self._file, self._html, self._terminal) if terminal else (self._file, self._html)
+        for target in targets:
+            prepared: list[object] = []
+            for obj in objects:
+                if isinstance(obj, str):
+                    obj = target.render_str(
+                        obj, markup=kwargs.get("markup"), emoji=kwargs.get("emoji"), highlight=kwargs.get("highlight")
+                    )
+                prepared.append(_linkify_text(obj))
+            target.print(*prepared, **kwargs)
 
-    def print(self, *args, **kwargs) -> None:
-        self._call_all("print", *args, **kwargs)
-
-    def rule(self, *args, **kwargs) -> None:
-        self._call_all("rule", *args, **kwargs)
+    def rule(
+        self,
+        title: str | Text = "",
+        *,
+        characters: str = "─",
+        style: str | Style = "rule.line",
+        align: AlignMethod = "center",
+    ) -> None:
+        linked_title = _linkify_text(title)
+        for target in (self._file, self._html, self._terminal):
+            target.rule(linked_title, characters=characters, style=style, align=align)
 
     def save_html(self, path: Path, show: bool = False) -> None:
         terminal_theme = _build_terminal_theme()
@@ -114,44 +153,95 @@ console: MultiConsole = MultiConsole(
 )
 
 
-def _linkify_text(obj: Path | Text | str | ConsoleRenderable | RichCast) -> Text | ConsoleRenderable | RichCast:
-    if isinstance(obj, Path):
-        resolved = obj.expanduser().resolve()
-        for base in (Path(__file__).resolve().parents[3], Path(__file__).resolve().parents[1]):
-            try:
-                label = resolved.relative_to(base)
-                break
-            except ValueError:
-                continue
-        else:
-            label = resolved
-        s = f"[link={resolved.as_uri()}]{label!s}[/link]"
-        return Text.from_markup(s)
-    elif isinstance(obj, Text):
-        s = obj.plain
-    elif isinstance(obj, str):
-        s = obj
-    else:
-        return obj  # leave rich renderables unchanged
+_LINK_CONSOLE = Console()
+_TOKEN = re.compile(r"""https?://[^\s<>"']+|"[^"\n]+"|'[^'\n]+'|[^\s<>"']+""")
+_PATH_COLOR = "rgb(0,200,200)"
 
-    url_pattern = r"(https?://[^\s\n]+)"
-    s = re.sub(url_pattern, lambda m: f"[link={m.group(1)}]{m.group(1)}[/link]", s)
 
-    path_pattern = rf'({re.escape(str(Path.home()))}/[^"\'\n]*)'
+def _path_style(uri: str) -> Style:
+    return Style(color=_PATH_COLOR, link=uri)
 
-    def _linkify_path(match: re.Match[str]) -> str:
-        raw = match.group(1)
-        stripped = raw.rstrip()
-        trailing = raw[len(stripped) :]
+
+def _path_text(path: Path, *, label: str | None = None) -> Text:
+    expanded = path.expanduser().absolute()
+    resolved = expanded.resolve()
+
+    if label is None:
         try:
-            href = Path(stripped).as_uri()
+            relative = expanded.relative_to(Path.cwd())
+            label = str(relative) if relative.parts else expanded.name
         except ValueError:
-            href = f"file://{stripped}"
-        return f"[link={href}]{stripped}[/link]{trailing}"
+            label = str(Path(expanded.parent.name) / expanded.name)
 
-    s = re.sub(path_pattern, _linkify_path, s)
+    text = Text(label)
+    text.stylize(_path_style(resolved.as_uri()), 0, len(text))
+    return text
 
-    return Text.from_markup(s)
+
+def _existing_path(value: str) -> Path | None:
+    if not value:
+        return None
+    try:
+        path = Path(value).expanduser().resolve()
+        return path if path.exists() else None
+    except (OSError, ValueError, RuntimeError):
+        return None
+
+
+@overload
+def _linkify_text(obj: Path | Text | str) -> Text: ...
+@overload
+def _linkify_text(obj: ConsoleRenderable | RichCast) -> ConsoleRenderable | RichCast: ...
+@overload
+def _linkify_text(obj: object) -> object: ...
+def _linkify_text(obj: object) -> object:
+    if isinstance(obj, Path):
+        return _path_text(obj)
+    if isinstance(obj, Text):
+        text = obj.copy()
+    elif isinstance(obj, str):
+        text = Text.from_markup(obj)
+    else:
+        return obj
+
+    for match in _TOKEN.finditer(text.plain):
+        token = match.group()
+        value = token.strip("\"'")
+        start = match.start() + len(token) - len(token.lstrip("\"'"))
+        if value.startswith(("https://", "http://")):
+            value = value.rstrip(".,;!?)")
+            href = value
+        else:
+            value = value.partition("::")[0]
+            path = _existing_path(value)
+            if path is None:
+                stripped = value.lstrip("(").rstrip(".,;:!?)")
+                start += len(value) - len(value.lstrip("("))
+                value = stripped
+                path = _existing_path(value)
+            if path is None:
+                continue
+            href = path.as_uri()
+        end = start + len(value)
+        if not any(text.get_style_at_offset(_LINK_CONSOLE, i).link for i in range(start, end)):
+            style = Style(link=href) if value.startswith(("https://", "http://")) else _path_style(href)
+            text.stylize(style, start, end)
+    return text
+
+
+def _argument_text(arguments: Sequence[str]) -> Text:
+    result = Text()
+    for index, argument in enumerate(arguments):
+        if index:
+            result.append(" ")
+        # Keep each argv element intact: paths may contain spaces or brackets.
+        path_part = argument.partition("::")[0]
+        path = _existing_path(path_part)
+        argument_text = Text(argument)
+        if path is not None:
+            argument_text.stylize(_path_style(path.as_uri()), 0, len(path_part))
+        result.append(argument_text)
+    return result
 
 
 def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
@@ -215,30 +305,32 @@ def _terminal_theme_from_itermcolors(path: Path) -> TerminalTheme | None:
         with path.open("rb") as handle:
             data = plistlib.load(handle)
     except Exception as e:
-        console.print(f"[red]Failed to load iTerm colors from {path}[/red]: {e}")
+        console.print(Text.assemble("Failed to load iTerm colors from ", _path_text(path), f": {e}"), style="red")
         return None
 
     if not isinstance(data, dict):
-        console.print(f"[red]Invalid iTerm colors format in {path}[/red]: {data}")
+        console.print(Text.assemble("Invalid iTerm colors format in ", _path_text(path), f": {data}"), style="red")
         return None
 
     return _terminal_theme_from_iterm_dict(data)
 
 
 def _load_iterm_profile() -> dict[str, object] | None:
-    if not (os.getenv("TERM_PROGRAM") == "iTerm.app" or os.getenv("IT2_PROFILE") or os.getenv("IT2_DEFAULT_PROFILE")):
+    if not (Env.get("TERM_PROGRAM") == "iTerm.app" or Env.get("IT2_PROFILE") or Env.get("IT2_DEFAULT_PROFILE")):
         return None
 
     prefs_path = Path("~/Library/Preferences/com.googlecode.iterm2.plist").expanduser()
     if not prefs_path.exists():
-        console.print(f"[red]iTerm preferences file not found at {prefs_path}[/red]")
+        console.print(Text.assemble("iTerm preferences file not found at ", _path_text(prefs_path)), style="red")
         return None
 
     try:
         with prefs_path.open("rb") as handle:
             data = plistlib.load(handle)
     except Exception as e:
-        console.print(f"[red]Failed to load iTerm preferences from {prefs_path}[/red]: {e}")
+        console.print(
+            Text.assemble("Failed to load iTerm preferences from ", _path_text(prefs_path), f": {e}"), style="red"
+        )
         return None
 
     if not isinstance(data, dict):
@@ -248,8 +340,8 @@ def _load_iterm_profile() -> dict[str, object] | None:
     if not isinstance(profiles, list):
         return None
 
-    profile_id = os.getenv("PYTEST_HTML_THEME_PROFILE_ID") or os.getenv("IT2_PROFILE_GUID")
-    profile_name = os.getenv("PYTEST_HTML_THEME_PROFILE") or os.getenv("IT2_PROFILE")
+    profile_id = Env.get("PYTEST_HTML_THEME_PROFILE_ID") or Env.get("IT2_PROFILE_GUID")
+    profile_name = Env.get("PYTEST_HTML_THEME_PROFILE") or Env.get("IT2_PROFILE")
 
     if profile_id:
         for profile in profiles:
@@ -275,9 +367,12 @@ def _load_iterm_profile() -> dict[str, object] | None:
 
 
 def _build_terminal_theme() -> TerminalTheme | None:
-    theme_path = os.getenv("PYTEST_THEME_PATH")
+    theme_path = Env.get("PYTEST_THEME_PATH")
     if theme_path:
-        console.print(f"[blue]Loading terminal theme from[/blue]:\n{theme_path}")
+        theme_file = Path(theme_path)
+        path_label = _path_text(theme_file, label=theme_file.name)
+        # path_label.stylize("bold rgb(255,190,90)", 0, len(path_label))
+        console.print("[blue]Loading terminal theme from[/blue]:", path_label)
         path = Path(theme_path).expanduser()
         if path.suffix.lower() == ".itermcolors":
             theme = _terminal_theme_from_itermcolors(path)
@@ -293,20 +388,23 @@ def _build_terminal_theme() -> TerminalTheme | None:
 
 
 def _load_html_extra_css() -> str | None:
-    css_path = os.getenv("PYTEST_HTML_THEME_CSS_PATH")
+    css_path = Env.get("PYTEST_HTML_THEME_CSS_PATH")
     if css_path:
         path = Path(css_path).expanduser()
         if path.is_file():
             return path.read_text(encoding="utf-8")
 
-    theme_path = os.getenv("PYTEST_THEME_PATH")
+    theme_path = Env.get("PYTEST_THEME_PATH")
     if theme_path:
-        console.print(f"[blue]Loading HTML extra CSS from[/blue]:\n{theme_path}")
+        theme_file = Path(theme_path)
+        path_label = _path_text(theme_file, label=theme_file.name)
+        # path_label.stylize("bold rgb(255,190,90)", 0, len(path_label))
+        console.print("[blue]Loading HTML extra CSS from[/blue]:", path_label)
         path = Path(theme_path).expanduser()
         if path.suffix.lower() == ".css" and path.is_file():
             return path.read_text(encoding="utf-8")
 
-    theme_inline = os.getenv("PYTEST_HTML_THEME_CSS")
+    theme_inline = Env.get("PYTEST_HTML_THEME_CSS")
     if theme_inline:
         return theme_inline
 
@@ -314,34 +412,40 @@ def _load_html_extra_css() -> str | None:
 
 
 def _theme_css_from_palette(bg: str, fg: str, link: str, panel: str, muted: str) -> str:
-    return (
-        ":root {\n"
-        f"  --bg: {bg};\n"
-        f"  --fg: {fg};\n"
-        f"  --link: {link};\n"
-        f"  --panel: {panel};\n"
-        f"  --muted: {muted};\n"
-        "}\n"
-        "body {\n"
-        "  background: var(--bg);\n"
-        "  color: var(--fg);\n"
-        "}\n"
-        "a {\n"
-        "  color: var(--link);\n"
-        "  text-decoration: underline;\n"
-        "  text-underline-offset: 2px;\n"
-        "  cursor: pointer;\n"
-        "}\n"
-        "pre {\n"
-        "  background: var(--panel);\n"
-        "  color: var(--fg);\n"
-        "  padding: 12px 14px;\n"
-        "  border-radius: 8px;\n"
-        "}\n"
-        "code {\n"
-        "  color: var(--fg);\n"
-        "}\n"
-    )
+    return f"""\
+:root {{
+  --bg: {bg};
+  --fg: {fg};
+  --link: rgb(60 60 60 / 85%);
+  --link-hover: {link};
+  --panel: {panel};
+  --muted: {muted};
+}}
+body {{
+  background: var(--bg);
+  color: var(--fg);
+}}
+a {{
+  text-underline-offset: 2px;
+  cursor: auto;
+}}
+a:has(:hover) {{
+  color: var(--link-hover) !important;
+  text-decoration: underline !important;
+}}
+a:not(:hover) {{
+  color: var(--link) !important;
+  text-decoration: none !important;
+}}
+pre {{
+  background: var(--panel);
+  color: var(--fg);
+  padding: 12px 14px;
+  border-radius: 8px;
+}}
+code{{
+  color: var(--fg);
+}}"""
 
 
 def _build_html_theme_css(theme: TerminalTheme | None) -> str | None:
@@ -372,16 +476,14 @@ def _inject_html_theme(html: str, css: str) -> str:
 
 
 def _format_duration(seconds: float) -> str:
-    """Format duration in human-readable form."""
-    if seconds < 0.001:
-        return f"{seconds * 1_000_000:.0f}µs"
-    elif seconds < 1:
-        return f"{seconds * 1000:.1f}ms"
-    elif seconds < 60:
+    """Format durations using milliseconds, seconds, or minutes."""
+    if seconds < 1:
+        return f"{seconds * 1000:.3f}ms"
+    if seconds < 60:
         return f"{seconds:.2f}s"
-    else:
-        mins, secs = divmod(seconds, 60)
-        return f"{int(mins)}m {secs:.1f}s"
+
+    minutes, remaining = divmod(seconds, 60)
+    return f"{int(minutes)}m {remaining:.1f}s"
 
 
 def log_var(name: str, value: object) -> None:
@@ -441,10 +543,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-@pytest.fixture(autouse=True, scope="session")
-def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator:
-    config = request.config
-    session = request.session
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtestloop(session: pytest.Session) -> Generator[None, object, object]:
+    config = session.config
+    sys.stdout.flush()
     session_name = getattr(session, "name", "iTerm2 API Wrapper Tests")
     start_time = getattr(session, "start_time", time.perf_counter())
     console._browser = f"{config.getoption('BROWSER', 'default')}"
@@ -453,14 +555,15 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator:
     env_table = Table(show_header=False, box=None, padding=(0, 2))
     env_table.add_column("Key", style="dim")
     env_table.add_column("Value")
-    env_table.add_row("Python", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+    env_table.add_row("Python", Text.assemble(sys.version.split()[0], " (", _path_text(Path(sys.executable)), ")"))
     env_table.add_row("Platform", platform.platform())
     env_table.add_row("Root", _linkify_text(config.rootpath))
     env_table.add_row("Log File", _linkify_text(log_path))
     env_table.add_row("HTML Log", _linkify_text(html_path))
-    env_table.add_row("Config", config.inipath.name) if config.inipath else "None"
+    env_table.add_row("Config", _path_text(config.inipath) if config.inipath else Text("None"))
     env_table.add_row("Timeout", f"{RUN_TIMEOUT:.0f} seconds")
-    env_table.add_row("Invocation Args", " ".join(["pytest", *sys.argv[1:]]))
+    env_table.add_row("Config Args", _argument_text(config.args))
+    env_table.add_row("Invocation Args", _argument_text(["pytest", *config.invocation_params.args]))
     env_table.add_row(
         "Plugins",
         " ".join(str(p) for p in config.invocation_params.plugins) if config.invocation_params.plugins else "None",
@@ -477,7 +580,7 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator:
         )
     )
 
-    yield
+    result = yield
 
     duration = _format_duration(time.perf_counter() - start_time)
 
@@ -496,21 +599,39 @@ def log_session_start_and_end(request: pytest.FixtureRequest) -> Generator:
     console.print()
 
     # Save HTML version with colors
-    console.save_html(html_path, bool(request.config.getoption("SHOW_HTML_LOG", False)))
+    console.save_html(html_path, bool(config.getoption("SHOW_HTML_LOG", False)))
+    return result
 
 
-@pytest.fixture(autouse=True, scope="module")
-def log_module_start_and_end(request: pytest.FixtureRequest) -> Generator:
-    module_name = request.module.__name__.replace("tests.", "")
-    module_path = Path(request.module.__file__).name
+_LOGGED_MODULE = pytest.StashKey[pytest.Module]()
 
-    console.print()
-    console.rule(f"[bold blue]{module_name}[/]", style="blue")
-    console.print(f"  [dim]{module_path}[/]", justify="center")
 
-    yield
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None) -> Generator[None, object, object]:
+    module = item.getparent(pytest.Module)
+    if module is None:
+        return (yield)
 
-    console.rule(style="blue")
+    if item.session.stash.get(_LOGGED_MODULE, None) is not module:
+        item.session.stash[_LOGGED_MODULE] = module
+
+        module_path = module.path
+        title = _path_text(module_path, label=module_path.stem)
+        title.stylize("bold blue")
+
+        console.print()
+        console.rule(title, style="blue")
+        console.print(module_path, style="dim", justify="center")
+        console.print()
+
+    result = yield
+
+    next_module = nextitem.getparent(pytest.Module) if nextitem is not None else None
+    if next_module is not module or item.session.shouldfail or item.session.shouldstop:
+        console.print()
+        console.rule(style="blue")
+
+    return result
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -518,9 +639,7 @@ def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator:
     assert isinstance(request.node, pytest.Function)
     test_name = request.node.originalname
     start_time = time.perf_counter()
-
-    # Build test info
-    info_parts: list[str] = []
+    info_parts: list[str] = []  # Build test info
 
     # Parametrize info
     if hasattr(request, "param"):
@@ -531,12 +650,13 @@ def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator:
     if markers:
         info_parts.append(f"[yellow]markers=[/]{', '.join(markers)}")
 
-    console.print()
-    console.print(f"  [bold]▶[/] [green]{test_name}[/]", end="")
+    console.print(terminal=False)
+    console.print(f"  [bold]▶[/] [green]{test_name}[/]", terminal=False)
+
     if info_parts:
-        console.print(f"  [dim]({', '.join(info_parts)})[/]")
+        console.print(f"  [dim]({', '.join(info_parts)})[/]", terminal=False)
     else:
-        console.print()
+        console.print(terminal=False)
 
     yield
 
@@ -544,7 +664,7 @@ def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator:
 
     # Determine outcome
     if hasattr(request.node, "rep_call"):
-        outcome = request.node.rep_call  # type: ignore[attr-defined]
+        outcome: pytest.TestReport = object.__getattribute__(request.node, "rep_call")
         if outcome.passed:
             status = "[green]✓ PASSED[/]"
         elif outcome.failed:
@@ -554,12 +674,68 @@ def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator:
     else:
         status = "[green]✓[/]"
 
-    console.print(f"    {status} [dim]({duration})[/]")
+    console.print(f"    {status} [dim]({duration})[/]", terminal=False)
 
 
-@pytest.hookimpl(tryfirst=True, hookwrapper=True)
-def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo) -> Generator:
-    """Store test outcome on the item for access in fixtures."""
-    outcome: Result[pytest.TestReport] = yield  # type: ignore[assignment] # ty:ignore[invalid-assignment]]
-    rep = outcome.get_result()
-    setattr(item, f"rep_{rep.when}", rep)
+@pytest.hookimpl(tryfirst=True, wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """Store test outcome on the item for access in fixtures.
+
+    Accessible via `item.rep_call`.
+
+    .. Example::
+        .. code:: python
+        import pytest
+
+        use_test_item = pytest.mark.usefixtures("test_item")
+
+        @pytest.fixture
+        def test_item(request: pytest.FixtureRequest) -> Iterator[None]:
+            item: pytest.Item = request.node
+            yield
+            setup_report: pytest.TestReport = getattr(item, "rep_setup")  # noqa: B009
+            call_report: pytest.TestReport = getattr(item, "rep_call")  # noqa: B009
+            teardown_report: pytest.TestReport | None = getattr(item, "rep_teardown", None)
+            logger.info(
+                f'''Test item: {item.name}\\n\r
+                Setup Report: {setup_report}\\n\r
+                Call Report: {call_report}\\n\r
+                Teardown Report: {teardown_report}'''
+            )
+
+        @use_test_item
+        def test_item_test() -> None:
+            assert True
+    """
+
+    report: pytest.TestReport = yield
+    setattr(item, f"rep_{report.when}", report)
+    return report
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_report_teststatus(report: pytest.TestReport) -> tuple[str, str, str] | None:
+    """Return test status for console output."""
+
+    # Preserve pytest's expected-failure handling
+    if hasattr(report, "wasxfail"):
+        return None
+
+    duration = _format_duration(report.duration)
+
+    if report.passed:
+        if report.when == "call":
+            return "passed", ".", f"✓ PASSED ({duration})"
+        return None
+
+    if report.skipped:
+        return "skipped", "s", f"⊘ SKIPPED ({duration})"
+
+    if report.failed:
+        if report.when == "call":
+            return "failed", "F", f"✗ FAILED ({duration})"
+        return "error", "E", f"✗ ERROR ({duration})"
+
+    return None

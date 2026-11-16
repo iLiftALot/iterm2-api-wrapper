@@ -36,6 +36,7 @@ exclude = [
 include = ["**{src,tests,test}/**/*.py", "**{src,tests,test}/**/*.ipynb"]
 force-exclude = true
 fix = true
+preview = true
 
 [lint]
 extend-select = [
@@ -64,7 +65,8 @@ ignore = [
   "B905",    # `zip()` without an explicit `strict=` parameter
   "BLE001",  # Checks for except clauses that catch all exceptions. This includes except BaseException and except Exception.
   "PLE1205", # Checks for too many positional arguments for a logging format string.
-  "PYI034"   # Checks for methods that are annotated with a fixed return type which should instead be returning Self.
+  "PYI034",  # Checks for methods that are annotated with a fixed return type which should instead be returning Self.
+  "E731", # Do not assign a `lambda` expression, use a `def`
 ]
 fixable = [ # ruff check . --fix
   "TRY004",

@@ -3,7 +3,7 @@
 ## Operating Rules
 
 - Do not modify code unless the user explicitly asks. For audits, report the issue and provide exact drop-in snippets.
-- When edits are authorized, keep changes narrow, design-aligned, and verified with direct `uv run --python=3.10 ...` commands unless intentionally checking another supported Python version.
+- When edits are authorized, keep changes narrow, design-aligned, and verified with direct `uv run --python=3.11 ...` commands unless intentionally checking another supported Python version.
 - When the user asks for code snippets, provide exact drop-in code, show the code being replaced, and explain the contract the change preserves. Use the `context7` tool for current documentation before generating code against non-standard-library APIs.
 - If an authorized implementation leaves material behavior ambiguous, ask specific questions that explain the affected code location, the available choices, and why the decision matters before editing.
 - Root `AGENTS.md` and its `CLAUDE.md` companion symlink are tracked; ordinary `git status` and `git diff` show changes to them.
@@ -15,7 +15,7 @@
 
 ## Project Snapshot
 
-- Python package `iterm2-api-wrapper` in `src/iterm2_api_wrapper`; it requires Python `>=3.10`, tracks Python 3.10-3.15 classifiers, and uses `uv_build`.
+- Python package `iterm2-api-wrapper` in `src/iterm2_api_wrapper`; it requires Python `>=3.11`, tracks Python 3.11-3.15 classifiers, and uses `uv_build`.
 - Runtime target is macOS + iTerm2 with the iTerm2 Python API enabled.
 - AppleScript hotkey-window support needs the optional `applescript` extra; docs claiming `py-applescript` installs automatically are stale.
 - Console scripts are `iterm2_api_wrapper` and `iterm`; the `it2w` alias in `docs/usage.rst` is stale.
@@ -27,17 +27,17 @@
 | Task | Command |
 | --- | --- |
 | Sync dev env | `uv sync --group dev --group ci` |
-| Lint | `uv run --python=3.10 --group dev --group ci ruff check .` |
-| Format check | `uv run --python=3.10 --group dev --group ci ruff format --check .` |
-| Unit tests | `IT2_PYTEST_INTEGRATION=0 uv run --python=3.10 --group dev pytest` |
-| Focused unit subset | `IT2_PYTEST_INTEGRATION=0 uv run --python=3.10 --group dev pytest tests/test_gateway.py tests/test_client.py` |
-| Integration tests | `IT2_PYTEST_INTEGRATION=1 uv run --python=3.10 --group dev pytest tests/test_client_integration.py` |
-| Typecheck | `uv run --python=3.10 --group dev --group ci pyright ./src ./tests` |
-| Build docs | `uv run --python=3.10 --group dev sphinx-build -b html docs docs/_build` |
+| Lint | `uv run --python=3.11 --group dev --group ci ruff check .` |
+| Format check | `uv run --python=3.11 --group dev --group ci ruff format --check .` |
+| Unit tests | `IT2_PYTEST_INTEGRATION=0 uv run --python=3.11 --group dev pytest` |
+| Focused unit subset | `IT2_PYTEST_INTEGRATION=0 uv run --python=3.11 --group dev pytest tests/test_gateway.py tests/test_client.py` |
+| Integration tests | `IT2_PYTEST_INTEGRATION=1 uv run --python=3.11 --group dev pytest tests/test_client_integration.py` |
+| Typecheck | `uv run --python=3.11 --group dev --group ci pyright ./src ./tests` |
+| Build docs | `uv run --python=3.11 --group dev sphinx-build -b html docs docs/_build` |
 
 ## Command Drift
 
-- `just format`, `just lint`, and the ordinary test recipes use `uv run --active --python=3.10 --group dev`; formatting/linting also add `--group ci`. `just typecheck` deliberately omits `--active`, while docs/IPython/build recipes use different invocations. `test-pyversions` covers Python 3.10-3.15. `pyproject.toml` has no optional `test` extra, so do not add `--extra test` to project commands.
+- `just format`, `just lint`, and the ordinary test recipes use `uv run --active --python=3.11 --group dev`; formatting/linting also add `--group ci`. `just typecheck` deliberately omits `--active`, while docs/IPython/build recipes use different invocations. `test-pyversions` covers Python 3.11-3.15. `pyproject.toml` has no optional `test` extra, so do not add `--extra test` to project commands.
 - Avoid mutating `just lint`, `just format`, `just qa`, `just build`, and clean recipes unless the user asks: they run Ruff fixes/formatting, remove artifacts, or reinstall tool executables. Prefer the non-mutating direct commands above for audits.
 - Typechecking uses `pyright`, declared in the `ci` dependency group (`ci = ["ruff", "pyright"]`) and run as `pyright ./src ./tests` by `just typecheck` and `.github/workflows/validate.yml`; the older `ty` executable is no longer used.
 - A docs build currently exits 0 with warnings for the missing `iterm2_api_wrapper.setup` module and the short title underline in `docs/index.rst`; network-restricted runs also warn when the Python intersphinx inventory cannot be fetched. `iterm2_api_wrapper.utils` now imports successfully. Treat source `.rst` files as more authoritative than generated `docs/_build/`.

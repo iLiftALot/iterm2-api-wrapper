@@ -12,15 +12,28 @@ PYTHONTRACEMALLOC := "1"
 list:
     @just --list
 
-format:
-    @uv run --active --python=3.10 --group dev --group ci ruff format --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
+fmt *ARGS:
+    ./scripts/fmt.sh {{ARGS}}
+
+[arg("pretty", long, short="p", value="true", help="Show detailed preview?"), no-exit-message]
+fmt-check pretty="false":
+    #!/usr/bin/env zsh
+    if [[ "{{pretty}}" == "true" ]]; then
+        echo "\n{{BOLD}}>>> {{CYAN}}ruff {{YELLOW}}format --check --output-format=full --preview{{NORMAL}}\n"
+        ruff format --check --output-format=full --preview
+    else
+        ./scripts/fmt.sh check
+    fi
+
+fmt-output:
+    ./scripts/fmt.sh output
 
 lint:
-    @uv run --active --python=3.10 --group dev --group ci ruff check --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
-    @uv run --active --python=3.10 --group dev --group ci ruff check --select I --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
+    @uv run --active --python=3.11 --group dev --group ci ruff check --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
+    @uv run --active --python=3.11 --group dev --group ci ruff check --select I --fix --show-fixes --no-force-exclude --verbose . 2&>/dev/null | rg --pcre2 '(?!^\[\d{4})(.*)' --only-matching --colors=match:none --colors=path:fg:green --colors=highlight:none
 
 typecheck:
-    @uv run --python=3.10 --group dev --group ci pyright ./src ./tests/[!*]*.py ./tests/test_*.py
+    @uv run --python=3.11 --group dev --group ci pyright ./src ./tests/[!*]*.py ./tests/test_*.py
 
 # Run all the formatting, linting, and typechecking
 qa:
@@ -29,11 +42,10 @@ qa:
     @just typecheck
 
 test:
-    uv run --active --python=3.10 --group dev pytest .
+    uv run --active --python=3.11 --group dev pytest .
 
 # Run all the tests for all the supported Python versions
 test-pyversions:
-    uv run --active --python=3.10 --group dev pytest
     uv run --active --python=3.11 --group dev pytest
     uv run --active --python=3.12 --group dev pytest
     uv run --active --python=3.13 --group dev pytest
@@ -43,7 +55,7 @@ test-pyversions:
 # Run all the tests, but allow for arguments to be passed
 test-args *ARGS:
     #!/usr/bin/env zsh
-    CMD_ARGS="run --active --python=3.10 --group dev pytest"
+    CMD_ARGS="run --active --python=3.11 --group dev pytest"
     if [[ -z "{{ARGS}}" ]]; then
         CMD_ARGS="$CMD_ARGS ."
     else
@@ -56,16 +68,16 @@ test-args *ARGS:
 # Run all the tests, but on failure, drop into the debugger
 test-debug *ARGS:
     @echo "Running with arg: {{ARGS}}"
-    @uv run --active --python=3.10 --group dev pytest --pdb --maxfail=10 --pdbcls=IPython.terminal.debugger:TerminalPdb {{ARGS}}
+    @uv run --active --python=3.11 --group dev pytest --pdb --maxfail=10 --pdbcls=IPython.terminal.debugger:TerminalPdb {{ARGS}}
 
 # Run coverage, and build to HTML
 [arg("open", long, short="o", value="true", help="Open HTML report?")]
 test-coverage open="false":
     #!/usr/bin/env zsh
     if [[ "{{open}}" == "true" ]]; then
-        uv run --active --python=3.10 --group dev pytest . --cov=iterm2_api_wrapper --cov-report=term-missing --cov-report=html  --show
+        uv run --active --python=3.11 --group dev pytest . --cov=iterm2_api_wrapper --cov-report=term-missing --cov-report=html  --show
     else
-        uv run --active --python=3.10 --group dev pytest . --cov=iterm2_api_wrapper --cov-report=term-missing --cov-report=html
+        uv run --active --python=3.11 --group dev pytest . --cov=iterm2_api_wrapper --cov-report=term-missing --cov-report=html
     fi
 
 # Build and sync the project, useful for checking that packaging is correct
@@ -166,6 +178,6 @@ enhance_imports:
     _enhance_imports()
 
 enhance_docstrings:
-    #!./.venv/bin/python
+    #!./.venv/bin python
     from iterm2_api_wrapper.core.runtime_setup import _enhance_docstrings
     _enhance_docstrings()

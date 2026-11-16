@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import subprocess
 import sys
@@ -11,6 +10,8 @@ from types import NoneType
 from typing import TYPE_CHECKING, ClassVar, Literal, cast, overload
 
 from async_timeout import timeout as _timeout
+
+from iterm2_api_wrapper.utils.env import Env
 
 from .._logging import PrettyLog
 from ..core.errors import ProfileNotFoundError, SessionNotFoundError, TabNotFoundError, WindowNotFoundError
@@ -65,11 +66,11 @@ class iTermAPI:
     ) -> None:
         self._profile_cache: dict[str, Profile | PartialProfile] = {}
 
-        self.profile_name = profile_name or os.getenv("IT2_DEFAULT_PROFILE", None)
+        self.profile_name = Env("IT2_DEFAULT_PROFILE", profile_name).value
         self.service_name = service_name or "iterm-api"
         self.extra_id = extra_id
         self.new_tab = new_tab
-        self.debug = debug if debug is not None else os.getenv("IT2_DEBUG", "false").strip().lower() in {"1", "true"}
+        self.debug = debug if debug is not None else Env("IT2_DEBUG", "false").isTrue()
         self.activate = activate
         self.profile_properties = profile_properties
 

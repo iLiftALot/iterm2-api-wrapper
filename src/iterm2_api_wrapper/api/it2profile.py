@@ -1198,17 +1198,15 @@ class DynamicProfile:
     PROFILE_LOAD_INITIAL_DELAY = 0.05
     PROFILE_LOAD_MAX_DELAY = 0.5
 
-    _PROTECTED_UPDATE_PROPERTIES: frozenset[DynamicProfilePropertyKey] = frozenset(
-        {
-            "Guid",
-            "Name",
-            "Rewritable",
-            "Dynamic Profile Parent GUID",
-            "Dynamic Profile Parent Name",
-            "Dynamic Profile Filename",
-            "Is Dynamic Profile",
-        }
-    )
+    _PROTECTED_UPDATE_PROPERTIES: frozenset[DynamicProfilePropertyKey] = frozenset({
+        "Guid",
+        "Name",
+        "Rewritable",
+        "Dynamic Profile Parent GUID",
+        "Dynamic Profile Parent Name",
+        "Dynamic Profile Filename",
+        "Is Dynamic Profile",
+    })
 
     @overload
     def __init__(
@@ -1284,13 +1282,11 @@ class DynamicProfile:
 
         if self.DYNAMIC_PROFILE_PATH.exists():
             previous_dynamic_profiles = process_dynamic_profiles_payload(self.DYNAMIC_PROFILE_PATH, self.STAGING_PATH)
-            dynamic_profiles.extend(
-                [
-                    dynamic_profile
-                    for dynamic_profile in previous_dynamic_profiles.get("Profiles", [])
-                    if dynamic_profile.get("Guid") != self.guid  # Already included in dynamic_profiles
-                ]
-            )
+            dynamic_profiles.extend([
+                dynamic_profile
+                for dynamic_profile in previous_dynamic_profiles.get("Profiles", [])
+                if dynamic_profile.get("Guid") != self.guid  # Already included in dynamic_profiles
+            ])
 
         return {"Profiles": dynamic_profiles}
 
