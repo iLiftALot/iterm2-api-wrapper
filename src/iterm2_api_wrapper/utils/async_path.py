@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
@@ -18,10 +17,6 @@ async def to_thread(func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwar
 
 
 class AsyncPath(Path):
-    def __new__(cls, *args: str | os.PathLike, **kwargs: object) -> AsyncPath:
-        instance = super().__new__(cls, *args, **kwargs)
-        return instance
-
     async def aresolve(self) -> AsyncPath:
         return await to_thread(self.resolve, strict=False)
 
