@@ -483,7 +483,7 @@ async def test_all_alerts(state: iTermState) -> tuple[int, str | None, alert.Pol
     return (simple_alert, text_input_alert, poly_modal_alert)
 
 
-async def show_capabilities(state: iTermState) -> dict[str, Any]:  # ruff: ignore[unused-async]
+async def show_capabilities(state: iTermState) -> dict[str, Any]:
     """Retrieve and print iTerm2 capabilities."""
     from iterm2 import capabilities
 
