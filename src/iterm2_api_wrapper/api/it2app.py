@@ -25,7 +25,8 @@ _WrapperT = TypeVar("_WrapperT")
 def _promote_wrapper(value: object, wrapper_type: type[_WrapperT]) -> _WrapperT:
     """Promote an upstream iTerm2 model to its layout-compatible wrapper class."""
     if not isinstance(value, wrapper_type):
-        object.__setattr__(value, "__class__", wrapper_type)
+        # object.__setattr__(value, "__class__", wrapper_type)
+        value.__class__ = wrapper_type
 
     return cast(_WrapperT, value)
 

@@ -83,8 +83,7 @@ class _EnvMeta(type):
         return key in cls._env
 
     def __iter__(cls) -> Iterator[str]:
-        keys = list(cls._env)
-        yield from keys
+        yield from list(cls._env)
 
     def __len__(cls) -> int:
         return len(cls._env)

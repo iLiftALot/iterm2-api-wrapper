@@ -1,4 +1,4 @@
-# ruff: noqa: RUF001
+# ruff: file-ignore[unused-async, ambiguous-unicode-character-string, static-join-to-f-string]
 import asyncio
 from typing import Any, cast
 
@@ -35,7 +35,6 @@ def prompt_stub(
 
 async def no_current_prompt(unique_id: str | None = None) -> None:
     del unique_id
-    return None
 
 
 def test_parser_requires_extraction_before_result_properties_and_diff() -> None:

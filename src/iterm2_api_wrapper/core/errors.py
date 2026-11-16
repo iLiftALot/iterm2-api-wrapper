@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, Any
 
 
@@ -27,14 +26,15 @@ class iTermError(BaseException, metaclass=ErrorMeta):
     def __init__(self, *args, **kwargs):
         super().__init__(*args)
         self.__module__ = self.__class__.__name__
-        if sys.version_info >= (3, 11):
-            self.add_note("\n\n*****NOTE*****\n\n" + self.msg.format(*args, **kwargs))
-        else:
-            note = "\n" + self.msg.format(*args, **kwargs)
-            if getattr(self, "__notes__", None) is not None and isinstance(self.__notes__, list):
-                self.__notes__.append(note)
-            else:
-                self.__notes__ = [note]
+        self.add_note("\n\n*****NOTE*****\n\n" + self.msg.format(*args, **kwargs))
+        # if sys.version_info >= (3, 11):
+        #     self.add_note("\n\n*****NOTE*****\n\n" + self.msg.format(*args, **kwargs))
+        # else:
+        #     note = "\n" + self.msg.format(*args, **kwargs)
+        #     if getattr(self, "__notes__", None) is not None and isinstance(self.__notes__, list):
+        #         self.__notes__.append(note)
+        #     else:
+        #         self.__notes__ = [note]
 
 
 class ProfileNotFoundError(iTermError):
@@ -53,7 +53,7 @@ class ProfileNotFoundError(iTermError):
             type(self).msg = msg
 
         known_names = list(profile_data.keys())
-        known_guids = [p.guid for _, p in profile_data.items()]
+        known_guids = [p.guid for p in profile_data.values()]
 
         max_name_length = max(map(len, known_names), default=0)
         pretty_profile_list = "\n".join([

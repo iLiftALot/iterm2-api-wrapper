@@ -16,6 +16,7 @@ from websockets.asyncio.client import connect as WebSocketConnect
 from websockets.exceptions import InvalidMessage, InvalidStatus
 from websockets.typing import Subprotocol
 
+from iterm2_api_wrapper.utils.async_path import AsyncPath
 from iterm2_api_wrapper.utils.env import Env
 
 from .._logging import PrettyLog
@@ -412,7 +413,7 @@ class Connection:
                         or run_forever()."""
                     )
                     path = self._unix_domain_socket_path()
-                    exists = os.path.exists(path)
+                    exists = await AsyncPath(path).aexists()
                     if exists:
                         log.error(
                             "If you have downgraded from iTerm2 3.3.12+ to an older version, "

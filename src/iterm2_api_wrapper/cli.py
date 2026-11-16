@@ -7,7 +7,7 @@ import inspect
 import json
 import os
 import time
-from collections.abc import Callable, Coroutine, Iterator
+from collections.abc import Callable, Coroutine, Generator
 from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Concatenate, Literal, ParamSpe
 import typer
 from iterm2 import alert
 
+from iterm2_api_wrapper.utils.async_path import AsyncPath
 from iterm2_api_wrapper.utils.env import Env
 
 from ._logging import PrettyLog
@@ -167,7 +168,7 @@ def _command_client_config(*, profile_name: str, debug: bool, new_tab: bool) -> 
 
 
 @contextmanager
-def _cli_client_state(config: _CliClientConfig) -> Iterator[tuple[ITermClient, iTermState]]:
+def _cli_client_state(config: _CliClientConfig) -> Generator[tuple[ITermClient, iTermState]]:
     """Acquire the client and validated state for one CLI operation.
 
     Output suppression, construction, state acquisition, and cleanup are all
@@ -482,7 +483,7 @@ async def test_all_alerts(state: iTermState) -> tuple[int, str | None, alert.Pol
     return (simple_alert, text_input_alert, poly_modal_alert)
 
 
-async def show_capabilities(state: iTermState) -> dict[str, Any]:
+async def show_capabilities(state: iTermState) -> dict[str, Any]:  # ruff: ignore[unused-async]
     """Retrieve and print iTerm2 capabilities."""
     from iterm2 import capabilities
 
@@ -527,7 +528,7 @@ async def send_command(
     resolved_path = (
         None
         if path is None or str(path).strip().lower() in {"", "none", "null"}
-        else str(Path(path).expanduser().resolve())
+        else (await AsyncPath(path).expanduser().aresolve()).string()
     )
     output = await state.run_command(
         command or default_command, path=resolved_path, broadcast=False, timeout=float(timeout)

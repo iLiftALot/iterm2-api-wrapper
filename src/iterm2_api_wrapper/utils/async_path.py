@@ -22,7 +22,7 @@ class AsyncPath(Path):
         instance = super().__new__(cls, *args, **kwargs)
         return instance
 
-    async def aresolve(self) -> Path:
+    async def aresolve(self) -> AsyncPath:
         return await to_thread(self.resolve, strict=False)
 
     async def async_absolute(self) -> AsyncPath:
@@ -33,6 +33,12 @@ class AsyncPath(Path):
 
     async def ais_dir(self) -> bool:
         return await to_thread(self.is_dir)
+
+    async def aexists(self) -> bool:
+        return await to_thread(self.exists)
+
+    async def aread_bytes(self) -> bytes:
+        return await to_thread(self.read_bytes)
 
     def string(self) -> str:
         return str(self)

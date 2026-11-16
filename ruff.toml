@@ -1,5 +1,5 @@
 output-format = "full"
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 indent-width = 4
 exclude = [
@@ -67,6 +67,7 @@ ignore = [
   "PLE1205", # Checks for too many positional arguments for a logging format string.
   "PYI034",  # Checks for methods that are annotated with a fixed return type which should instead be returning Self.
   "E731", # Do not assign a `lambda` expression, use a `def`
+  "non-empty-init-module", # `__init__` module should only contain docstrings and re-exports
 ]
 fixable = [ # ruff check . --fix
   "TRY004",

@@ -26,6 +26,8 @@ from uuid import NAMESPACE_URL, uuid5
 from iterm2 import BadGUIDException, capabilities, profile, rpc
 from iterm2.api_pb2 import ProfileProperty as WireProfileProperty
 
+from iterm2_api_wrapper.utils.async_path import AsyncPath
+
 from ..core.errors import ProfileNotFoundError, SessionNotFoundError
 from ._connection_compat import _as_upstream_connection
 from .it2app import async_get_app
@@ -1187,7 +1189,7 @@ class DynamicProfile:
     """Creates an iTerm2 dynamic profile."""
 
     UUID_NAME = "com.{USER}.{NAME}/profile"
-    ITERM2_DIRECTORY = Path.home() / "Library" / "Application Support" / "iTerm2"
+    ITERM2_DIRECTORY = AsyncPath.home() / "Library" / "Application Support" / "iTerm2"
     DYNAMIC_PROFILES_DIRECTORY = ITERM2_DIRECTORY / "DynamicProfiles"
     DYNAMIC_PROFILE_PATH = DYNAMIC_PROFILES_DIRECTORY / "iterm2-api-wrapper.json"
     # Stage the completed JSON outside the watched DynamicProfiles directory,
@@ -1425,8 +1427,8 @@ class DynamicProfile:
                 f"Profile '{self.__profile_name}' ({current_guid}) is registered in iTerm2 but is not a dynamic profile."
             )
 
-        runtime_source_path = Path(runtime_source).expanduser().resolve()
-        managed_source_path = self.DYNAMIC_PROFILE_PATH.expanduser().resolve()
+        runtime_source_path = await AsyncPath(runtime_source).expanduser().aresolve()
+        managed_source_path = await self.DYNAMIC_PROFILE_PATH.expanduser().aresolve()
         if runtime_source_path != managed_source_path:
             raise ValueError(
                 f"Dynamic profile '{self.__profile_name}' ({current_guid}) is "

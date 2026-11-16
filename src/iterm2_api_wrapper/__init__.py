@@ -1,5 +1,5 @@
 """Top-level package for Iterm2 Scripts."""
-# ruff: file-ignore[non-empty-init-module, module-import-not-at-top-of-file]
+# ruff: file-ignore[module-import-not-at-top-of-file]
 
 from __future__ import annotations
 

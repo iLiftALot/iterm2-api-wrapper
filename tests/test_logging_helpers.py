@@ -245,9 +245,8 @@ def test_timer_logs_success_and_failure_then_reraises(tmp_path: Path) -> None:
     with log.timer("successful operation") as active:
         assert active is log
 
-    with pytest.raises(RuntimeError, match="expected failure"):
-        with log.timer("failed operation"):
-            raise RuntimeError("expected failure")
+    with pytest.raises(RuntimeError, match="expected failure"), log.timer("failed operation"):
+        raise RuntimeError("expected failure")
     log.close()
 
     content = path.read_text(encoding="utf-8")

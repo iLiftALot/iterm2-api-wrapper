@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from types import MappingProxyType
 from typing import ClassVar, Literal, TypedDict, overload
 
@@ -437,7 +437,7 @@ ColorName = Literal[
 ColorLike = Color | ColorName | str
 
 
-class LogStyle(str, Enum):
+class LogStyle(StrEnum):
     """Semantic style names added by :mod:`iterm2_api_wrapper._logging`."""
 
     NUMBER = "log.number"
@@ -754,7 +754,7 @@ class LogRegexHighlighter(RegexHighlighter):
         r"(?P<url>\b(?:https?|wss?|file)://[^\s<>]+)",
         r"(?P<uuid>\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b)",
         r"(?P<hex>\b0x[0-9a-fA-F]+\b)",
-        r"(?P<duration>\b\d+(?:\.\d+)?\s?(?:ns|us|µs|ms|s|sec|secs|m|min|mins|h|hr|hrs)\b)",
+        r"(?P<duration>\b\d+(?:\.\d+)?\s?(?:ns|us|μs|ms|s|sec|secs|m|min|mins|h|hr|hrs)\b)",
         r"\b(?P<bool>(?i:true|false))\b",
         r"\b(?P<none>(?i:none|null))\b",
         r"\b(?P<success>(?i:success(?:ful)?|succeeded|passed|complete(?:d)?|ok))\b",

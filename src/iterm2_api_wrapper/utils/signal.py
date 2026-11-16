@@ -16,6 +16,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from iterm2_api_wrapper.utils.async_path import AsyncPath
+
 
 if TYPE_CHECKING:
     from ..state import iTermState
@@ -582,7 +584,7 @@ class Signal:
 
         while True:
             try:
-                return path.read_bytes()
+                return await AsyncPath(path).aread_bytes()
             except FileNotFoundError:
                 if process_pid is not None:
                     cls._assert_process_alive(process_pid)

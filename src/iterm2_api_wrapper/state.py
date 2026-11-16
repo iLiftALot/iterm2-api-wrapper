@@ -517,7 +517,7 @@ class iTermState:
                 event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
                 log.debug(f"Prompt/command event detected after sending escape sequence(s): {sequences}: {event}")
                 return True
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 after = await monitor.refresh_snapshot()
                 if after != before:
                     log.debug(f"No prompt event after escape sequence(s), but terminal contents changed: {sequences}")
@@ -702,7 +702,7 @@ class iTermState:
             while True:
                 try:
                     event = await asyncio.wait_for(monitor.async_get(include_id=True), timeout=timeout)
-                except (asyncio.TimeoutError, TimeoutError):
+                except TimeoutError:
                     current_snapshot = await monitor.refresh_snapshot()
                     if last_snapshot != current_snapshot:
                         log.debug("Prompt event timed out, but terminal contents changed; continuing wait")
@@ -912,7 +912,7 @@ class iTermState:
                 await asyncio.wait_for(
                     monitor.async_get(mode=PromptMonitor.Mode.PROMPT), timeout or self.SI_PROBE_TIMEOUT
                 )
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 return False
             return True
 

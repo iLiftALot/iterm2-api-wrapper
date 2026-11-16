@@ -1,3 +1,4 @@
+# ruff: file-ignore[ambiguous-variable-name]
 from __future__ import annotations
 
 import ast
@@ -6,6 +7,7 @@ import itertools
 import textwrap
 from dataclasses import dataclass
 from enum import Enum, EnumMeta, IntEnum
+from enum import StrEnum as StrEnumBase
 from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, TypedDict, cast
 
 
@@ -131,7 +133,7 @@ class MetaEnum(EnumMeta):
         return None
 
 
-class StrEnum(str, Enum, metaclass=MetaEnum):
+class StrEnum(StrEnumBase, metaclass=MetaEnum):
     """String-valued enum supporting adjacent member docstrings."""
 
     @staticmethod
@@ -244,13 +246,13 @@ class HexCodeEnum(StrEnum):
     F = 0x66
     G = 0x67
     H = 0x68
-    I = 0x69  # noqa: E741
+    I = 0x69
     J = 0x6A
     K = 0x6B
     L = 0x6C
     M = 0x6D
     N = 0x6E
-    O = 0x6F  # noqa: E741
+    O = 0x6F
     P = 0x70
     Q = 0x71
     R = 0x72
