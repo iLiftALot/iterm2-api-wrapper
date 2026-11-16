@@ -37,7 +37,7 @@ typecheck:
 
 # Run all the formatting, linting, and typechecking
 qa:
-    @just format
+    @just fmt
     @just lint
     @just typecheck
 
