@@ -81,9 +81,7 @@ async def screenshot(state: iTermState) -> ScreenshotResult:
         )
 
         screenshot_bytes = await session.async_screenshot()
-        screenshot_path = (
-            Path.cwd() / "assets" / "screenshots" / f"{session_metadata.session_name}_{_get_timestamp()}.png"
-        )
+        screenshot_path = Path.home() / "Downloads" / f"{session_metadata.session_name}_{_get_timestamp()}.png"
         screenshot_path.write_bytes(screenshot_bytes)
     finally:
         await window.async_set_frame(original_frame)
