@@ -198,7 +198,7 @@ def test_exception_obeys_mode_threshold_filter_and_locals_policy(tmp_path: Path)
         "exceptions", mode="all", level="ERROR", pretty_config=_logger_config(path, terminal_buffer)
     )
 
-    hidden_local = "terminal-secret"
+    hidden_local = f"terminal-secret-{tmp_path.name}"
     try:
         raise RuntimeError("terminal failure")
     except RuntimeError:
@@ -207,7 +207,7 @@ def test_exception_obeys_mode_threshold_filter_and_locals_policy(tmp_path: Path)
 
     assert "terminal only" in terminal_buffer.getvalue()
     assert "terminal failure" in terminal_buffer.getvalue()
-    assert "terminal-secret" not in terminal_buffer.getvalue()
+    assert hidden_local not in terminal_buffer.getvalue()
     assert not path.exists()
 
     previous_terminal = terminal_buffer.getvalue()

@@ -170,10 +170,14 @@ def test_prompt_monitor_enter_captures_initial_snapshot(monkeypatch: pytest.Monk
             calls.append("base-enter")
             return self
 
+        async def base_exit(self: object, *exc_info: object) -> None:
+            pass
+
         monitor.snapshot_provider = provider
         monitor.initial_snapshot = []
         monitor.current_snapshot = []
         monkeypatch.setattr(prompt.PromptMonitor, "__aenter__", base_enter)
+        monkeypatch.setattr(prompt.PromptMonitor, "__aexit__", base_exit)
 
         async with monitor as entered:
             assert entered is monitor

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Callable
-from pathlib import PosixPath
+from pathlib import PosixPath, PurePath
 from typing import TypeVar
 
 from typing_extensions import ParamSpec
@@ -16,7 +17,7 @@ async def to_thread(func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwar
     return await asyncio.to_thread(func, *args, **kwargs)
 
 
-class AsyncPath(PosixPath):
+class AsyncPath(PosixPath, PurePath):
     async def aresolve(self) -> AsyncPath:
         return await to_thread(self.resolve, strict=False)
 
@@ -25,6 +26,9 @@ class AsyncPath(PosixPath):
 
     async def aexpanduser(self) -> AsyncPath:
         return await to_thread(self.expanduser)
+
+    def expanduser(self) -> AsyncPath:
+        return super().expanduser()
 
     async def ais_dir(self) -> bool:
         return await to_thread(self.is_dir)
@@ -37,6 +41,10 @@ class AsyncPath(PosixPath):
 
     async def aread_text(self, encoding: str | None = None, errors: str | None = None) -> str:
         return await to_thread(self.read_text, encoding=encoding, errors=errors)
+
+    @classmethod
+    def home(cls) -> AsyncPath:
+        return AsyncPath(os.path.expanduser("~"))
 
     def string(self) -> str:
         return str(self)

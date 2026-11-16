@@ -204,8 +204,7 @@ def test_source_links_support_vscode_file_and_disabled_modes(tmp_path: Path) -> 
     assert LogRenderer.source_uri(caller.filename, caller.line_number, "none") is None
 
 
-def _captured_exception() -> RuntimeError:
-    local_secret = "sensitive-local-value"
+def _captured_exception(local_secret: str) -> RuntimeError:
     try:
         raise RuntimeError("traceback test")
     except RuntimeError as exception:
@@ -213,8 +212,9 @@ def _captured_exception() -> RuntimeError:
         return exception
 
 
-def test_traceback_locals_are_explicitly_opt_in() -> None:
-    exception = _captured_exception()
+def test_traceback_locals_are_explicitly_opt_in(tmp_path: Path) -> None:
+    local_secret = f"sensitive-local-value-{tmp_path.name}"
+    exception = _captured_exception(local_secret)
     hidden_buffer = StringIO()
     visible_buffer = StringIO()
     plain = {"force_terminal": False, "color_system": None, "no_color": True, "width": 160}
@@ -226,5 +226,5 @@ def test_traceback_locals_are_explicitly_opt_in() -> None:
         LogRenderer.render_exception(exception, {"show_locals": True, "width": 160})
     )
 
-    assert "sensitive-local-value" not in hidden_buffer.getvalue()
-    assert "sensitive-local-value" in visible_buffer.getvalue()
+    assert local_secret not in hidden_buffer.getvalue()
+    assert local_secret in visible_buffer.getvalue()

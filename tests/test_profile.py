@@ -18,6 +18,7 @@ from iterm2_api_wrapper.api.it2profile import (
     ProfilePropertyKey,
     process_dynamic_profiles_payload,
 )
+from iterm2_api_wrapper.utils.async_path import AsyncPath
 
 
 if TYPE_CHECKING:
@@ -162,11 +163,12 @@ def test_dynamic_profile_async_create_polls_until_registered(monkeypatch: pytest
         async def fake_sleep(delay: float) -> None:
             sleep_calls.append(delay)
 
-        dynamic_profiles_directory = tmp_path / "DynamicProfiles"
+        temp_path = AsyncPath(tmp_path)
+        dynamic_profiles_directory = temp_path / "DynamicProfiles"
         dynamic_profile_path = dynamic_profiles_directory / "iterm2-api-wrapper.json"
         monkeypatch.setattr(DynamicProfile, "DYNAMIC_PROFILES_DIRECTORY", dynamic_profiles_directory)
         monkeypatch.setattr(DynamicProfile, "DYNAMIC_PROFILE_PATH", dynamic_profile_path)
-        monkeypatch.setattr(DynamicProfile, "STAGING_PATH", tmp_path / ".iterm2-api-wrapper.json.tmp")
+        monkeypatch.setattr(DynamicProfile, "STAGING_PATH", temp_path / ".iterm2-api-wrapper.json.tmp")
         monkeypatch.setattr(rpc, "async_list_profiles", fake_list_profiles)
         monkeypatch.setattr(asyncio, "sleep", fake_sleep)  # ruff: ignore[shared-clock-mock]
 
@@ -186,9 +188,10 @@ def test_dynamic_profile_async_create_returns_existing_profile(monkeypatch: pyte
         dynamic_profile = DynamicProfile(_connection(), "iterm2-api-test")
         calls: list[tuple[list[str] | None, object]] = []
 
-        dynamic_profiles_directory = tmp_path / "DynamicProfiles"
+        temp_path = AsyncPath(tmp_path)
+        dynamic_profiles_directory = temp_path / "DynamicProfiles"
         dynamic_profile_path = dynamic_profiles_directory / "iterm2-api-wrapper.json"
-        staging_path = tmp_path / ".iterm2-api-wrapper.json.tmp"
+        staging_path = temp_path / ".iterm2-api-wrapper.json.tmp"
 
         dynamic_profiles_directory.mkdir(parents=True)
         dynamic_profile_path.write_text(
@@ -238,9 +241,10 @@ def test_dynamic_profile_async_update_removal_converges_to_parent_value(
         connection = _connection()
         dynamic_profile = DynamicProfile(connection, "iterm2-api-test", parent_profile_guid="PARENT-GUID")
 
-        dynamic_profiles_directory = tmp_path / "DynamicProfiles"
+        temp_path = AsyncPath(tmp_path)
+        dynamic_profiles_directory = temp_path / "DynamicProfiles"
         dynamic_profile_path = dynamic_profiles_directory / "iterm2-api-wrapper.json"
-        staging_path = tmp_path / ".iterm2-api-wrapper.json.tmp"
+        staging_path = temp_path / ".iterm2-api-wrapper.json.tmp"
 
         dynamic_profiles_directory.mkdir(parents=True)
         dynamic_profile_path.write_text(
@@ -326,8 +330,9 @@ def test_dynamic_profile_async_update_removal_converges_to_parent_value(
 
 
 def test_process_dynamic_profiles_payload_read_mode_does_not_write(tmp_path: Path) -> None:
-    dynamic_profile_path = tmp_path / "DynamicProfiles" / "iterm2-api-wrapper.json"
-    staging_path = tmp_path / ".iterm2-api-wrapper.json.tmp"
+    temp_path = AsyncPath(tmp_path)
+    dynamic_profile_path = temp_path / "DynamicProfiles" / "iterm2-api-wrapper.json"
+    staging_path = temp_path / ".iterm2-api-wrapper.json.tmp"
     dynamic_profile_path.parent.mkdir(parents=True)
 
     expected_payload = {"Profiles": [{"Name": "iterm2-api-test", "Guid": "GUID-1"}]}
@@ -342,8 +347,9 @@ def test_process_dynamic_profiles_payload_read_mode_does_not_write(tmp_path: Pat
 
 
 def test_process_dynamic_profiles_payload_atomically_publishes_payload(tmp_path: Path) -> None:
-    dynamic_profile_path = tmp_path / "DynamicProfiles" / "iterm2-api-wrapper.json"
-    staging_path = tmp_path / ".iterm2-api-wrapper.json.tmp"
+    temp_path = AsyncPath(tmp_path)
+    dynamic_profile_path = temp_path / "DynamicProfiles" / "iterm2-api-wrapper.json"
+    staging_path = temp_path / ".iterm2-api-wrapper.json.tmp"
 
     payload: DynamicProfilesPayload = {"Profiles": [{"Name": "iterm2-api-test", "Guid": "GUID-1", "Rewritable": True}]}
 

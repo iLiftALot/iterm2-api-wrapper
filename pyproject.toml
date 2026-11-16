@@ -66,7 +66,7 @@ requires = ["uv_build >= 0.13.0, <=0.13.6"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
-addopts = "-v -rfe --exitfirst"
+addopts = "-vv -rfe --exitfirst"
 console_output_style = "progress"
 faulthandler_exit_on_timeout = true
 faulthandler_timeout = 120
