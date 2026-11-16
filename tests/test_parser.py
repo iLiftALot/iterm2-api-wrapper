@@ -1,4 +1,4 @@
-# ruff: file-ignore[unused-async, ambiguous-unicode-character-string, static-join-to-f-string]
+# ruff: file-ignore[ambiguous-unicode-character-string, static-join-to-f-string]
 import asyncio
 from typing import Any, cast
 

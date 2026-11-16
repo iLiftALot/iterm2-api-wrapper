@@ -40,5 +40,8 @@ class AsyncPath(Path):
     async def aread_bytes(self) -> bytes:
         return await to_thread(self.read_bytes)
 
+    async def aread_text(self, encoding: str | None = None, errors: str | None = None) -> str:
+        return await to_thread(self.read_text, encoding=encoding, errors=errors)
+
     def string(self) -> str:
         return str(self)

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import sys
 import threading
-from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
@@ -12,6 +11,7 @@ import typer
 
 from iterm2_api_wrapper import cli
 from iterm2_api_wrapper.core.typings import CommandExecutionResult, HexCodeEnum
+from iterm2_api_wrapper.utils.async_path import AsyncPath
 
 
 if TYPE_CHECKING:
@@ -209,7 +209,7 @@ def test_send_command_uses_default_command_and_resolves_path() -> None:
         assert state.calls == [
             {
                 "command": "echo 'Hello from iTerm2 API Wrapper!'",
-                "path": str(Path(".").expanduser().resolve()),
+                "path": str(await AsyncPath(".").expanduser().aresolve()),
                 "broadcast": False,
                 "timeout": 2.0,
             }

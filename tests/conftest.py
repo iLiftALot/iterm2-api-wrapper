@@ -1,3 +1,4 @@
+# ruff: file-ignore[unnecessary-dunder-call]
 import faulthandler
 import io
 import platform
@@ -646,7 +647,7 @@ def log_test_start_and_end(request: pytest.FixtureRequest) -> Generator:
         info_parts.append(f"[cyan]param=[/]{request.param!r}")
 
     # Markers (only if present)
-    markers = [m.name for m in request.node.iter_markers() if m.name not in ("usefixtures",)]
+    markers = [m.name for m in request.node.iter_markers() if m.name != "usefixtures"]
     if markers:
         info_parts.append(f"[yellow]markers=[/]{', '.join(markers)}")
 

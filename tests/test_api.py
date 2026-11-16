@@ -1,3 +1,4 @@
+# ruff: file-ignore[unnecessary-dunder-call]
 # pyright: reportArgumentType=false, reportCallIssue=false
 from __future__ import annotations
 
@@ -196,11 +197,11 @@ def as_session(session: FakeSession | None) -> Session | None:
 
 
 def set_api_connection(connection: Connection | None) -> None:
-    type.__setattr__(iTermAPI, "_iTermAPI__connection", connection)
+    object.__setattr__(iTermAPI, "_iTermAPI__connection", connection)
 
 
 def set_api_app(app: App | None) -> None:
-    type.__setattr__(iTermAPI, "_iTermAPI__app", app)
+    object.__setattr__(iTermAPI, "_iTermAPI__app", app)
 
 
 def make_api(profile: FakeProfile, windows: list[FakeWindow]) -> iTermAPI:

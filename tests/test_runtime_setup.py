@@ -87,7 +87,7 @@ def test_validate_runtime_rejects_unsupported_connection(validation_only: None) 
 def test_validate_runtime_logs_protocol_version(monkeypatch: pytest.MonkeyPatch, validation_only: None) -> None:
     logged: list[str] = []
 
-    monkeypatch.setattr(it2runtime.log, "debug", lambda message: logged.append(message))
+    monkeypatch.setattr(it2runtime.log, "debug", lambda message: logged.append(message))  # ruff: ignore[unnecessary-lambda]
 
     it2runtime.validate_iterm2_runtime(connection((1, 14)))
 

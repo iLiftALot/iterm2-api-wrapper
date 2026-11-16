@@ -38,16 +38,16 @@ class FakeState:
 
 def test_get_connect_timeout_uses_default_for_missing_or_invalid_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("IT2_CONNECT_TIMEOUT", raising=False)
-    assert _get_connect_timeout_s() == 10.0
+    assert pytest.approx(_get_connect_timeout_s()) == 10.0
 
     monkeypatch.setenv("IT2_CONNECT_TIMEOUT", "not-a-number")
-    assert _get_connect_timeout_s() == 10.0
+    assert pytest.approx(_get_connect_timeout_s()) == 10.0
 
 
 def test_get_connect_timeout_clamps_negative_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IT2_CONNECT_TIMEOUT", "-4.5")
 
-    assert _get_connect_timeout_s() == 0.0
+    assert pytest.approx(_get_connect_timeout_s()) == 0.0
 
 
 def test_debug_enabled_uses_current_it2_environment_name(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -175,12 +175,11 @@ def test_prompt_monitor_enter_captures_initial_snapshot(monkeypatch: pytest.Monk
         monitor.current_snapshot = []
         monkeypatch.setattr(prompt.PromptMonitor, "__aenter__", base_enter)
 
-        entered = await monitor.__aenter__()
-
-        assert entered is monitor
-        assert monitor.initial_snapshot == ["prompt$"]
-        assert monitor.current_snapshot == ["prompt$"]
-        assert calls == ["snapshot", "base-enter"]
+        async with monitor as entered:
+            assert entered is monitor
+            assert monitor.initial_snapshot == ["prompt$"]
+            assert monitor.current_snapshot == ["prompt$"]
+            assert calls == ["snapshot", "base-enter"]
 
     asyncio.run(scenario())
 

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import tempfile
-from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import pytest
 
@@ -13,6 +11,7 @@ from iterm2_api_wrapper import state as state_module
 from iterm2_api_wrapper.core.typings import CommandExecutionResult, CommandExecutionStatus, HexCodeEnum
 from iterm2_api_wrapper.core.validator import _validate_state
 from iterm2_api_wrapper.state import LoopManager, MarkedCommand, User, iTermState
+from iterm2_api_wrapper.utils.async_path import AsyncPath
 from iterm2_api_wrapper.utils.parser import ParseResult
 
 from .fake import (
@@ -30,12 +29,6 @@ from .fake import (
     make_state,
     patch_attr,
 )
-
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 
 def coord_range(start_x: int = 0, start_y: int = 0, end_x: int = 0, end_y: int = 0) -> SimpleNamespace:
@@ -329,8 +322,8 @@ def test_run_command_without_shell_integration_sources_marked_script_and_cleans_
             assert kwargs == {"timeout": 4.0, "expected_command": "pwd", "initial_prompt_id": "prompt-current"}
             await coro
             source_text = as_fake_session(state.session).sent[-1][0]
-            script_path = Path(state_module.shlex.split(source_text.removesuffix("\r"))[1])
-            script_body = script_path.read_text(encoding="utf-8")
+            script_path = AsyncPath(state_module.shlex.split(source_text.removesuffix("\r"))[1])
+            script_body = await script_path.aread_text(encoding="utf-8")
             expected_mark_fragments = [
                 state_module.MarkedCommand.BEFORE_PROMPT.split("{aid}", 1)[0],
                 state_module.MarkedCommand.AFTER_PROMPT.split("{aid}", 1)[0],
@@ -360,7 +353,7 @@ def test_run_command_without_shell_integration_sources_marked_script_and_cleans_
         patch_attr(state, "_get_prompt", get_prompt)
         patch_attr(state, "_wait_for_prompt", wait_for_prompt)
         patch_attr(state, "_run_parser", run_parser)
-        monkeypatch.setattr(asyncio, "sleep", no_sleep)
+        monkeypatch.setattr(asyncio, "sleep", no_sleep)  # ruff: ignore[shared-clock-mock]
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         monkeypatch.setattr(state_module, "Signal", FakeSignal)
 
@@ -1153,7 +1146,7 @@ def test_run_command_uses_prompt_output_when_shell_integration_live() -> None:
             coro: Any, *, timeout: float, expected_command: str | None, initial_prompt_id: str | None
         ) -> Any:
             await coro
-            assert timeout == 2.0
+            assert timeout == pytest.approx(2.0)
             assert expected_command == "echo hi"
             assert initial_prompt_id == "prompt-current"
             return status

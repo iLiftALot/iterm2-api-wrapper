@@ -179,7 +179,7 @@ def test_source_location_uses_the_public_call_site(tmp_path: Path) -> None:
 def test_ordinary_call_locals_are_explicitly_opt_in(tmp_path: Path) -> None:
     path = tmp_path / "locals.log"
     log = logger_module.PrettyLog("locals", mode="file", pretty_config=_logger_config(path))
-    local_secret = "-".join(("ordinary", "local", "value"))
+    local_secret = "ordinary-local-value"
 
     log.info("without locals")
     assert local_secret not in path.read_text(encoding="utf-8")
@@ -198,7 +198,7 @@ def test_exception_obeys_mode_threshold_filter_and_locals_policy(tmp_path: Path)
         "exceptions", mode="all", level="ERROR", pretty_config=_logger_config(path, terminal_buffer)
     )
 
-    hidden_local = "-".join(("terminal", "secret"))
+    hidden_local = "terminal-secret"
     try:
         raise RuntimeError("terminal failure")
     except RuntimeError:

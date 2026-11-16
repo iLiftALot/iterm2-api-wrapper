@@ -75,10 +75,10 @@ def test_profile_normalizes_wire_like_properties_and_returns_defensive_copy() ->
 
     assert wrapped.connection is connection
     assert wrapped.guid == "GUID-1"
-    assert wrapped.all_properties.get("Transparency") == 0.25
+    assert pytest.approx(wrapped.all_properties.get("Transparency")) == 0.25
     copied_properties = wrapped.all_properties
     copied_properties["Transparency"] = 0.5
-    assert wrapped.all_properties.get("Transparency") == 0.25
+    assert pytest.approx(wrapped.all_properties.get("Transparency")) == 0.25
 
 
 def test_profile_async_get_returns_typed_wrapper(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,7 +168,7 @@ def test_dynamic_profile_async_create_polls_until_registered(monkeypatch: pytest
         monkeypatch.setattr(DynamicProfile, "DYNAMIC_PROFILE_PATH", dynamic_profile_path)
         monkeypatch.setattr(DynamicProfile, "STAGING_PATH", tmp_path / ".iterm2-api-wrapper.json.tmp")
         monkeypatch.setattr(rpc, "async_list_profiles", fake_list_profiles)
-        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)  # ruff: ignore[shared-clock-mock]
 
         profile = await dynamic_profile.async_create()
 

@@ -131,11 +131,11 @@ def test_async_ensure_iterm_app_running_does_not_launch_running_app(monkeypatch:
 
 def test_get_new_app_timeout_parses_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IT2_NEW_APP_TIMEOUT", "5.5")
-    assert pyobjc_adapter._get_new_app_timeout_s() == 5.5
+    assert pytest.approx(pyobjc_adapter._get_new_app_timeout_s()) == 5.5
 
     # Negative values clamp to zero.
     monkeypatch.setenv("IT2_NEW_APP_TIMEOUT", "-3")
-    assert pyobjc_adapter._get_new_app_timeout_s() == 0.0
+    assert pytest.approx(pyobjc_adapter._get_new_app_timeout_s()) == 0.0
 
     # Invalid values fall back to the default.
     monkeypatch.setenv("IT2_NEW_APP_TIMEOUT", "not-a-number")

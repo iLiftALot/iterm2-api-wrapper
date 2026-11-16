@@ -68,6 +68,7 @@ ignore = [
   "PYI034",  # Checks for methods that are annotated with a fixed return type which should instead be returning Self.
   "E731", # Do not assign a `lambda` expression, use a `def`
   "non-empty-init-module", # `__init__` module should only contain docstrings and re-exports
+  "unused-async"
 ]
 fixable = [ # ruff check . --fix
   "TRY004",
