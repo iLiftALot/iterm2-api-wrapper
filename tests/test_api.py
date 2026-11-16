@@ -246,6 +246,8 @@ def test_sync_constructor_rejects_running_event_loop() -> None:
 
 
 def test_async_create_initializes_on_running_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IT2_DEFAULT_PROFILE", "Environment Profile")
+
     async def scenario() -> None:
         initialized: list[iTermAPI] = []
 

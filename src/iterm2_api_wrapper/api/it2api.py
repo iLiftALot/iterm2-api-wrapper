@@ -65,7 +65,7 @@ class iTermAPI:
     ) -> None:
         self._profile_cache: dict[str, Profile | PartialProfile] = {}
 
-        self.profile_name = Env("IT2_DEFAULT_PROFILE", profile_name).value
+        self.profile_name = profile_name if profile_name is not None else Env("IT2_DEFAULT_PROFILE").value
         self.service_name = service_name or "iterm-api"
         self.extra_id = extra_id
         self.new_tab = new_tab
